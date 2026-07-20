@@ -9,6 +9,7 @@ from django.http import FileResponse, Http404, HttpResponseForbidden, JsonRespon
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_POST
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
@@ -1065,12 +1066,14 @@ def submission_version_content(request, pk, version_pk):
             filename = get_display_filename(version.file.name)
     except (DocumentPreviewError, OSError) as exc:
         raise Http404 from exc
-    return FileResponse(
+    response = FileResponse(
         source,
         as_attachment=False,
         filename=filename,
         content_type="application/pdf",
     )
+    patch_cache_control(response, private=True, no_store=True)
+    return response
 
 
 @login_required

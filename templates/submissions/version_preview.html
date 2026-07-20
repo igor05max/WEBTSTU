@@ -48,7 +48,7 @@
             <div class="document-preview-pdf">
                 <iframe
                     title="Предпросмотр {{ display_filename }}"
-                    src="{% url 'submissions:version_content' submission.pk version.pk %}#toolbar=1&amp;navpanes=0"
+                    src="{% url 'submissions:version_content' submission.pk version.pk %}?render=2#toolbar=1&amp;navpanes=0"
                 ></iframe>
             </div>
         {% elif preview_kind == "text" %}

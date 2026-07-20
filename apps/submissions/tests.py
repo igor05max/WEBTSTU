@@ -1584,6 +1584,8 @@ class SubmissionVersionPreviewTests(TestCase):
         self.assertContains(preview_response, content_url)
         self.assertEqual(content_response.status_code, 200)
         self.assertEqual(content_response["Content-Type"], "application/pdf")
+        self.assertIn("private", content_response["Cache-Control"])
+        self.assertIn("no-store", content_response["Cache-Control"])
         self.assertTrue(b"".join(content_response.streaming_content).startswith(b"%PDF-"))
         content_response.close()
 
