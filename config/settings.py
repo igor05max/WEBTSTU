@@ -51,6 +51,11 @@ ALLOWED_HOSTS = [
     for host in os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",")
     if host.strip()
 ]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 DJANGO_APPS = [
     "django.contrib.admin",
@@ -182,6 +187,7 @@ DOCUMENT_PREVIEW_CONVERT_DOCX_TO_PDF = os.getenv(
     "DOCUMENT_PREVIEW_CONVERT_DOCX_TO_PDF",
     "1",
 ) == "1"
+LIBREOFFICE_BINARY = os.getenv("LIBREOFFICE_BINARY", "").strip()
 ARTICLE_RECOMMENDATION_CORPUS_ROOT = Path(
     os.getenv(
         "ARTICLE_RECOMMENDATION_CORPUS_ROOT",

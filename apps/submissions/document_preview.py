@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import tempfile
 from xml.etree import ElementTree
 from uuid import uuid4
 from zipfile import BadZipFile, ZipFile
@@ -108,11 +110,6 @@ def read_docx_preview(field_file):
 def build_word_document_pdf(version):
     suffix = Path(version.file.name).suffix.lower()
     format_name = "DOCX" if suffix == ".docx" else "DOC"
-    if os.name != "nt":
-        raise DocumentPreviewError(
-            f"Точный просмотр {format_name} требует Microsoft Word на сервере. Скачайте оригинал или сохраните его как PDF."
-        )
-
     try:
         source_path = Path(version.file.path).resolve(strict=True)
         source_stat = source_path.stat()
@@ -125,6 +122,13 @@ def build_word_document_pdf(version):
     output_path = cache_directory / cache_name
     if _is_valid_pdf(output_path):
         return output_path
+
+    if os.name != "nt":
+        return _build_word_document_pdf_with_libreoffice(
+            source_path=source_path,
+            output_path=output_path,
+            format_name=format_name,
+        )
 
     conversion_script = Path(__file__).with_name("convert_word_to_pdf.ps1")
     if not conversion_script.exists():
@@ -166,6 +170,56 @@ def build_word_document_pdf(version):
         )
 
     os.replace(temporary_output, output_path)
+    return output_path
+
+
+def _build_word_document_pdf_with_libreoffice(*, source_path, output_path, format_name):
+    configured_binary = getattr(settings, "LIBREOFFICE_BINARY", "")
+    executable = configured_binary or shutil.which("libreoffice") or shutil.which("soffice")
+    if not executable:
+        raise DocumentPreviewError(
+            f"На сервере не установлен LibreOffice для просмотра {format_name}. "
+            "Скачайте оригинал или сохраните его как PDF."
+        )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="word-preview-",
+        dir=output_path.parent,
+    ) as temporary_directory:
+        temporary_directory = Path(temporary_directory)
+        profile_directory = temporary_directory / "libreoffice-profile"
+        command = [
+            executable,
+            f"-env:UserInstallation={profile_directory.as_uri()}",
+            "--headless",
+            "--convert-to",
+            "pdf:writer_pdf_Export",
+            "--outdir",
+            str(temporary_directory),
+            str(source_path),
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                check=False,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise DocumentPreviewError(
+                f"Не удалось преобразовать {format_name} для просмотра. "
+                "Скачайте оригинал или сохраните его как PDF."
+            ) from exc
+
+        converted_path = temporary_directory / f"{source_path.stem}.pdf"
+        if result.returncode != 0 or not _is_valid_pdf(converted_path):
+            raise DocumentPreviewError(
+                f"LibreOffice не смог подготовить просмотр этого {format_name}. "
+                "Скачайте оригинал или сохраните его как PDF."
+            )
+
+        os.replace(converted_path, output_path)
     return output_path
 
 
