@@ -1687,3 +1687,7 @@ class WordConversionEnvironmentTests(SimpleTestCase):
         environment = mocked_run.call_args.kwargs["env"]
         self.assertEqual(Path(environment["HOME"]).name, "home")
         self.assertTrue(Path(environment["TMPDIR"]).name.startswith("word-preview-"))
+        self.assertEqual(
+            Path(mocked_run.call_args.kwargs["cwd"]),
+            Path(environment["TMPDIR"]),
+        )

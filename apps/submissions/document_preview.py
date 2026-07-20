@@ -226,6 +226,7 @@ def _build_word_document_pdf_with_libreoffice(*, source_path, output_path, forma
                 check=False,
                 timeout=120,
                 env=environment,
+                cwd=temporary_directory,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise DocumentPreviewError(
