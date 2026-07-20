@@ -31,3 +31,11 @@ sudo -u webtstu /opt/webtstu/venv/bin/python manage.py migrate --noinput
 sudo -u webtstu /opt/webtstu/venv/bin/python manage.py collectstatic --noinput
 systemctl restart webtstu
 ```
+
+## HTTPS без домена
+
+Сертификат для IP хранится в `/etc/letsencrypt/live/185.221.154.185/`.
+IP-сертификаты Let’s Encrypt короткоживущие, поэтому таймер
+`certbot-ip-renew.timer` должен быть постоянно включён. Он дважды в сутки
+проверяет продление и перезагружает Nginx только после получения нового
+сертификата.
