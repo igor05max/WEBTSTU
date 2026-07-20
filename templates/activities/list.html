@@ -1,0 +1,351 @@
+{% load static workspace_navigation %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Личный план научных, методических и организационных результатов сотрудника.">
+    <title>{% if is_employee_plan_preview %}План сотрудника{% elif current_scope == 'mine' %}Мой план{% else %}Реестр планов{% endif %} — Научный ЭДО</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
+    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260717c">
+    <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+</head>
+<body>
+<div class="dashboard-shell">
+    {% workspace_sidebar "plan" %}
+
+    <main class="dashboard-main activity-plan-main">
+        <header class="activity-plan-header">
+            <div>
+                <span class="activity-plan-kicker">{% if is_employee_plan_preview %}Администраторский просмотр{% elif current_scope == 'mine' %}Личный кабинет{% else %}Общий реестр{% endif %}</span>
+                <h1>{% if is_employee_plan_preview %}План сотрудника{% elif current_scope == 'mine' %}Мой план{% else %}Планируемые результаты{% endif %}</h1>
+                <p>
+                    {% if is_employee_plan_preview %}
+                        {{ plan_subject }} · выполнение плана на {{ selected_year }} учебный год.
+                    {% elif current_scope == 'mine' %}
+                        Плановые результаты на {{ selected_year }} учебный год из утверждённых данных системы.
+                    {% else %}
+                        Единый список плановых результатов сотрудников и кафедр.
+                    {% endif %}
+                </p>
+            </div>
+
+            {% if current_scope == 'mine' %}
+                <form class="activity-year-form" method="get" action="{% url 'activities:list' %}">
+                    <input type="hidden" name="scope" value="mine">
+                    {% if is_employee_plan_preview %}<input type="hidden" name="owner" value="{{ selected_owner }}">{% endif %}
+                    <label for="activity-plan-year">Учебный год</label>
+                    <div>
+                        <select id="activity-plan-year" name="year">
+                            {% for year in years %}
+                                <option value="{{ year }}"{% if selected_year == year %} selected{% endif %}>{{ year }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit">Показать</button>
+                    </div>
+                </form>
+            {% else %}
+                <a class="activity-personal-link" href="{% url 'activities:list' %}?scope=mine">
+                    <span>Открыть мой план</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg>
+                </a>
+            {% endif %}
+        </header>
+
+        {% if messages %}
+            <ul class="dashboard-messages" aria-live="polite">
+                {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
+            </ul>
+        {% endif %}
+
+        {% if current_scope == 'mine' %}
+            {% if activities or scientific_results %}
+                {% if activities %}
+                <section class="activity-summary-card" aria-labelledby="activity-summary-title">
+                    <div class="activity-summary-heading">
+                        <div>
+                            <span>Учебный год {{ selected_year }}</span>
+                            <h2 id="activity-summary-title">{% if is_employee_plan_preview %}{{ plan_subject }}{% else %}Мой план{% endif %}</h2>
+                        </div>
+                        <div class="activity-source-badges">
+                            {% if has_imported_plan %}
+                                <span class="activity-source-badge">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H4V4a2 2 0 0 1 2-2Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
+                                    Загружен из индивидуального плана
+                                </span>
+                            {% endif %}
+                            {% if scientific_result_count %}
+                                <span class="activity-source-badge is-confirmed">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>
+                                    Подтверждено фактов: {{ scientific_result_count }}
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="activity-summary-grid">
+                        <div class="activity-progress-block">
+                            <div class="activity-progress-ring" style="--progress: {{ summary.progress_percent }}%;" role="img" aria-label="Выполнено {{ summary.progress_percent }} процентов плана">
+                                <div><strong>{{ summary.progress_percent }}%</strong><span>выполнено</span></div>
+                            </div>
+                            <div class="activity-progress-copy">
+                                <span>Выполнено</span>
+                                <strong>{{ summary.completed }} <small>из {{ summary.total }}</small></strong>
+                                <p>плановых результатов</p>
+                            </div>
+                        </div>
+
+                        <div class="activity-summary-stat is-total">
+                            <span>Всего в плане</span>
+                            <strong>{{ summary.total }}</strong>
+                            <small>позиций: {{ summary.items }}</small>
+                        </div>
+                        <div class="activity-summary-stat is-planned">
+                            <span>Запланировано</span>
+                            <strong>{{ summary.planned }}</strong>
+                            <small>ожидают начала</small>
+                        </div>
+                        <div class="activity-summary-stat is-progress">
+                            <span>В работе</span>
+                            <strong>{{ summary.in_progress }}</strong>
+                            <small>отмечено в системе</small>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="activity-plan-layout" aria-label="Содержание личного плана">
+                    <article class="activity-plan-card">
+                        <div class="activity-card-heading">
+                            <div>
+                                <span class="activity-card-kicker">Содержание</span>
+                                <h2>Пункты плана</h2>
+                            </div>
+                            <span class="activity-card-count">{{ summary.items }}</span>
+                        </div>
+
+                        <div class="activity-plan-list">
+                            {% for activity in activities %}
+                                <article class="activity-plan-row status-{{ activity.status }}">
+                                    <span class="activity-status-mark" aria-hidden="true">
+                                        {% if activity.status == 'completed' %}
+                                            <svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg>
+                                        {% elif activity.status == 'in_progress' %}
+                                            <svg viewBox="0 0 24 24"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+                                        {% else %}
+                                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+                                        {% endif %}
+                                    </span>
+
+                                    <div class="activity-plan-copy">
+                                        <strong>{{ activity.title }}</strong>
+                                        <div class="activity-plan-meta">
+                                            <span>{{ activity.activity_type.name }}</span>
+                                            {% if activity.grant_type %}<span>{{ activity.grant_type.name }}</span>{% endif %}
+                                            {% if activity.quantity > 1 %}<span>Количество: {{ activity.quantity }}</span>{% endif %}
+                                        </div>
+                                        {% if activity.scientific_results_list %}
+                                            <details class="activity-result-details">
+                                                <summary>
+                                                    <span>Подтверждено фактически: {{ activity.actual_count }} из {{ activity.quantity }}</span>
+                                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+                                                </summary>
+                                                <div class="activity-result-list">
+                                                    {% for result in activity.scientific_results_list %}
+                                                        <div class="activity-result-item">
+                                                            <span class="activity-result-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg></span>
+                                                            <div>
+                                                                <strong>{{ result.title }}</strong>
+                                                                <small>{{ result.result_year }} · {{ result.activity_type.name }}{% if result.publication_name %} · {{ result.publication_name }}{% endif %}</small>
+                                                                {% if result.bibliographic_data %}<p>{{ result.bibliographic_data }}</p>{% endif %}
+                                                            </div>
+                                                        </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </details>
+                                        {% endif %}
+                                        {% if activity.owner_id != request.user.id %}<small>Ответственный: {{ activity.owner }}</small>{% endif %}
+                                    </div>
+
+                                    <div class="activity-plan-state">
+                                        <span class="activity-state-badge">{{ activity.get_status_display }}</span>
+                                        {% if activity.imported_from_plan %}<small>Из плана</small>{% endif %}
+                                    </div>
+                                    <div class="activity-plan-period">
+                                        <span>Период</span>
+                                        <strong>{{ activity.get_period_display }}</strong>
+                                    </div>
+                                </article>
+                            {% endfor %}
+                        </div>
+                    </article>
+
+                    <aside class="activity-plan-sidebar">
+                        <article class="activity-insight-card">
+                            <div class="activity-card-heading is-compact">
+                                <div>
+                                    <span class="activity-card-kicker">Состояние</span>
+                                    <h2>Статистика</h2>
+                                </div>
+                            </div>
+                            <div class="activity-status-stats">
+                                <div><span class="is-planned"></span><strong>{{ summary.planned }}</strong><small>Запланировано</small></div>
+                                <div><span class="is-progress"></span><strong>{{ summary.in_progress }}</strong><small>В работе</small></div>
+                                <div><span class="is-completed"></span><strong>{{ summary.completed }}</strong><small>Выполнено</small></div>
+                            </div>
+                        </article>
+
+                        <article class="activity-insight-card">
+                            <div class="activity-card-heading is-compact">
+                                <div>
+                                    <span class="activity-card-kicker">Распределение</span>
+                                    <h2>Структура плана</h2>
+                                </div>
+                            </div>
+                            <div class="activity-type-breakdown">
+                                {% for item in type_breakdown %}
+                                    <div>
+                                        <span><strong>{{ item.name }}</strong><small>{{ item.total }}</small></span>
+                                        <i><b style="--share: {{ item.percent }}%;"></b></i>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </article>
+                    </aside>
+                </section>
+                {% else %}
+                    <section class="activity-no-plan-note">
+                        <strong>Индивидуальный план на {{ selected_year }} учебный год пока не загружен.</strong>
+                        <span>Ниже показаны уже подтверждённые фактические результаты сотрудника.</span>
+                    </section>
+                {% endif %}
+
+                {% if unplanned_scientific_results %}
+                    <section class="activity-factual-card" aria-labelledby="activity-factual-title">
+                        <div class="activity-card-heading">
+                            <div>
+                                <span class="activity-card-kicker">Подтверждено в системе</span>
+                                <h2 id="activity-factual-title">Фактические результаты вне пунктов плана</h2>
+                            </div>
+                            <span class="activity-card-count">{{ unplanned_scientific_results|length }}</span>
+                        </div>
+                        <div class="activity-factual-list">
+                            {% for result in unplanned_scientific_results %}
+                                <article class="activity-factual-row">
+                                    <span class="activity-result-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg></span>
+                                    <div>
+                                        <strong>{{ result.title }}</strong>
+                                        <span>{{ result.activity_type.name }} · {{ result.result_year }}{% if result.publication_name %} · {{ result.publication_name }}{% endif %}</span>
+                                        {% if result.bibliographic_data %}<p>{{ result.bibliographic_data }}</p>{% endif %}
+                                    </div>
+                                </article>
+                            {% endfor %}
+                        </div>
+                    </section>
+                {% endif %}
+            {% else %}
+                <section class="activity-empty-plan">
+                    <span class="activity-empty-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a2 2 0 0 1 2 2v16H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 3v18M11 8h6M11 12h6M11 16h4"/></svg>
+                    </span>
+                    <div>
+                        <span class="activity-plan-kicker">{{ selected_year }} учебный год</span>
+                        <h2>План пока не загружен</h2>
+                        <p>Когда в системе появятся утверждённые пункты вашего индивидуального плана, они автоматически отобразятся на этой странице.</p>
+                    </div>
+                </section>
+            {% endif %}
+        {% else %}
+            <section class="activity-registry-card">
+                <div class="activity-card-heading">
+                    <div>
+                        <span class="activity-card-kicker">Все сотрудники</span>
+                        <h2>Реестр плановых результатов</h2>
+                    </div>
+                    <span class="activity-card-count">{{ summary.items }}</span>
+                </div>
+
+                <form method="get" class="activity-registry-filter">
+                    {% if selected_owner %}<input type="hidden" name="owner" value="{{ selected_owner }}">{% endif %}
+                    <label>
+                        <span>Поиск по сотруднику или результату</span>
+                        <input type="search" name="q" value="{{ query }}" placeholder="Фамилия, название или тип результата">
+                    </label>
+                    <label>
+                        <span>Тип результата</span>
+                        <select name="type">
+                            <option value="">Все типы</option>
+                            {% for activity_type in activity_types %}
+                                <option value="{{ activity_type.id }}"{% if selected_type == activity_type.id|stringformat:"s" %} selected{% endif %}>{{ activity_type.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>
+                        <span>Учебный год</span>
+                        <select name="year">
+                            <option value="">Все годы</option>
+                            {% for year in years %}<option value="{{ year }}"{% if selected_year == year %} selected{% endif %}>{{ year }}</option>{% endfor %}
+                        </select>
+                    </label>
+                    <button type="submit">Показать</button>
+                </form>
+
+                {% if selected_owner_object %}
+                    <div class="activity-selected-owner">
+                        <span>Показан план сотрудника: <strong>{{ selected_owner_object }}</strong></span>
+                        {% if request.user.is_superuser %}
+                            <a href="{% url 'activities:list' %}?scope=mine&amp;owner={{ selected_owner_object.pk }}{% if selected_year %}&amp;year={{ selected_year|urlencode }}{% endif %}">Открыть с кругом выполнения</a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if activities %}
+                    <div class="activity-registry-table-wrap">
+                        <table class="activity-registry-table">
+                            <thead><tr><th>Результат</th><th>Ответственный</th><th>Период</th><th>Количество</th><th>Статус</th></tr></thead>
+                            <tbody>
+                                {% for activity in activities %}
+                                    <tr>
+                                        <td><strong>{{ activity.title }}</strong><small>{{ activity.activity_type.name }}{% if activity.grant_type %} · {{ activity.grant_type.name }}{% endif %}</small>{% if activity.actual_count %}<span class="activity-registry-actual">Подтверждено: {{ activity.actual_count }} из {{ activity.quantity }}</span>{% endif %}</td>
+                                        <td><a href="{% url 'author_profile' activity.owner.pk %}">{{ activity.owner }}</a><small>{{ activity.owner.org_unit.name|default:"Группа не указана" }}</small>{% if activity.collaborators.all %}<small>Соисполнители: {% for collaborator in activity.collaborators.all %}{% if not forloop.first %}, {% endif %}{{ collaborator }}{% endfor %}</small>{% endif %}</td>
+                                        <td>{{ activity.get_period_display }}<small>{{ activity.academic_year }}</small></td>
+                                        <td>{{ activity.quantity }}</td>
+                                        <td><span class="activity-state-badge status-{{ activity.status }}">{{ activity.get_status_display }}</span></td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="activity-registry-empty">По выбранным условиям записей нет.</div>
+                {% endif %}
+            </section>
+
+            {% if selected_owner_object and unplanned_scientific_results %}
+                <section class="activity-factual-card is-registry" aria-labelledby="activity-registry-factual-title">
+                    <div class="activity-card-heading">
+                        <div>
+                            <span class="activity-card-kicker">Подтверждено в системе</span>
+                            <h2 id="activity-registry-factual-title">Фактические результаты вне пунктов плана</h2>
+                        </div>
+                        <span class="activity-card-count">{{ unplanned_scientific_results|length }}</span>
+                    </div>
+                    <div class="activity-factual-list">
+                        {% for result in unplanned_scientific_results %}
+                            <article class="activity-factual-row">
+                                <span class="activity-result-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg></span>
+                                <div><strong>{{ result.title }}</strong><span>{{ result.activity_type.name }} · {{ result.result_year }}{% if result.publication_name %} · {{ result.publication_name }}{% endif %}</span>{% if result.bibliographic_data %}<p>{{ result.bibliographic_data }}</p>{% endif %}</div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
+        {% endif %}
+    </main>
+</div>
+
+<script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
+</body>
+</html>

@@ -1,0 +1,203 @@
+:root {
+    --workspace-font: "Manrope", "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+html {
+    font-size: 16px;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+    font-family: var(--workspace-font);
+}
+
+/* Общая навигация кабинета */
+.dashboard-sidebar-caption {
+    font-size: 0.72rem;
+}
+
+.dashboard-nav-link {
+    font-size: 0.92rem;
+}
+
+.dashboard-nav-count {
+    font-size: 0.72rem;
+}
+
+.dashboard-nav-section {
+    font-size: 0.7rem;
+}
+
+.dashboard-user-avatar {
+    font-size: 0.8rem;
+}
+
+.dashboard-user-copy strong {
+    font-size: 0.78rem;
+}
+
+.dashboard-user-copy small {
+    font-size: 0.7rem;
+}
+
+/* Главная страница кабинета */
+.dashboard-date,
+.dashboard-card-kicker {
+    font-size: 0.72rem;
+}
+
+.dashboard-primary-action {
+    font-size: 0.88rem;
+}
+
+.dashboard-messages li {
+    font-size: 0.82rem;
+}
+
+.dashboard-card-head p,
+.dashboard-attention-copy small,
+.dashboard-card-link,
+.dashboard-attention-action {
+    font-size: 0.76rem;
+}
+
+.dashboard-attention-copy strong,
+.dashboard-article-title {
+    font-size: 0.84rem;
+}
+
+.dashboard-empty-state strong,
+.dashboard-card-count {
+    font-size: 0.8rem;
+}
+
+.dashboard-empty-state span,
+.dashboard-article-row time,
+.dashboard-progress-ring-center small {
+    font-size: 0.72rem;
+}
+
+.dashboard-status {
+    font-size: 0.7rem;
+}
+
+.dashboard-progress-ring-center span {
+    font-size: 0.78rem;
+}
+
+.dashboard-plan-stats strong {
+    font-size: 0.88rem;
+}
+
+.dashboard-plan-stats small,
+.dashboard-plan-preview-title,
+.dashboard-plan-preview > a span,
+.dashboard-plan-preview > a small,
+.dashboard-plan-preview > p,
+.dashboard-review-card p {
+    font-size: 0.7rem;
+}
+
+.dashboard-review-card h3 {
+    font-size: 0.88rem;
+}
+
+/* Страница загрузки материала */
+.submission-back-link {
+    font-size: 0.82rem;
+}
+
+.submission-create-kicker,
+.submission-section-number {
+    font-size: 0.72rem;
+}
+
+.submission-create-header p {
+    font-size: 0.95rem;
+}
+
+.submission-section-heading h2 {
+    font-size: 1.12rem;
+}
+
+.submission-section-heading p {
+    font-size: 0.78rem;
+}
+
+.submission-field label {
+    font-size: 0.8rem;
+}
+
+.submission-field input:not([type="file"]):not([type="checkbox"]),
+.submission-field select,
+.submission-field textarea {
+    font-size: 0.84rem;
+}
+
+.submission-field > small,
+.journal-suggest-option small,
+.submission-file-copy small,
+.coauthor-results-note,
+.submission-form-alert,
+.submission-field-errors {
+    font-size: 0.72rem;
+}
+
+.journal-suggest-option strong,
+.submission-file-copy strong {
+    font-size: 0.8rem;
+}
+
+.journal-suggest-empty,
+.submission-file-copy span,
+.submission-file-button,
+.coauthor-option-name,
+.coauthor-empty,
+.submission-secondary-action,
+.submission-primary-action {
+    font-size: 0.76rem !important;
+}
+
+.coauthor-chip {
+    font-size: 0.72rem;
+}
+
+/* Страница входа */
+.auth-eyebrow {
+    font-size: 0.78rem;
+}
+
+.auth-visual-index,
+.auth-kicker {
+    font-size: 0.74rem;
+}
+
+.auth-form-heading p {
+    font-size: 0.96rem;
+}
+
+.auth-messages li,
+.auth-alert {
+    font-size: 0.82rem;
+}
+
+.auth-field label,
+.auth-label-row label {
+    font-size: 0.82rem;
+}
+
+.auth-input-wrap input {
+    font-size: 0.92rem;
+}
+
+.auth-field-meta,
+.auth-field-error {
+    font-size: 0.74rem;
+}
+
+.auth-submit {
+    font-size: 0.88rem;
+}

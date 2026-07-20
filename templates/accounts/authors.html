@@ -1,0 +1,54 @@
+{% extends "workspace_base.html" %}
+{% load workspace_navigation %}
+
+{% block title %}Авторы{% endblock %}
+
+{% block sidebar %}{% workspace_sidebar "matrix" %}{% endblock %}
+
+{% block content %}
+    <section class="surface">
+        <div class="section-head">
+            <div>
+                <h2>База авторов</h2>
+                <p>Авторы, у которых уже есть материалы в системе.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="table-card">
+        {% if authors %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Автор</th>
+                        <th>Группа</th>
+                        <th>Должность</th>
+                        <th>Всего материалов</th>
+                        <th>Отправлено</th>
+                        <th>Одобрено</th>
+                        <th>Последняя отправка</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for author in authors %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'activities:list' %}?scope=all&amp;owner={{ author.pk }}"><strong>{{ author }}</strong></a>
+                            </td>
+                            <td>{{ author.org_unit.name|default:"-" }}</td>
+                            <td>{{ author.position.name|default:"-" }}</td>
+                            <td>{{ author.submission_count }}</td>
+                            <td>{{ author.sent_submission_count }}</td>
+                            <td>{{ author.approved_submission_count }}</td>
+                            <td>{{ author.latest_submission_at|date:"d.m.Y H:i"|default:"-" }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">В системе пока нет авторов с материалами.</div>
+        {% endif %}
+    </section>
+{% endblock %}

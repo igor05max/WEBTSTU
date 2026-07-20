@@ -1,0 +1,83 @@
+{% extends "workspace_base.html" %}
+{% load static workspace_navigation %}
+
+{% block title %}Настройка Gemini — Научный ЭДО{% endblock %}
+{% block sidebar %}{% workspace_sidebar "gemini" %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'checks/gemini-settings.css' %}?v=20260720a">{% endblock %}
+
+{% block content %}
+    <header class="gemini-header">
+        <div>
+            <div class="gemini-kicker">Интеграция Google AI</div>
+            <h1>Настройка Gemini</h1>
+            <p>Ключ берётся из переменной окружения <code>GEMINI_API_KEY</code>, никогда не показывается на странице и не сохраняется в базе данных.</p>
+        </div>
+        <span class="gemini-state {% if api_key_configured %}is-ready{% else %}is-error{% endif %}">
+            {% if api_key_configured %}Ключ настроен{% else %}Ключ не задан{% endif %}
+        </span>
+    </header>
+
+    {% if messages %}
+        <div class="gemini-messages">
+            {% for message in messages %}<div class="gemini-message {{ message.tags }}">{{ message }}</div>{% endfor %}
+        </div>
+    {% endif %}
+
+    <section class="surface gemini-panel">
+        <div class="gemini-panel-head">
+            <div>
+                <span>01</span>
+                <div><h2>Доступные модели</h2><p>Показываются только модели с методом <code>generateContent</code>.</p></div>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <button class="gemini-button secondary" type="submit" name="action" value="fetch_models">Получить модели</button>
+            </form>
+        </div>
+
+        <form class="gemini-model-form" method="post">
+            {% csrf_token %}
+            <label for="gemini-model">Модель для проверок и определения области</label>
+            <div class="gemini-model-row">
+                <select id="gemini-model" name="model_name" {% if not models %}disabled{% endif %}>
+                    {% for model in models %}
+                        <option value="{{ model.id }}" {% if model.id == configuration.model_name %}selected{% endif %}>{{ model.id }} — {{ model.display_name }}</option>
+                    {% empty %}
+                        <option>Сначала получите список моделей</option>
+                    {% endfor %}
+                </select>
+                <button class="gemini-button" type="submit" name="action" value="save_model" {% if not models %}disabled{% endif %}>Сохранить модель</button>
+            </div>
+            <small>
+                Текущая модель: <strong>{{ configuration.model_name|default:"не выбрана" }}</strong>
+                {% if configuration.models_refreshed_at %} · список обновлён {{ configuration.models_refreshed_at|date:"d.m.Y H:i" }}{% endif %}
+            </small>
+        </form>
+    </section>
+
+    <section class="surface gemini-panel">
+        <div class="gemini-panel-head">
+            <div>
+                <span>02</span>
+                <div><h2>Test Gemini Connection</h2><p>Сначала получает модели, затем выполняет короткий запрос <code>generateContent</code>.</p></div>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <button class="gemini-button" type="submit" name="action" value="test_connection">Проверить подключение</button>
+            </form>
+        </div>
+
+        {% if diagnostics %}
+            <div class="gemini-diagnostics {% if configuration.last_test_status == 'error' %}is-error{% else %}is-success{% endif %}">
+                <div><span>Этап</span><strong>{{ diagnostics.stage|default:"—" }}</strong></div>
+                <div><span>HTTP status</span><strong>{{ diagnostics.http_status|default:"—" }}</strong></div>
+                <div><span>Error code</span><strong>{{ diagnostics.error_code|default:"—" }}</strong></div>
+                <div><span>Модель</span><strong>{{ diagnostics.model|default:"—" }}</strong></div>
+                <div class="wide"><span>Endpoint без ключа</span><code>{{ diagnostics.endpoint|default:"—" }}</code></div>
+                <div class="wide"><span>Сообщение Google API</span><p>{{ diagnostics.google_message|default:"—" }}</p></div>
+            </div>
+        {% else %}
+            <div class="gemini-empty">Подключение ещё не проверялось.</div>
+        {% endif %}
+    </section>
+{% endblock %}

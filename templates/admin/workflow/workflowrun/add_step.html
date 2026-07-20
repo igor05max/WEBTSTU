@@ -1,0 +1,79 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}
+{{ block.super }}
+{{ media.css }}
+<style>
+  .workflow-run-summary {
+    margin: 0 0 20px;
+    padding: 16px 18px;
+    border: 1px solid #d9e2f2;
+    border-radius: 10px;
+    background: #f7faff;
+  }
+
+  .workflow-run-summary p {
+    margin: 0 0 8px;
+  }
+
+  .workflow-run-summary p:last-child {
+    margin-bottom: 0;
+  }
+
+  .submit-row {
+    margin-top: 20px;
+  }
+</style>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+{{ media.js }}
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:workflow_workflowrun_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; <a href="{% url 'admin:workflow_workflowrun_change' workflow_run.pk %}">Запуск маршрута #{{ workflow_run.pk }}</a>
+  &rsaquo; Добавить индивидуальный этап
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="workflow-run-summary">
+    <p><strong>Заявка:</strong> {{ workflow_run.submission }}</p>
+    <p><strong>Шаблон:</strong> {{ workflow_run.route_template }}</p>
+    <p><strong>Текущий этап:</strong> {{ workflow_run.current_step|default:"Нет активного этапа" }}</p>
+  </div>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <p class="errornote">{{ form.non_field_errors|join:", " }}</p>
+    {% endif %}
+
+    <fieldset class="module aligned" data-assignment-scope>
+      {% for field in form %}
+        <div class="form-row{% if field.errors %} errors{% endif %}">
+          <div>
+            {{ field.errors }}
+            {{ field.label_tag }}
+            {{ field }}
+            {% if field.help_text %}
+              <div class="help">{{ field.help_text }}</div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </fieldset>
+
+    <div class="submit-row">
+      <input type="submit" value="Добавить этап" class="default">
+      <a href="{% url 'admin:workflow_workflowrun_change' workflow_run.pk %}" class="button cancel-link">Назад к маршруту</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

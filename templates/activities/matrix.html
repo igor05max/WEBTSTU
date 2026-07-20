@@ -1,0 +1,134 @@
+{% load static workspace_navigation %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Сводная таблица индивидуальных планов и фактических результатов сотрудников по кафедрам.">
+    <title>Таблица планов — Научный ЭДО</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
+    <link rel="stylesheet" href="{% static 'activities/matrix.css' %}?v=20260717d">
+    <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+</head>
+<body>
+<div class="dashboard-shell">
+    {% workspace_sidebar "matrix" %}
+
+    <main class="dashboard-main activity-matrix-main">
+        <header class="activity-matrix-header">
+            <div>
+                <span class="activity-matrix-kicker">Сводные данные</span>
+                <h1>Таблица планов</h1>
+                <p>Плановые и фактические результаты сотрудников по кафедрам. Нажмите на имя или дробь, чтобы открыть подробный список.</p>
+            </div>
+            <a class="activity-matrix-personal-link" href="{% url 'activities:list' %}?scope=mine&amp;year={{ selected_year|urlencode }}">
+                <span>Открыть мой план</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg>
+            </a>
+        </header>
+
+        <section class="activity-matrix-filter-card" aria-label="Фильтры таблицы">
+            <form method="get" action="{% url 'activities:matrix' %}" class="activity-matrix-filter">
+                <label class="activity-matrix-search">
+                    <span>Найти сотрудника</span>
+                    <span class="activity-matrix-control">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
+                        <input type="search" name="q" value="{{ matrix_query }}" placeholder="Введите фамилию или имя">
+                    </span>
+                </label>
+                <label>
+                    <span>Учебный год</span>
+                    <select name="year">
+                        {% for year in years %}
+                            <option value="{{ year }}"{% if selected_year == year %} selected{% endif %}>{{ year }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit">Показать</button>
+            </form>
+            <div class="activity-matrix-filter-meta">
+                <span>Сотрудников: <strong>{{ visible_people_count }}</strong></span>
+                <span>Типов результатов: <strong>{{ total_type_count }}</strong></span>
+                {% if uses_plan_roster %}<span class="is-source">Состав взят из индивидуальных планов</span>{% endif %}
+            </div>
+        </section>
+
+        <section class="activity-matrix-card">
+            <div class="activity-matrix-card-heading">
+                <div>
+                    <span class="activity-matrix-kicker">{{ selected_year }} учебный год</span>
+                    <h2>Планы и выполнение сотрудников</h2>
+                </div>
+                <div class="activity-matrix-heading-meta">
+                    <span><strong>Подтверждено по плану</strong> / запланировано</span>
+                    <p>Прокручивайте таблицу по горизонтали, чтобы посмотреть все виды результатов.</p>
+                </div>
+            </div>
+
+            <div class="activity-matrix-wrap" tabindex="0" aria-label="Таблица планов и фактических результатов сотрудников с горизонтальной прокруткой">
+                <table class="activities-matrix">
+                    <thead>
+                        <tr>
+                            <th class="matrix-person" rowspan="2">Сотрудник</th>
+                            <th class="matrix-position" rowspan="2">Должность</th>
+                            {% for group in type_groups %}
+                                <th class="matrix-area" colspan="{{ group.types|length }}">{{ group.name }}</th>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            {% for group in type_groups %}
+                                {% for activity_type in group.types %}
+                                    <th class="matrix-type" title="{{ activity_type.name }}">{{ activity_type.name }}</th>
+                                {% endfor %}
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for department_name, rows in departments %}
+                            <tr class="matrix-department">
+                                <td colspan="{{ total_type_count|add:'2' }}">
+                                    <span>{{ department_name }}</span>
+                                    <small>Сотрудников: {{ rows|length }}</small>
+                                </td>
+                            </tr>
+                            {% for row in rows %}
+                                <tr>
+                                    <td class="matrix-person">
+                                        <a href="{{ row.plan_url }}"><strong>{{ row.person }}</strong><small>Открыть план</small></a>
+                                    </td>
+                                    <td class="matrix-position">{{ row.person.position.name|default:"Не указана" }}</td>
+                                    {% for cell in row.cells %}
+                                        <td class="matrix-value{% if cell.has_value %} has-value{% endif %}">
+                                            {% if cell.has_value %}
+                                                <a class="matrix-ratio {{ cell.ratio_state }}" href="{{ cell.url }}" title="{{ cell.type_name }}: {% if cell.planned_count %}подтверждено по плану{% else %}подтверждено фактически{% endif %} {{ cell.actual_count }}, запланировано {% if cell.planned_count %}{{ cell.planned_count }}{% else %}не задано{% endif %}{% if cell.extra_count %}, вне плана {{ cell.extra_count }}{% endif %}">
+                                                    <strong>{{ cell.actual_count }}</strong>
+                                                    <span aria-hidden="true">/</span>
+                                                    <b>{% if cell.planned_count %}{{ cell.planned_count }}{% else %}—{% endif %}</b>
+                                                </a>
+                                                {% if cell.extra_count %}<small class="matrix-extra">+{{ cell.extra_count }} вне плана</small>{% endif %}
+                                                {% if cell.grant_summary %}<small>{{ cell.grant_summary|join:", " }}</small>{% endif %}
+                                            {% else %}<span>—</span>{% endif %}
+                                        </td>
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                        {% empty %}
+                            <tr>
+                                <td colspan="{{ total_type_count|add:'2' }}" class="matrix-empty">
+                                    {% if matrix_query %}Сотрудник «{{ matrix_query }}» не найден в планах за выбранный год.{% else %}За выбранный год данных пока нет.{% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
+</body>
+</html>

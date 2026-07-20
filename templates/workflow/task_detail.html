@@ -1,0 +1,347 @@
+{% extends "workspace_base.html" %}
+{% load workspace_navigation %}
+
+{% block title %}Задача #{{ task.id }}{% endblock %}
+
+{% block sidebar %}{% if task.status == "active" %}{% workspace_sidebar "review" %}{% else %}{% workspace_sidebar "review_history" %}{% endif %}{% endblock %}
+
+{% block content %}
+    <section class="surface">
+        <div class="section-head">
+            <div>
+                <h2>Задача #{{ task.id }}</h2>
+                <p><a href="{% url 'submissions:detail' submission.pk %}">{{ submission.title }}</a></p>
+            </div>
+            <span class="status-pill{% if task.status == 'approved' %} success{% elif task.status == 'rejected' %} danger{% elif task.status == 'revision_requested' %} warning{% else %} primary{% endif %}">
+                {{ task.get_status_display }}
+            </span>
+        </div>
+
+        <div class="info-pairs">
+            <div class="info-pair">
+                <span class="info-label">Этап</span>
+                <span class="info-value">{{ task.workflow_step.order }}. {{ task.workflow_step.name }}</span>
+            </div>
+            <div class="info-pair">
+                <span class="info-label">Маршрут</span>
+                <span class="info-value">{{ task.workflow_step.workflow_run.route_template.name }}</span>
+            </div>
+            <div class="info-pair">
+                <span class="info-label">Область экспертизы</span>
+                <span class="info-value">{{ submission.direction.name|default:"Не выбрано" }}</span>
+            </div>
+            <div class="info-pair">
+                <span class="info-label">Назначение</span>
+                <span class="info-value">
+                    {% if task.assigned_unit %}Группа: {{ task.assigned_unit.name }}{% endif %}
+                    {% if task.assigned_group %}<br>Роль: {{ task.assigned_group.name }}{% endif %}
+                    {% if task.assigned_user %}<br>Проверяющий: {{ task.assigned_user }}{% endif %}
+                    {% if not task.assigned_unit and not task.assigned_group and not task.assigned_user %}-{% endif %}
+                </span>
+            </div>
+            <div class="info-pair">
+                <span class="info-label">Активирована</span>
+                <span class="info-value">{{ task.activated_at|default:task.created_at|date:"d.m.Y H:i" }}</span>
+            </div>
+            <div class="info-pair">
+                <span class="info-label">Статус заявки</span>
+                <span class="info-value">{{ submission.get_status_display }}</span>
+            </div>
+        </div>
+
+        {% if current_active_task and current_active_task.id != task.id %}
+            <div class="empty stack-top-md">
+                Вы смотрите уже завершённый этап. Сейчас активна задача
+                <a href="{% url 'workflow:task_detail' current_active_task.id %}">#{{ current_active_task.id }}</a>
+                по этапу "{{ current_active_task.workflow_step.name }}".
+            </div>
+        {% endif %}
+
+        {% if is_route_approval_task %}
+            <div class="submission-note stack-top-md">
+                <div class="submission-section-title">Предварительная проверка маршрута</div>
+                <div class="submission-note-text">
+                    Для этого этапа не нужно работать через карточку задачи. Откройте
+                    <a href="{% url 'submissions:detail' submission.pk %}">карточку материала</a>,
+                    при необходимости поправьте область и маршрут и там же подтвердите запуск дальше.
+                </div>
+            </div>
+        {% endif %}
+    </section>
+
+    {% if task.status == "approved" %}
+        <section class="surface submission-form-panel">
+            <div class="section-head">
+                <div>
+                    <h3>Ваше решение сохранено</h3>
+                    <p>Этап «{{ task.workflow_step.name }}» согласован. Решение останется в истории и, если есть заключение, связано с вашей электронной подписью.</p>
+                </div>
+                <span class="status-pill success">Согласовано</span>
+            </div>
+            {% if current_active_task %}
+                <div class="text-block">
+                    Дальше материал рассматривает: <strong>{{ current_active_task.workflow_step.name }}</strong>.
+                    {% if current_active_task.assigned_user %}Исполнитель: {{ current_active_task.assigned_user }}.{% elif current_active_task.assigned_group %}Роль: {{ current_active_task.assigned_group.name }}.{% endif %}
+                </div>
+            {% else %}
+                <div class="text-block">Все этапы маршрута завершены.</div>
+            {% endif %}
+            <div class="actions stack-top-sm">
+                <a class="button secondary" href="{% url 'workflow:inbox' %}?scope=history">Открыть мою историю решений</a>
+                <a class="button secondary" href="{% url 'submissions:detail' submission.pk %}">Открыть историю по материалу</a>
+            </div>
+        </section>
+    {% endif %}
+
+    <section class="dashboard-grid">
+        <div class="surface">
+            <div class="section-head">
+                <div>
+                    <h3>Заявка и файл</h3>
+                </div>
+            </div>
+            <div class="info-pairs">
+                <div class="info-pair">
+                    <span class="info-label">Авторы</span>
+                    <span class="info-value">{{ submission.get_authors_display|default:"Не указаны" }}</span>
+                </div>
+                <div class="info-pair">
+                    <span class="info-label">Журнал</span>
+                    <span class="info-value">{{ submission.journal.name }}</span>
+                </div>
+                <div class="info-pair">
+                    <span class="info-label">Тип материала</span>
+                    <span class="info-value">{{ submission.article_type.name }}</span>
+                </div>
+                <div class="info-pair">
+                    <span class="info-label">Отправлена</span>
+                    <span class="info-value">{{ submission.submitted_at|date:"d.m.Y H:i"|default:"-" }}</span>
+                </div>
+            </div>
+            {% if submission.abstract %}
+                <div class="timeline stack-top-md">
+                    <div class="timeline-item">
+                        <strong>Аннотация</strong>
+                        <div class="text-block">{{ submission.abstract|linebreaksbr }}</div>
+                    </div>
+                </div>
+            {% endif %}
+            {% if submission.current_version %}
+                <div class="stack-top-md">
+                    <a class="button secondary" href="{{ submission.current_version.file.url }}">Скачать текущую версию v{{ submission.current_version.version_number }}</a>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="surface">
+            <div class="section-head">
+                <div>
+                    <h3>Результат текущего этапа</h3>
+                </div>
+            </div>
+            {% if task.decisions.all %}
+                <div class="timeline">
+                    {% for decision in task.decisions.all %}
+                        <div class="timeline-item">
+                            <strong>{{ decision.get_decision_display }}</strong>
+                            <div class="meta">{{ decision.actor }} | {{ decision.created_at|date:"d.m.Y H:i" }}</div>
+                            {% if decision.comment %}
+                                <div class="text-block">{{ decision.comment|linebreaksbr }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty">По текущему этапу результат пока не зафиксирован.</div>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="dashboard-grid">
+        <div class="surface">
+            <div class="section-head">
+                <div>
+                    <h3>Автопроверки перед маршрутом</h3>
+                </div>
+            </div>
+            {% if check_runs %}
+                <div class="timeline">
+                    {% for run in check_runs %}
+                        <div class="timeline-item">
+                            <strong>{{ run.check_definition.name }}</strong>
+                            <div class="meta">
+                                {{ run.get_status_display }} | версия v{{ run.version.version_number }} | {{ run.finished_at|default:run.created_at|date:"d.m.Y H:i" }}
+                            </div>
+                            {% if run.result_payload.message %}
+                                <div class="text-block">{{ run.result_payload.message }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty">Автопроверки ещё не запускались.</div>
+            {% endif %}
+        </div>
+
+        <div class="surface">
+            <div class="section-head">
+                <div>
+                    <h3>Прогресс маршрута</h3>
+                </div>
+            </div>
+            <div class="timeline">
+                {% for step in workflow_steps %}
+                    <div class="timeline-item">
+                        <div class="section-head compact">
+                            <div>
+                                <strong>{{ step.order }}. {{ step.name }}</strong>
+                                <div class="meta">
+                                    Статус этапа: {{ step.get_status_display }}
+                                    {% if workflow_run.current_step_id == step.id and task.status == "active" %}
+                                        | Сейчас на рассмотрении
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <span class="status-pill{% if step.status == 'approved' %} success{% elif step.status == 'rejected' %} danger{% elif step.status == 'active' %} primary{% elif step.status == 'revision_requested' %} warning{% endif %}">
+                                {{ step.get_status_display }}
+                            </span>
+                        </div>
+
+                        <div class="meta">
+                            {% if step.assigned_unit %}Группа: {{ step.assigned_unit.name }}{% endif %}
+                            {% if step.assigned_group %} | Роль: {{ step.assigned_group.name }}{% endif %}
+                            {% if step.assigned_user %} | Проверяющий: {{ step.assigned_user }}{% endif %}
+                            {% if not step.assigned_unit and not step.assigned_group and not step.assigned_user %}Исполнитель не задан{% endif %}
+                        </div>
+
+                        {% if step.tasks.all %}
+                            <div class="timeline stack-top-sm">
+                                {% for step_task in step.tasks.all %}
+                                    <div class="timeline-item">
+                                        <strong>Задача #{{ step_task.id }}</strong>
+                                        <div class="meta">
+                                            {{ step_task.get_status_display }}
+                                            {% if step_task.activated_at %}| Активна с {{ step_task.activated_at|date:"d.m.Y H:i" }}{% endif %}
+                                        </div>
+
+                                        {% if step_task.decisions.all %}
+                                            {% for decision in step_task.decisions.all %}
+                                                <div class="text-block">
+                                                    <strong>{{ decision.get_decision_display }}</strong>
+                                                    <div class="meta">{{ decision.actor }} | {{ decision.created_at|date:"d.m.Y H:i" }}</div>
+                                                    {% if decision.comment %}
+                                                        <div class="text-block-tight">{{ decision.comment|linebreaksbr }}</div>
+                                                    {% endif %}
+                                                </div>
+                                            {% endfor %}
+                                        {% elif step_task.id == task.id and task.status == "active" %}
+                                            <div class="empty stack-top-sm">Ожидается ваш результат проверки по текущему этапу.</div>
+                                        {% else %}
+                                            <div class="empty stack-top-sm">Результат по этой задаче ещё не зафиксирован.</div>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    {% if conclusion_document %}
+        <section class="surface submission-form-panel">
+            <div class="section-head">
+                <div>
+                    <h3>Заключение {{ conclusion_document.registration_number }}</h3>
+                    <p>DOCX сформирован до первого подписания и защищен контрольной суммой.</p>
+                </div>
+                <span class="status-pill success">DOCX зафиксирован</span>
+            </div>
+            <p class="meta">SHA-256: {{ conclusion_document.document_sha256 }}</p>
+            <div class="actions">
+                <a class="button secondary" href="{{ conclusion_document.document_file.url }}">Скачать подписываемое заключение DOCX</a>
+            </div>
+            {% if conclusion_document.signatures.all %}
+                <div class="timeline stack-top-md">
+                    {% for signature in conclusion_document.signatures.all %}
+                        <div class="timeline-item">
+                            <strong>{{ signature.signer_name }} — {{ signature.signer_role }}</strong>
+                            <div class="meta">Подписано ПЭП {{ signature.signed_at|date:"d.m.Y H:i" }} | версия рукописи v{{ signature.submission_version_number }}</div>
+                            <div class="meta">SHA-256 версии: {{ signature.submission_version_sha256 }}</div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="meta stack-top-sm">Подписей ПЭП пока нет.</p>
+            {% endif %}
+        </section>
+    {% endif %}
+
+    {% if action_state.can_act and not is_route_approval_task %}
+        <section class="dashboard-grid">
+            {% if action_state.can_approve %}
+                <div class="form-card">
+                    <div class="section-head">
+                        <div>
+                            <h3>{% if conclusion_document %}Одобрить и подписать{% else %}Согласовать этап{% endif %}</h3>
+                            <p>{% if conclusion_document %}Подпись ПЭП будет зафиксирована от имени текущего пользователя и привязана к текущей версии рукописи.{% else %}Для положительного решения комментарий необязателен.{% endif %}</p>
+                        </div>
+                    </div>
+                    <form method="post" action="{% url 'workflow:approve_task' task.pk %}">
+                        {% csrf_token %}
+                        {{ approve_form.as_p }}
+                        <div class="actions">
+                            <button class="success" type="submit">{% if conclusion_document %}Одобрить и подписать{% else %}Одобрить{% endif %}</button>
+                        </div>
+                    </form>
+                </div>
+            {% endif %}
+
+            {% if action_state.can_request_revision %}
+                <div class="form-card">
+                    <div class="section-head">
+                        <div>
+                            <h3>Вернуть на доработку</h3>
+                            <p>Маршрут будет поставлен на паузу. Автор загрузит новую версию материала, она снова пройдет автопроверки, и после этого её можно будет повторно отправить в согласование. Комментарий обязателен.</p>
+                        </div>
+                    </div>
+                        <form method="post" action="{% url 'workflow:request_revision' task.pk %}">
+                            {% csrf_token %}
+                            {{ revision_form.as_p }}
+                            <div class="actions">
+                                <button class="secondary" type="submit">На доработку</button>
+                            </div>
+                        </form>
+                    </div>
+            {% endif %}
+
+            {% if action_state.can_reject %}
+                <div class="form-card">
+                    <div class="section-head">
+                        <div>
+                            <h3>Отклонить заявку</h3>
+                            <p>Отклонение завершает текущий маршрут. После этого автор сможет один раз подать апелляцию. Комментарий обязателен.</p>
+                        </div>
+                    </div>
+                    <form method="post" action="{% url 'workflow:reject_task' task.pk %}">
+                        {% csrf_token %}
+                        {{ reject_form.as_p }}
+                        <div class="actions">
+                            <button class="danger" type="submit">Отклонить</button>
+                        </div>
+                    </form>
+                </div>
+            {% endif %}
+        </section>
+    {% else %}
+        <section class="surface">
+            <div class="section-head">
+                <div>
+                    <h3>Действия по этапу недоступны</h3>
+                    <p>{{ action_state.reason }}</p>
+                </div>
+            </div>
+        </section>
+    {% endif %}
+{% endblock %}

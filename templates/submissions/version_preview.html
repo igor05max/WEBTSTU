@@ -1,0 +1,95 @@
+{% extends "workspace_base.html" %}
+{% load static workspace_navigation %}
+
+{% block title %}Просмотр v{{ version.version_number }} — {{ submission.title }}{% endblock %}
+
+{% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/version-preview.css' %}?v=20260720a">{% endblock %}
+
+{% block content %}
+    <header class="document-preview-header">
+        <div>
+            <a class="document-preview-back" href="{% url 'submissions:detail' submission.pk %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                К статье
+            </a>
+            <div class="document-preview-kicker">Версия {{ version.version_number }}</div>
+            <h1>Просмотр файла</h1>
+            <p>{{ submission.title }}</p>
+        </div>
+        <a class="document-preview-download" href="{{ version.file.url }}" download>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+            Скачать оригинал
+        </a>
+    </header>
+
+    <section class="surface document-preview-shell" aria-labelledby="document-preview-name">
+        <div class="document-preview-toolbar">
+            <div class="document-preview-file">
+                <span class="document-preview-file-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M7 2h7l5 5v15H7z"/><path d="M14 2v6h5"/></svg>
+                </span>
+                <div>
+                    <h2 id="document-preview-name">{{ display_filename }}</h2>
+                    <span>Загрузил {{ version.uploaded_by }} &bull; {{ version.created_at|date:"d.m.Y H:i" }}</span>
+                </div>
+            </div>
+            <span class="document-preview-format">{{ preview_label }}</span>
+        </div>
+
+        {% if preview_error %}
+            <div class="document-preview-message error">
+                <strong>Не удалось показать файл</strong>
+                <span>{{ preview_error }}</span>
+                <a href="{{ version.file.url }}" download>Скачать оригинал</a>
+            </div>
+        {% elif preview_kind == "pdf" or preview_kind == "legacy_doc" or preview_kind == "word_pdf" %}
+            <div class="document-preview-pdf">
+                <iframe
+                    title="Предпросмотр {{ display_filename }}"
+                    src="{% url 'submissions:version_content' submission.pk version.pk %}#toolbar=1&amp;navpanes=0"
+                ></iframe>
+            </div>
+        {% elif preview_kind == "text" %}
+            <article class="document-preview-paper text-file">
+                <pre>{{ text_content }}</pre>
+            </article>
+        {% elif preview_kind == "docx" %}
+            <article class="document-preview-paper word-file">
+                {% for block in document_blocks %}
+                    {% if block.kind == "heading" %}
+                        <div class="word-heading level-{{ block.level }}">{{ block.text }}</div>
+                    {% elif block.kind == "list_item" %}
+                        <div class="word-list-item"><span aria-hidden="true">•</span><div>{{ block.text|linebreaksbr }}</div></div>
+                    {% elif block.kind == "quote" %}
+                        <blockquote>{{ block.text|linebreaksbr }}</blockquote>
+                    {% elif block.kind == "table" %}
+                        <div class="word-table-scroll">
+                            <table>
+                                <tbody>
+                                {% for row in block.rows %}
+                                    <tr>{% for cell in row %}<td>{{ cell|linebreaksbr }}</td>{% endfor %}</tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p>{{ block.text|linebreaksbr }}</p>
+                    {% endif %}
+                {% empty %}
+                    <div class="document-preview-message">
+                        <strong>В документе нет текста для показа</strong>
+                        <span>Изображения и сложные встроенные объекты могут быть доступны только в исходном файле.</span>
+                    </div>
+                {% endfor %}
+            </article>
+        {% endif %}
+
+        {% if is_truncated %}
+            <div class="document-preview-truncated">
+                Показана только первая часть большого файла. Полное содержимое доступно в оригинале.
+            </div>
+        {% endif %}
+    </section>
+{% endblock %}

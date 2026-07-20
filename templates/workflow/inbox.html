@@ -1,0 +1,109 @@
+{% extends "workspace_base.html" %}
+{% load workspace_navigation %}
+
+{% block title %}{% if is_history %}История проверок{% else %}Проверка материалов{% endif %}{% endblock %}
+
+{% block sidebar %}
+    {% if is_history %}{% workspace_sidebar "review_history" %}{% else %}{% workspace_sidebar "review" %}{% endif %}
+{% endblock %}
+
+{% block content %}
+    <header class="workspace-page-header">
+        <div>
+            <span class="workspace-page-kicker">Экспертиза</span>
+            <h1>{% if is_history %}История моих решений{% else %}Проверка материалов{% endif %}</h1>
+            <p>
+                {% if is_history %}
+                    Все материалы, по которым вы уже зафиксировали результат проверки.
+                {% else %}
+                    Материалы, доступные вам по роли, кафедре или личному назначению.
+                {% endif %}
+            </p>
+        </div>
+    </header>
+
+    <section class="workflow-inbox-card">
+        <nav class="workflow-inbox-tabs" aria-label="Разделы задач">
+            <div class="tabs">
+                {% for tab in tabs %}
+                    <a class="tab-link{% if tab.is_active %} active{% endif %}" href="{% url 'workflow:inbox' %}?scope={{ tab.scope|urlencode }}"{% if tab.is_active %} aria-current="page"{% endif %}>
+                        <span>{{ tab.label }}</span>
+                        <span class="tab-badge">{{ tab.count }}</span>
+                    </a>
+                {% endfor %}
+            </div>
+        </nav>
+
+        <div class="workflow-inbox-heading">
+            <div>
+                <h2>{{ active_tab.label }}</h2>
+                <p>{{ active_tab.description }}</p>
+            </div>
+            <span class="workflow-inbox-count" aria-label="Количество задач">{{ tasks|length }}</span>
+        </div>
+
+        {% if tasks %}
+            <div class="workflow-task-list">
+                {% for task in tasks %}
+                    <article class="workflow-task-row">
+                        <span class="workflow-task-number"><strong>#{{ task.id }}</strong></span>
+
+                        <div class="workflow-task-main">
+                            {% if task.workflow_step.workflow_run.awaiting_route_approval %}
+                                <strong>{{ task.workflow_step.workflow_run.submission.title }}</strong>
+                            {% else %}
+                                <a href="{% url 'submissions:detail' task.workflow_step.workflow_run.submission.pk %}">{{ task.workflow_step.workflow_run.submission.title }}</a>
+                            {% endif %}
+                            <span>{{ task.workflow_step.workflow_run.submission.get_authors_display|default:"Авторы не указаны" }}{% if task.workflow_step.workflow_run.submission.direction %} · {{ task.workflow_step.workflow_run.submission.direction.name }}{% endif %}</span>
+                            {% if is_history and task.history_decision.comment %}<div class="workflow-task-comment">{{ task.history_decision.comment|truncatechars:110 }}</div>{% endif %}
+                        </div>
+
+                        <div class="workflow-task-column workflow-task-stage">
+                            <strong>{{ task.workflow_step.name }}</strong>
+                            <span>{{ task.workflow_step.workflow_run.route_template.name }}</span>
+                            {% if task.workflow_step.workflow_run.awaiting_route_approval %}<span>Проверка в карточке материала</span>{% endif %}
+                        </div>
+
+                        <div class="workflow-task-column workflow-task-assignment">
+                            {% if task.assigned_user %}
+                                <strong>{{ task.assigned_user }}</strong><span>Личное назначение</span>
+                            {% elif task.assigned_group %}
+                                <strong>{{ task.assigned_group.name }}</strong><span>{{ task.assigned_unit.name|default:"Роль проверяющего" }}</span>
+                            {% elif task.assigned_unit %}
+                                <strong>{{ task.assigned_unit.name }}</strong><span>Группа</span>
+                            {% else %}
+                                <strong>Общая очередь</strong><span>Без отдельного назначения</span>
+                            {% endif %}
+                        </div>
+
+                        <div class="workflow-task-column workflow-task-time">
+                            {% if is_history %}
+                                {% if task.history_decision %}
+                                    <strong>{{ task.history_decision.get_decision_display }}</strong>
+                                    <span>{{ task.history_decision.created_at|date:"d.m.Y H:i" }}</span>
+                                {% else %}<strong>Решение сохранено</strong>{% endif %}
+                            {% else %}
+                                <strong>{{ task.activated_at|default:task.created_at|date:"d.m.Y" }}</strong>
+                                <span>Активна с {{ task.activated_at|default:task.created_at|date:"H:i" }}</span>
+                            {% endif %}
+                        </div>
+
+                        {% if task.workflow_step.workflow_run.awaiting_route_approval %}
+                            <a class="workflow-task-action" href="{% url 'submissions:detail' task.workflow_step.workflow_run.submission.pk %}">
+                                <span>К материалу</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg>
+                            </a>
+                        {% else %}
+                            <a class="workflow-task-action" href="{% url 'workflow:task_detail' task.pk %}">
+                                <span>{% if is_history %}Посмотреть{% else %}Проверить{% endif %}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg>
+                            </a>
+                        {% endif %}
+                    </article>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty workflow-inbox-empty">
+                {% if is_history %}В истории пока нет завершённых вами проверок.{% else %}В этой вкладке активных задач нет.{% endif %}
+            </div>
+        {% endif %}
+    </section>
+{% endblock %}

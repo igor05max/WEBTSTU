@@ -1,0 +1,828 @@
+{% extends "workspace_base.html" %}
+{% load static workspace_navigation %}
+
+{% block title %}Заявка {{ submission.id }}{% endblock %}
+
+{% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/detail.css' %}?v=20260719a">{% endblock %}
+
+{% block content %}
+    {% if route_review_preview_payload %}
+        {{ route_review_preview_payload|json_script:"route-review-preview-data" }}
+    {% endif %}
+
+    <section class="surface submission-card">
+        <div class="submission-head">
+            <div>
+                <h1 class="submission-title">{{ submission.title }}</h1>
+            </div>
+            <span id="submission-status-pill" class="status-pill {{ status_tone }}">
+                {{ submission.get_status_display }}
+            </span>
+        </div>
+
+        <div class="submission-meta-grid">
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Отправитель</div>
+                <div class="submission-meta-value"><a href="{% url 'activities:list' %}?scope=all&amp;owner={{ submission.author_id }}">{{ submission.author }}</a></div>
+            </div>
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Пользователи-авторы</div>
+                <div class="submission-meta-value">
+                    {% for author in submission.authors.all %}
+                        <a href="{% url 'activities:list' %}?scope=all&amp;owner={{ author.id }}">{{ author }}</a>{% if not forloop.last %}, {% endif %}
+                    {% empty %}
+                        Не указаны
+                    {% endfor %}
+                </div>
+            </div>
+            {% if submission.document_authors %}
+                <div class="submission-meta-card">
+                    <div class="submission-meta-label">Авторы в документе</div>
+                    <div class="submission-meta-value">{{ submission.document_authors|linebreaksbr }}</div>
+                </div>
+            {% endif %}
+            {% if submission.organizations %}
+                <div class="submission-meta-card">
+                    <div class="submission-meta-label">Организации</div>
+                    <div class="submission-meta-value">{{ submission.organizations|linebreaksbr }}</div>
+                </div>
+            {% endif %}
+            {% if submission.contact_emails %}
+                <div class="submission-meta-card">
+                    <div class="submission-meta-label">Контактные e-mail</div>
+                    <div class="submission-meta-value">{{ submission.contact_emails }}</div>
+                </div>
+            {% endif %}
+            {% if submission.keywords %}
+                <div class="submission-meta-card">
+                    <div class="submission-meta-label">Ключевые слова</div>
+                    <div class="submission-meta-value">{{ submission.keywords }}</div>
+                </div>
+            {% endif %}
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Журнал</div>
+                <div class="submission-meta-value">{{ submission.journal.name }}</div>
+            </div>
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Создана</div>
+                <div class="submission-meta-value">{{ submission.created_at|date:"d.m.Y" }}</div>
+            </div>
+        </div>
+
+        {% if submission.abstract %}
+            <div class="submission-note">
+                <div class="submission-section-title">Аннотация</div>
+                <div class="submission-note-text">{{ submission.abstract|linebreaksbr }}</div>
+            </div>
+        {% endif %}
+
+        {% if is_auto_checking %}
+            <div id="submission-progress-note" class="submission-note">
+                <div class="submission-section-title">Автопроверки выполняются</div>
+                <div class="submission-note-text">
+                    Заявка уже открыта. Проверки, определение области и подбор маршрута идут в фоне. Результаты на этой странице обновляются автоматически.
+                </div>
+            </div>
+        {% endif %}
+
+        {% if can_review_route %}
+            <div class="submission-form-panel">
+                <div class="submission-section-title">Проверка маршрута кафедрой</div>
+                <p class="meta meta-form-note">
+                    Проверьте, правильно ли определены область экспертизы и маршрут. Если нужно, исправьте их здесь.
+                    Сам маршрут показан ниже, а кнопка подтверждения находится внизу страницы.
+                </p>
+                <form id="route-review-form" method="post" action="{% url 'submissions:update_route' submission.pk %}" class="submission-submit-form">
+                    {% csrf_token %}
+                    {{ route_review_form.non_field_errors }}
+                    <div class="form-field">
+                        {{ route_review_form.direction.label_tag }}
+                        {{ route_review_form.direction.errors }}
+                        {{ route_review_form.direction }}
+                        {% if route_review_form.direction.help_text %}
+                            <span class="helptext">{{ route_review_form.direction.help_text }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="form-field">
+                        {{ route_review_form.route_template.label_tag }}
+                        {{ route_review_form.route_template.errors }}
+                        {{ route_review_form.route_template }}
+                        {% if route_review_form.route_template.help_text %}
+                            <span class="helptext">{{ route_review_form.route_template.help_text }}</span>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        {% endif %}
+
+    </section>
+
+    <section class="surface submission-route-card" id="submission-route" aria-labelledby="submission-route-title">
+        <div class="section-head submission-compact-head">
+            <div>
+                <h3 id="submission-route-title">Маршрут согласования</h3>
+            </div>
+        </div>
+
+        {% if not can_view_route_details %}
+            <div class="empty">
+                {% if can_submit or is_route_approval_pending %}
+                    Маршрут станет доступен автору после проверки и одобрения заведующим кафедрой.
+                {% else %}
+                    Маршрут пока недоступен.
+                {% endif %}
+            </div>
+        {% elif primary_workflow_run %}
+                <div class="submission-run-block">
+                    {% if is_route_approval_pending and selected_route_preview_template %}
+                        <div id="route-review-preview-panel" class="submission-comments-panel submission-comments-panel-preview">
+                            <div class="submission-comments-title">Предварительный основной маршрут</div>
+                            <div id="route-review-preview-meta" class="meta">{{ selected_route_preview_template.direction_name|default:"Без области" }} | {{ selected_route_preview_template.name }}</div>
+                            <div class="meta">Первый этап ниже уже активен. Остальные шаги запустятся после подтверждения кафедрой.</div>
+                        </div>
+                    {% endif %}
+
+                    <div id="route-review-stepper" class="workflow-stepper" data-active-step-count="{{ primary_workflow_run.ordered_steps|length }}" aria-label="Этапы маршрута согласования">
+                        {% for step in primary_workflow_run.ordered_steps %}
+                            <div class="workflow-step{% if step.status == 'approved' %} is-approved{% elif step.status == 'rejected' %} is-rejected{% elif step.status == 'active' %} is-active{% elif step.status == 'revision_requested' %} is-revision{% endif %}">
+                                <div class="workflow-step-node">
+                                    <div class="workflow-step-dot" aria-hidden="true">
+                                        {% if step.status == 'approved' %}
+                                            <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.3 3.3L17.7 8"/></svg>
+                                        {% elif step.status == 'rejected' %}
+                                            <svg viewBox="0 0 24 24"><path d="m8 8 8 8M16 8l-8 8"/></svg>
+                                        {% elif step.status == 'revision_requested' %}
+                                            <span>!</span>
+                                        {% elif step.status == 'active' %}
+                                            <i></i>
+                                        {% endif %}
+                                    </div>
+                                    <span class="workflow-step-order">{{ step.order }}</span>
+                                </div>
+                                <div class="workflow-step-copy">
+                                    <div class="workflow-step-name">{{ step.route_stage_title }}</div>
+                                    <div class="workflow-step-user">{{ step.route_user_text }}</div>
+                                    {% if step.route_meta_text %}
+                                        <div class="workflow-step-meta">{{ step.route_meta_text }}</div>
+                                    {% endif %}
+                                    <div class="workflow-step-state{% if step.status == 'approved' %} success{% elif step.status == 'rejected' %} danger{% elif step.status == 'active' %} primary{% elif step.status == 'revision_requested' %} warning{% else %} muted{% endif %}">
+                                        {{ step.route_state_text }}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                        {% if is_route_approval_pending and selected_route_preview_template %}
+                            {% for step in selected_route_preview_template.steps %}
+                                <div class="workflow-step" data-route-preview-step="true">
+                                    <div class="workflow-step-node">
+                                        <div class="workflow-step-dot" aria-hidden="true"></div>
+                                        <span class="workflow-step-order">{{ primary_workflow_run.ordered_steps|length|add:forloop.counter }}</span>
+                                    </div>
+                                    <div class="workflow-step-copy">
+                                        <div class="workflow-step-name">{{ step.name }}</div>
+                                        <div class="workflow-step-user">{{ step.assignment_short_text }}</div>
+                                        {% if step.assignment_meta_text %}
+                                            <div class="workflow-step-meta">{{ step.assignment_meta_text }}</div>
+                                        {% endif %}
+                                        <div class="workflow-step-state muted">Ожидает запуска</div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+
+                    <details class="submission-decision-details">
+                        <summary>
+                            <span class="submission-decision-summary-copy">
+                                <small>Фактические результаты этапов</small>
+                                <strong>Комментарии и решения</strong>
+                                <span>{% if primary_workflow_run.commentary_entries %}Решений: {{ primary_workflow_run.commentary_entries|length }}{% else %}Решений пока нет{% endif %}</span>
+                            </span>
+                            <span class="submission-decision-chevron" aria-hidden="true">
+                                <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+                            </span>
+                        </summary>
+
+                        <div class="submission-decision-body">
+                            {% if primary_workflow_run.commentary_entries %}
+                                <div class="submission-decision-list">
+                                    {% for entry in primary_workflow_run.commentary_entries %}
+                                        <article class="submission-decision-row{% if entry.tone == 'approve' %} is-success{% elif entry.tone == 'reject' %} is-danger{% elif entry.tone == 'request_revision' %} is-warning{% elif entry.tone == 'active' %} is-primary{% endif %}">
+                                            <span class="submission-decision-mark" aria-hidden="true"></span>
+                                            <div class="submission-decision-copy">
+                                                <div class="submission-decision-head">
+                                                    <strong>{{ entry.step_title }}{% if entry.attempt_label %} <span>• {{ entry.attempt_label }}</span>{% endif %}</strong>
+                                                    <span class="submission-decision-status">{{ entry.result }}</span>
+                                                </div>
+                                                <div class="submission-decision-meta">
+                                                    <span>{{ entry.actor }}</span>
+                                                    {% if entry.date %}<time datetime="{{ entry.date|date:'c' }}">{{ entry.date|date:"d.m.Y H:i" }}</time>{% endif %}
+                                                </div>
+                                                {% if entry.comment %}
+                                                    <div class="submission-decision-comment">{{ entry.comment|linebreaksbr }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </article>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <div class="empty">По маршруту ещё нет зафиксированных решений.</div>
+                            {% endif %}
+                        </div>
+                    </details>
+
+                </div>
+        {% else %}
+            <div class="empty">Маршрут ещё не запущен.</div>
+        {% endif %}
+    </section>
+
+    <section class="dashboard-grid">
+        <div class="surface submission-side-card">
+            <div class="submission-section-title">Версии файла</div>
+            {% if versions %}
+                <div class="submission-list">
+                    {% for version in versions %}
+                        <div class="submission-list-row">
+                            <div>
+                                <div class="submission-list-main">
+                                    v{{ version.version_number }}
+                                    {% if submission.current_version_id == version.id %}
+                                        <span class="submission-mini-tag success">текущая</span>
+                                    {% endif %}
+                                </div>
+                                <div class="meta">{{ version.created_at|date:"d.m.Y H:i" }} &bull; {{ version.uploaded_by }}</div>
+                                <div class="submission-file-name" title="{{ version.display_filename }}">{{ version.display_filename }}</div>
+                            </div>
+                            <div class="submission-file-actions">
+                                {% if version.preview_available %}
+                                    <a class="submission-file-preview-link" href="{% url 'submissions:version_preview' submission.pk version.pk %}">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+                                        Посмотреть
+                                    </a>
+                                {% endif %}
+                                <a class="submission-inline-link" href="{{ version.file.url }}" download>Скачать</a>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty">Версий пока нет.</div>
+            {% endif %}
+        </div>
+
+        <div class="surface submission-side-card submission-checks-card">
+            <div class="submission-checks-heading">
+                <div>
+                    <div class="submission-section-title">Проверки</div>
+                    <p>Замечания видны экспертам, но не блокируют отправку материала.</p>
+                </div>
+                {% if submission.current_version %}
+                    <a class="submission-check-report-link" href="{% url 'submissions:checks_report' submission.pk %}">JSON-отчёт</a>
+                {% endif %}
+            </div>
+            {% if check_entries %}
+                <div id="submission-check-list" class="submission-check-list">
+                    {% for entry in check_entries %}
+                        <details class="submission-check-card is-{{ entry.tone }}"{% if entry.tone == 'danger' %} open{% endif %}>
+                            <summary>
+                                <span class="submission-check-summary-copy">
+                                    <strong>{{ entry.name }}</strong>
+                                    {% if entry.message %}<small>{{ entry.message }}</small>{% endif %}
+                                </span>
+                                <span class="submission-check-status{% if entry.tone == 'success' %} success{% elif entry.tone == 'danger' %} danger{% elif entry.tone == 'warning' %} warning{% elif entry.tone == 'primary' %} primary{% else %} muted{% endif %}">{{ entry.status_display }}</span>
+                                <span class="submission-check-chevron" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg>
+                                </span>
+                            </summary>
+                            <div class="submission-check-body">
+                                {% if entry.summary.total %}
+                                    <div class="submission-check-counts">
+                                        {% if entry.summary.critical %}<span class="critical">Критические: {{ entry.summary.critical }}</span>{% endif %}
+                                        {% if entry.summary.error %}<span class="error">Ошибки: {{ entry.summary.error }}</span>{% endif %}
+                                        {% if entry.summary.warning %}<span class="warning">Предупреждения: {{ entry.summary.warning }}</span>{% endif %}
+                                        {% if entry.summary.info %}<span class="info">Информация: {{ entry.summary.info }}</span>{% endif %}
+                                    </div>
+                                {% endif %}
+                                {% if entry.issues %}
+                                    <div class="submission-check-issues">
+                                        {% for issue in entry.issues %}
+                                            <article class="submission-check-issue is-{{ issue.severity }}">
+                                                <div class="submission-check-issue-head">
+                                                    <strong>{{ issue.title }}</strong>
+                                                    <span>{{ issue.severity }}</span>
+                                                </div>
+                                                <p>{{ issue.message }}</p>
+                                                {% if issue.location %}<small>{{ issue.location }}</small>{% endif %}
+                                                {% if issue.context %}
+                                                    <blockquote>
+                                                        {{ issue.context_before }}{% if issue.context_highlight %}<mark>{{ issue.context_highlight }}</mark>{% endif %}{{ issue.context_after }}
+                                                    </blockquote>
+                                                {% endif %}
+                                                {% if issue.suggestion %}<div class="submission-check-suggestion">Что сделать: {{ issue.suggestion }}</div>{% endif %}
+                                            </article>
+                                        {% endfor %}
+                                    </div>
+                                {% elif entry.status == 'passed' %}
+                                    <div class="submission-check-empty">Замечаний по этой проверке нет.</div>
+                                {% else %}
+                                    <div class="submission-check-empty">Подробности появятся после завершения проверки.</div>
+                                {% endif %}
+                            </div>
+                        </details>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div id="submission-check-list-empty" class="empty">Проверки ещё не запускались.</div>
+            {% endif %}
+        </div>
+    </section>
+
+    {% if recommendation_run %}
+        <section class="surface submission-form-panel">
+            <div class="section-head">
+                <div>
+                    <h3>Рекомендуемые статьи</h3>
+                    <p>{{ recommendation_message|default:"Подбор похожих статей по текущей версии заявки." }}</p>
+                </div>
+                {% if submission.current_version %}
+                    <span class="status-pill primary">v{{ submission.current_version.version_number }}</span>
+                {% endif %}
+            </div>
+
+            {% if recommended_articles %}
+                <div class="timeline">
+                    {% for article in recommended_articles %}
+                        <div class="timeline-item">
+                            <div class="section-head compact">
+                                <div>
+                                    <h4>{{ article.title }}</h4>
+                                    <div class="meta">{{ article.issue }} | {{ article.section }}</div>
+                                </div>
+                                <span class="status-pill primary">{{ article.score_percent }}%</span>
+                            </div>
+                            {% if article.authors %}
+                                <div class="meta">Авторы: {{ article.authors }}</div>
+                            {% endif %}
+                            {% if article.pages %}
+                                <div class="meta">Страницы: {{ article.pages }}</div>
+                            {% endif %}
+                            {% if article.matched_terms %}
+                                <div class="meta stack-top-sm">Совпавшие термины: {{ article.matched_terms|join:", " }}</div>
+                            {% endif %}
+                            {% if article.summary %}
+                                <div class="text-block">{{ article.summary }}</div>
+                            {% endif %}
+                            {% if article.url %}
+                                <div class="stack-top-sm">
+                                    <a class="button secondary" href="{{ article.url }}" target="_blank" rel="noreferrer">Открыть источник</a>
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty">{{ recommendation_message|default:"Похожие статьи пока не найдены." }}</div>
+            {% endif %}
+        </section>
+    {% endif %}
+
+    {% if upload_form %}
+        <section class="surface submission-form-panel">
+            <div class="submission-section-title">Загрузить новую версию</div>
+            <p class="meta meta-form-note">После загрузки система сразу повторно запустит автопроверки по текущей версии.</p>
+            <form method="post" enctype="multipart/form-data" action="{% url 'submissions:upload_version' submission.pk %}">
+                {% csrf_token %}
+                {{ upload_form.as_p }}
+                <div class="actions">
+                    <button type="submit">Загрузить и проверить</button>
+                </div>
+            </form>
+        </section>
+    {% endif %}
+
+    {% if appeal_form or appeal %}
+        <section class="surface submission-form-panel">
+            <div class="section-head">
+                <div>
+                    <h3>Апелляция по отклоненной заявке</h3>
+                    <p>После отклонения автор может один раз попросить повторное рассмотрение заявки.</p>
+                </div>
+                {% if appeal %}
+                    <span class="status-pill{% if appeal.status == 'approved' %} success{% elif appeal.status == 'rejected' %} danger{% else %} warning{% endif %}">
+                        {{ appeal.get_status_display }}
+                    </span>
+                {% endif %}
+            </div>
+
+            {% if appeal %}
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <strong>Комментарий автора</strong>
+                        <div class="meta">{{ appeal.author }} | {{ appeal.created_at|date:"d.m.Y H:i" }}</div>
+                        <div class="text-block">{{ appeal.comment|linebreaksbr }}</div>
+                        {% if appeal.attachment %}
+                            <div class="stack-top-sm">
+                                <a class="button secondary" href="{{ appeal.attachment.url }}">Скачать файл апелляции</a>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    {% if appeal.decided_at %}
+                        <div class="timeline-item">
+                            <strong>Решение по апелляции</strong>
+                            <div class="meta">{{ appeal.decided_by }} | {{ appeal.decided_at|date:"d.m.Y H:i" }}</div>
+                            {% if appeal.decision_comment %}
+                                <div class="text-block">{{ appeal.decision_comment|linebreaksbr }}</div>
+                            {% else %}
+                                <div class="meta text-block">Комментарий не указан.</div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            {% if appeal_form %}
+                <form method="post" enctype="multipart/form-data" action="{% url 'submissions:submit_appeal' submission.pk %}" class="form-offset">
+                    {% csrf_token %}
+                    {{ appeal_form.as_p }}
+                    <div class="actions">
+                        <button class="secondary" type="submit">Отправить апелляцию</button>
+                    </div>
+                </form>
+            {% endif %}
+
+            {% if appeal_action_state and appeal_action_state.can_act %}
+                <section class="dashboard-grid stack-top-md">
+                    <div class="form-card surface-flush">
+                        <div class="section-head">
+                            <div>
+                                <h3>Принять апелляцию</h3>
+                                <p>Если апелляция обоснована, заявка продолжит движение по следующему этапу маршрута.</p>
+                            </div>
+                        </div>
+                        <form method="post" action="{% url 'submissions:approve_appeal' submission.pk %}">
+                            {% csrf_token %}
+                            {{ appeal_approve_form.as_p }}
+                            <div class="actions">
+                                <button class="success" type="submit">Принять апелляцию</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="form-card surface-flush">
+                        <div class="section-head">
+                            <div>
+                                <h3>Отклонить апелляцию</h3>
+                                <p>После отклонения апелляции заявка окончательно прекращает движение по маршруту.</p>
+                            </div>
+                        </div>
+                        <form method="post" action="{% url 'submissions:reject_appeal' submission.pk %}">
+                            {% csrf_token %}
+                            {{ appeal_reject_form.as_p }}
+                            <div class="actions">
+                                <button class="danger" type="submit">Отклонить апелляцию</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+            {% elif appeal_action_state and not appeal_action_state.can_act and appeal and appeal.status == 'pending' %}
+                <div class="empty form-offset">{{ appeal_action_state.reason }}</div>
+            {% endif %}
+        </section>
+    {% endif %}
+
+    {% if can_submit %}
+        <section class="surface submission-form-panel submission-final-submit">
+            <div class="submission-section-title">Отправить в согласование</div>
+            {% if route_selection_ready %}
+                <p class="meta meta-form-note">
+                    После отправки система автоматически использует определенную область экспертизы, направит материал заведующему кафедрой
+                    и только после его одобрения откроет маршрут согласования для автора.
+                </p>
+                <form method="post" action="{% url 'submissions:submit' submission.pk %}" class="submission-submit-form">
+                    {% csrf_token %}
+                    <div class="actions">
+                        <button type="submit">Отправить</button>
+                    </div>
+                </form>
+            {% else %}
+                <div class="empty">
+                    Автоматически определить область экспертизы пока не удалось. Отправка станет доступна после успешного автоподбора.
+                </div>
+            {% endif %}
+        </section>
+    {% endif %}
+
+    {% if can_review_route %}
+        <section class="surface submission-form-panel submission-final-submit submission-final-review">
+            <div class="submission-section-title">Подтвердить маршрут</div>
+            <p class="meta meta-form-note">
+                Убедитесь, что область экспертизы и маршрут выше указаны правильно. После подтверждения материал перейдёт к следующему участнику согласования.
+            </p>
+            <div class="actions">
+                <button type="submit" form="route-review-form">Все правильно, запустить дальше</button>
+            </div>
+        </section>
+    {% endif %}
+
+    {% if active_review_task %}
+        <section class="surface submission-form-panel submission-final-submit submission-review-action">
+            <div class="submission-section-title">Материал ожидает вашей проверки</div>
+            <p class="meta meta-form-note">
+                Текущий этап: {{ active_review_task.workflow_step.name }}. Откройте форму решения, чтобы согласовать материал, вернуть его на доработку или отклонить.
+            </p>
+            <div class="actions">
+                <a class="button" href="{% url 'workflow:task_detail' active_review_task.pk %}">Проверить</a>
+            </div>
+        </section>
+    {% endif %}
+
+    {% if is_auto_checking %}
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {
+                var statusPill = document.getElementById("submission-status-pill");
+                var directionValue = document.getElementById("submission-direction-value");
+                var routeTemplateValue = document.getElementById("submission-route-template-value");
+                var checkList = document.getElementById("submission-check-list");
+                var pollIntervalMs = {{ progress_poll_interval_ms|default:2000 }};
+                var progressUrl = "{% url 'submissions:progress' submission.pk %}";
+                var isReloading = false;
+
+                var canRevealRouteDetails = {{ can_view_route_details|yesno:"true,false" }};
+
+                if (!statusPill || !checkList) {
+                    return;
+                }
+
+                function escapeHtml(value) {
+                    return String(value)
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#39;");
+                }
+
+                function renderCheckEntries(entries) {
+                    checkList.innerHTML = entries.map(function (entry) {
+                        var statusClass = "muted";
+                        if (entry.tone === "success") {
+                            statusClass = "success";
+                        } else if (entry.tone === "danger") {
+                            statusClass = "danger";
+                        } else if (entry.tone === "warning") {
+                            statusClass = "warning";
+                        } else if (entry.tone === "primary") {
+                            statusClass = "primary";
+                        }
+
+                        var messageHtml = entry.message
+                            ? "<div class=\"meta\">" + escapeHtml(entry.message) + "</div>"
+                            : "";
+
+                        return (
+                            "<div class=\"submission-list-row submission-check-row\">" +
+                            "<div>" +
+                            "<span class=\"submission-list-main\">" + escapeHtml(entry.name) + "</span>" +
+                            messageHtml +
+                            "</div>" +
+                            "<span class=\"submission-check-status " + statusClass + "\">" +
+                            escapeHtml(entry.status_display) +
+                            "</span>" +
+                            "</div>"
+                        );
+                    }).join("");
+                }
+
+                function applyProgress(payload) {
+                    statusPill.textContent = payload.status_display;
+                    statusPill.className = "status-pill " + (payload.status_tone || "primary");
+                    if (canRevealRouteDetails && directionValue) {
+                        directionValue.textContent = payload.direction_name;
+                    }
+                    if (canRevealRouteDetails && routeTemplateValue) {
+                        routeTemplateValue.textContent = payload.route_template_name;
+                    }
+                    renderCheckEntries(payload.check_entries || []);
+
+                    if (!payload.is_auto_checking && !isReloading) {
+                        isReloading = true;
+                        window.setTimeout(function () {
+                            window.location.reload();
+                        }, 400);
+                    }
+                }
+
+                function pollProgress() {
+                    if (isReloading) {
+                        return;
+                    }
+
+                    fetch(progressUrl, {
+                        headers: {
+                            "X-Requested-With": "XMLHttpRequest"
+                        }
+                    })
+                        .then(function (response) {
+                            if (!response.ok) {
+                                throw new Error("progress-request-failed");
+                            }
+                            return response.json();
+                        })
+                        .then(function (payload) {
+                            applyProgress(payload);
+                            if (!isReloading) {
+                                window.setTimeout(pollProgress, pollIntervalMs);
+                            }
+                        })
+                        .catch(function () {
+                            if (!isReloading) {
+                                window.setTimeout(pollProgress, pollIntervalMs);
+                            }
+                        });
+                }
+
+                window.setTimeout(pollProgress, pollIntervalMs);
+            });
+        </script>
+    {% endif %}
+
+    {% if route_review_preview_payload and can_review_route and is_route_approval_pending %}
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {
+                var payloadNode = document.getElementById("route-review-preview-data");
+                var directionSelect = document.querySelector('[data-field-role="direction-select"]');
+                var routeSelect = document.querySelector('[data-field-role="route-template-select"]');
+                var directionValue = document.getElementById("submission-direction-value");
+                var routeTemplateValue = document.getElementById("submission-route-template-value");
+                var previewPanel = document.getElementById("route-review-preview-panel");
+                var previewMeta = document.getElementById("route-review-preview-meta");
+                var stepper = document.getElementById("route-review-stepper");
+
+                if (!payloadNode || !directionSelect || !routeSelect || !previewPanel || !previewMeta || !stepper) {
+                    return;
+                }
+
+                var payload = JSON.parse(payloadNode.textContent || "{}");
+                var previewsByDirection = payload.previewsByDirection || {};
+                var routeOptions = Array.prototype.map.call(routeSelect.options, function (option) {
+                    return {
+                        value: option.value,
+                        label: option.textContent || "",
+                        directionId: option.getAttribute("data-direction-id") || "",
+                        isPlaceholder: !option.value,
+                    };
+                });
+
+                function getSelectedOptionText(selectElement) {
+                    var selectedOption = selectElement.options[selectElement.selectedIndex];
+                    return selectedOption ? selectedOption.textContent || "" : "";
+                }
+
+                function getRouteDisplayLabel(optionText) {
+                    var parts = String(optionText || "").split(" -> ");
+                    return parts.length > 1 ? parts[parts.length - 1] : String(optionText || "");
+                }
+
+                function getAllowedRouteOptions(directionId) {
+                    return routeOptions.filter(function (option) {
+                        if (option.isPlaceholder) {
+                            return true;
+                        }
+                        return option.directionId === "" || option.directionId === directionId;
+                    });
+                }
+
+                function syncRouteOptions() {
+                    var directionId = directionSelect.value || "";
+                    var allowedOptions = getAllowedRouteOptions(directionId);
+                    var allowedRouteValues = allowedOptions
+                        .filter(function (option) { return !option.isPlaceholder; })
+                        .map(function (option) { return option.value; });
+                    var selectedRouteValue = routeSelect.value || "";
+
+                    Array.prototype.forEach.call(routeSelect.options, function (option, index) {
+                        var optionData = routeOptions[index];
+                        var isAllowed = optionData.isPlaceholder || optionData.directionId === "" || optionData.directionId === directionId;
+                        option.hidden = !isAllowed;
+                        option.disabled = !isAllowed;
+                    });
+
+                    if (allowedRouteValues.indexOf(selectedRouteValue) === -1) {
+                        selectedRouteValue = allowedRouteValues.length === 1 ? allowedRouteValues[0] : "";
+                    }
+
+                    routeSelect.value = selectedRouteValue;
+                    routeSelect.disabled = allowedRouteValues.length === 0;
+                }
+
+                function getSelectedPreview() {
+                    var directionId = directionSelect.value || "";
+                    var routeTemplateId = routeSelect.value || "";
+                    var directionPreviews = previewsByDirection[directionId] || [];
+                    if (!directionPreviews.length) {
+                        return null;
+                    }
+                    for (var index = 0; index < directionPreviews.length; index += 1) {
+                        if (String(directionPreviews[index].id) === routeTemplateId) {
+                            return directionPreviews[index];
+                        }
+                    }
+                    return directionPreviews[0];
+                }
+
+                function buildPreviewStep(step, orderNumber) {
+                    var node = document.createElement("div");
+                    node.className = "workflow-step";
+                    node.setAttribute("data-route-preview-step", "true");
+
+                    var stepNode = document.createElement("div");
+                    stepNode.className = "workflow-step-node";
+
+                    var dot = document.createElement("div");
+                    dot.className = "workflow-step-dot";
+                    dot.setAttribute("aria-hidden", "true");
+                    stepNode.appendChild(dot);
+
+                    var order = document.createElement("span");
+                    order.className = "workflow-step-order";
+                    order.textContent = String(orderNumber);
+                    stepNode.appendChild(order);
+                    node.appendChild(stepNode);
+
+                    var copy = document.createElement("div");
+                    copy.className = "workflow-step-copy";
+
+                    var name = document.createElement("div");
+                    name.className = "workflow-step-name";
+                    name.textContent = step.name;
+                    copy.appendChild(name);
+
+                    var user = document.createElement("div");
+                    user.className = "workflow-step-user";
+                    user.textContent = step.assignment_short_text;
+                    copy.appendChild(user);
+
+                    if (step.assignment_meta_text) {
+                        var meta = document.createElement("div");
+                        meta.className = "workflow-step-meta";
+                        meta.textContent = step.assignment_meta_text;
+                        copy.appendChild(meta);
+                    }
+
+                    var state = document.createElement("div");
+                    state.className = "workflow-step-state muted";
+                    state.textContent = "Ожидает запуска";
+                    copy.appendChild(state);
+                    node.appendChild(copy);
+
+                    return node;
+                }
+
+                function renderPreview() {
+                    var selectedPreview = getSelectedPreview();
+                    var selectedDirectionText = getSelectedOptionText(directionSelect);
+                    var selectedRouteText = getSelectedOptionText(routeSelect);
+                    var activeStepCount = Number(stepper.getAttribute("data-active-step-count") || "0");
+
+                    if (directionValue) {
+                        directionValue.textContent = selectedDirectionText || "Не выбрано";
+                    }
+                    if (routeTemplateValue) {
+                        routeTemplateValue.textContent = selectedRouteText
+                            ? getRouteDisplayLabel(selectedRouteText)
+                            : "Не выбрано";
+                    }
+
+                    Array.prototype.slice.call(stepper.querySelectorAll('[data-route-preview-step="true"]')).forEach(function (node) {
+                        node.remove();
+                    });
+
+                    if (!selectedPreview) {
+                        previewPanel.hidden = true;
+                        return;
+                    }
+
+                    previewPanel.hidden = false;
+                    previewMeta.textContent = (selectedPreview.direction_name || "Без области") + " | " + selectedPreview.name;
+
+                    selectedPreview.steps.forEach(function (step, index) {
+                        stepper.appendChild(buildPreviewStep(step, activeStepCount + index + 1));
+                    });
+                }
+
+                syncRouteOptions();
+                renderPreview();
+
+                directionSelect.addEventListener("change", function () {
+                    syncRouteOptions();
+                    renderPreview();
+                });
+                routeSelect.addEventListener("change", renderPreview);
+            });
+        </script>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,35 @@
+{% load static workspace_navigation %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Рабочий кабинет системы согласования научных публикаций.">
+    <title>{% block title %}Рабочий кабинет{% endblock %} — Научный ЭДО</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'accounts/site.css' %}?v=20260714a">
+    <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
+    <link rel="stylesheet" href="{% static 'accounts/workspace-pages.css' %}?v=20260717c">
+    <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+<div class="dashboard-shell">
+    {% block sidebar %}{% workspace_sidebar "home" %}{% endblock %}
+
+    <main class="dashboard-main workspace-page-main">
+        {% if messages %}
+            <ul class="dashboard-messages" aria-live="polite">
+                {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
+            </ul>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

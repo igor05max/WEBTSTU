@@ -1,0 +1,713 @@
+.workspace-page-main .submission-route-card {
+    overflow: hidden;
+}
+
+.workspace-page-main .submission-file-name {
+    max-width: 360px;
+    margin-top: 5px;
+    overflow: hidden;
+    color: #8a96aa;
+    font-size: 0.72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-page-main .submission-checks-card {
+    grid-column: 1 / -1;
+}
+
+.workspace-page-main .submission-checks-heading {
+    margin-bottom: 14px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.workspace-page-main .submission-checks-heading p {
+    margin: 5px 0 0;
+    color: #7c879a;
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+
+.workspace-page-main .submission-check-report-link {
+    min-height: 34px;
+    padding: 0 11px;
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    border: 1px solid #cbd8fb;
+    border-radius: 9px;
+    color: #245ce6;
+    background: #f5f8ff;
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.workspace-page-main .submission-check-list {
+    display: grid;
+    gap: 10px;
+}
+
+.workspace-page-main .submission-check-card {
+    overflow: hidden;
+    border: 1px solid #e1e6ef;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.workspace-page-main .submission-check-card.is-danger {
+    border-color: #f0cbd0;
+}
+
+.workspace-page-main .submission-check-card.is-warning {
+    border-color: #ecd9bc;
+}
+
+.workspace-page-main .submission-check-card > summary {
+    min-height: 72px;
+    padding: 14px 16px;
+    display: grid;
+    align-items: center;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 12px;
+    cursor: pointer;
+    list-style: none;
+    background: #fbfcfe;
+}
+
+.workspace-page-main .submission-check-card > summary::-webkit-details-marker {
+    display: none;
+}
+
+.workspace-page-main .submission-check-summary-copy {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.workspace-page-main .submission-check-summary-copy strong {
+    color: #263249;
+    font-size: 0.8rem;
+}
+
+.workspace-page-main .submission-check-summary-copy small {
+    color: #7d889b;
+    font-size: 0.67rem;
+    line-height: 1.45;
+}
+
+.workspace-page-main .submission-check-status {
+    padding: 6px 8px;
+    border-radius: 8px;
+    color: #69758a;
+    background: #eef1f5;
+    font-size: 0.61rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.workspace-page-main .submission-check-status.success {
+    color: #167b41;
+    background: #eaf8ef;
+}
+
+.workspace-page-main .submission-check-status.warning {
+    color: #ad6619;
+    background: #fff3e5;
+}
+
+.workspace-page-main .submission-check-status.danger {
+    color: #bd3742;
+    background: #ffeff1;
+}
+
+.workspace-page-main .submission-check-status.primary {
+    color: #245ce6;
+    background: #edf3ff;
+}
+
+.workspace-page-main .submission-check-chevron {
+    width: 31px;
+    height: 31px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #dce3ed;
+    border-radius: 9px;
+    color: #67738a;
+    background: #fff;
+}
+
+.workspace-page-main .submission-check-chevron svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    transition: transform 0.18s ease;
+}
+
+.workspace-page-main .submission-check-card[open] .submission-check-chevron svg {
+    transform: rotate(180deg);
+}
+
+.workspace-page-main .submission-check-body {
+    padding: 15px 16px 17px;
+    border-top: 1px solid #e8ecf2;
+}
+
+.workspace-page-main .submission-check-counts {
+    margin-bottom: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.workspace-page-main .submission-check-counts span {
+    padding: 5px 7px;
+    border-radius: 7px;
+    color: #657187;
+    background: #eef1f5;
+    font-size: 0.6rem;
+    font-weight: 800;
+}
+
+.workspace-page-main .submission-check-counts .critical,
+.workspace-page-main .submission-check-counts .error {
+    color: #bd3742;
+    background: #ffeff1;
+}
+
+.workspace-page-main .submission-check-counts .warning {
+    color: #ad6619;
+    background: #fff3e5;
+}
+
+.workspace-page-main .submission-check-issues {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.workspace-page-main .submission-check-issue {
+    padding: 13px 14px;
+    border: 1px solid #e4e8ef;
+    border-left-width: 4px;
+    border-radius: 10px;
+    background: #fbfcfd;
+}
+
+.workspace-page-main .submission-check-issue.is-info { border-left-color: #5c87e9; }
+.workspace-page-main .submission-check-issue.is-warning { border-left-color: #e29835; }
+.workspace-page-main .submission-check-issue.is-error { border-left-color: #dc5963; }
+.workspace-page-main .submission-check-issue.is-critical { border-left-color: #a32432; background: #fff8f9; }
+
+.workspace-page-main .submission-check-issue-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.workspace-page-main .submission-check-issue-head strong {
+    color: #2c384e;
+    font-size: 0.73rem;
+    line-height: 1.4;
+}
+
+.workspace-page-main .submission-check-issue-head span {
+    color: #7f8a9d;
+    font-size: 0.56rem;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.workspace-page-main .submission-check-issue p {
+    margin: 7px 0 0;
+    color: #5d687d;
+    font-size: 0.68rem;
+    line-height: 1.55;
+}
+
+.workspace-page-main .submission-check-issue > small {
+    margin-top: 6px;
+    display: block;
+    color: #929bad;
+    font-size: 0.6rem;
+}
+
+.workspace-page-main .submission-check-issue blockquote {
+    margin: 10px 0 0;
+    padding: 10px 11px;
+    border: 1px solid #e3e7ee;
+    border-radius: 8px;
+    color: #4c586e;
+    background: #fff;
+    font-size: 0.66rem;
+    line-height: 1.55;
+}
+
+.workspace-page-main .submission-check-issue mark {
+    padding: 1px 3px;
+    border-radius: 4px;
+    color: #6c410c;
+    background: #ffe39d;
+}
+
+.workspace-page-main .submission-check-suggestion {
+    margin-top: 9px;
+    color: #4265a7;
+    font-size: 0.64rem;
+    line-height: 1.5;
+}
+
+.workspace-page-main .submission-check-empty {
+    color: #7c8799;
+    font-size: 0.69rem;
+}
+
+.workspace-page-main .submission-file-actions {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.workspace-page-main .submission-file-preview-link {
+    min-height: 36px;
+    padding: 0 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid #cbd8fb;
+    border-radius: 9px;
+    color: #245ce6;
+    background: #f5f8ff;
+    font-size: 0.76rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.workspace-page-main .submission-file-preview-link:hover {
+    border-color: #9eb7f8;
+    background: #edf3ff;
+}
+
+.workspace-page-main .submission-file-preview-link svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.workspace-page-main .submission-route-card .submission-run-block {
+    min-width: 0;
+}
+
+.workspace-page-main .submission-route-card .workflow-stepper {
+    margin-top: 4px;
+    padding: 25px 0 21px;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    border: 1px solid #e2e8f1;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #fbfcfe, #f7f9fc);
+    scrollbar-color: #b8c3d5 #eef1f6;
+    scrollbar-width: thin;
+}
+
+.workspace-page-main .submission-route-card .workflow-step {
+    position: relative;
+    min-width: 140px;
+    min-height: 210px;
+    padding: 0 11px;
+    display: flex;
+    flex: 1 0 140px;
+    align-items: center;
+    flex-direction: column;
+    gap: 0;
+    border: 0;
+    border-radius: 0;
+    text-align: center;
+    background: transparent;
+    scroll-snap-align: start;
+}
+
+.workspace-page-main .submission-route-card .workflow-step::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    top: 17px;
+    left: calc(50% + 18px);
+    width: calc(100% - 36px);
+    height: 2px;
+    display: block;
+    border-radius: 999px;
+    background: #d8dee8;
+}
+
+.workspace-page-main .submission-route-card .workflow-step:last-child::after {
+    display: none;
+}
+
+.workspace-page-main .submission-route-card .workflow-step.is-approved::after {
+    background: #28a557;
+}
+
+.workspace-page-main .submission-route-card .workflow-step.is-rejected::after {
+    background: #df5a62;
+}
+
+.workspace-page-main .submission-route-card .workflow-step.is-revision::after {
+    background: linear-gradient(90deg, #e99a35, #d8dee8);
+}
+
+.workspace-page-main .submission-route-card .workflow-step-node {
+    position: relative;
+    z-index: 1;
+    height: 61px;
+    display: grid;
+    justify-items: center;
+    grid-template-rows: 36px 17px;
+    gap: 5px;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-dot {
+    position: static;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    border: 2px solid #cbd3df;
+    border-radius: 50%;
+    color: #8792a4;
+    background: #fff;
+    box-shadow: 0 5px 13px rgba(24, 43, 77, 0.08);
+}
+
+.workspace-page-main .submission-route-card .workflow-step-dot svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-dot > span {
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-dot > i {
+    width: 10px;
+    height: 10px;
+    display: block;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 4px rgba(36, 92, 230, 0.12);
+}
+
+.workspace-page-main .submission-route-card .workflow-step.is-approved .workflow-step-dot {
+    border-color: #20a24f;
+    color: #fff;
+    background: #20a24f;
+}
+
+.workspace-page-main .submission-route-card .workflow-step.is-active .workflow-step-dot {
+    border-color: var(--dashboard-blue);
+    color: var(--dashboard-blue);
+    background: #fff;
+    box-shadow: 0 0 0 5px rgba(36, 92, 230, 0.1);
+}
+
+.workspace-page-main .submission-route-card .workflow-step.is-rejected .workflow-step-dot {
+    border-color: #d94a54;
+    color: #fff;
+    background: #d94a54;
+}
+
+.workspace-page-main .submission-route-card .workflow-step.is-revision .workflow-step-dot {
+    border-color: #e18a20;
+    color: #fff;
+    background: #e18a20;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-order {
+    color: #58657a;
+    font-size: 0.66rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-copy {
+    width: 100%;
+    min-width: 0;
+    min-height: 141px;
+    padding-top: 9px;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-name {
+    color: #26334a;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.4;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-user {
+    margin-top: 9px;
+    color: #536078;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-meta {
+    margin-top: 4px;
+    color: #8b95a7;
+    font-size: 0.61rem;
+    line-height: 1.4;
+}
+
+.workspace-page-main .submission-route-card .workflow-step-state {
+    width: auto;
+    margin-top: auto;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 0.61rem;
+}
+
+.workspace-page-main .submission-decision-details {
+    margin-top: 16px;
+    overflow: hidden;
+    border: 1px solid #e0e6ef;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.workspace-page-main .submission-decision-details > summary {
+    min-height: 74px;
+    padding: 15px 17px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    cursor: pointer;
+    list-style: none;
+    background: #fafbfd;
+}
+
+.workspace-page-main .submission-decision-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.workspace-page-main .submission-decision-summary-copy {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.workspace-page-main .submission-decision-summary-copy small {
+    color: #8a95a7;
+    font-size: 0.61rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.workspace-page-main .submission-decision-summary-copy strong {
+    color: #263249;
+    font-size: 0.78rem;
+}
+
+.workspace-page-main .submission-decision-summary-copy > span {
+    color: #8d97a8;
+    font-size: 0.64rem;
+}
+
+.workspace-page-main .submission-decision-chevron {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 1px solid #dce3ed;
+    border-radius: 10px;
+    color: #647087;
+    background: #fff;
+}
+
+.workspace-page-main .submission-decision-chevron svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 0.18s ease;
+}
+
+.workspace-page-main .submission-decision-details[open] .submission-decision-chevron svg {
+    transform: rotate(180deg);
+}
+
+.workspace-page-main .submission-decision-body {
+    padding: 14px 16px 16px;
+    border-top: 1px solid #e7ebf1;
+}
+
+.workspace-page-main .submission-decision-list {
+    display: grid;
+    gap: 9px;
+}
+
+.workspace-page-main .submission-decision-row {
+    padding: 13px 14px;
+    display: grid;
+    grid-template-columns: 9px minmax(0, 1fr);
+    gap: 12px;
+    border: 1px solid #e4e8ef;
+    border-radius: 11px;
+    background: #fbfcfd;
+}
+
+.workspace-page-main .submission-decision-mark {
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    display: block;
+    border-radius: 50%;
+    background: #9ba5b5;
+}
+
+.workspace-page-main .submission-decision-row.is-success .submission-decision-mark {
+    background: #20a24f;
+}
+
+.workspace-page-main .submission-decision-row.is-primary .submission-decision-mark {
+    background: var(--dashboard-blue);
+}
+
+.workspace-page-main .submission-decision-row.is-warning .submission-decision-mark {
+    background: #e18a20;
+}
+
+.workspace-page-main .submission-decision-row.is-danger .submission-decision-mark {
+    background: #d94a54;
+}
+
+.workspace-page-main .submission-decision-copy {
+    min-width: 0;
+}
+
+.workspace-page-main .submission-decision-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.workspace-page-main .submission-decision-head > strong {
+    min-width: 0;
+    color: #344057;
+    font-size: 0.7rem;
+    line-height: 1.45;
+}
+
+.workspace-page-main .submission-decision-head > strong span {
+    color: #8390a3;
+    font-weight: 700;
+}
+
+.workspace-page-main .submission-decision-status {
+    padding: 5px 7px;
+    flex: 0 0 auto;
+    border-radius: 7px;
+    color: #657187;
+    background: #eef1f5;
+    font-size: 0.59rem;
+    font-weight: 800;
+}
+
+.workspace-page-main .submission-decision-row.is-success .submission-decision-status {
+    color: #148443;
+    background: #eaf8ef;
+}
+
+.workspace-page-main .submission-decision-row.is-warning .submission-decision-status {
+    color: #b86610;
+    background: #fff3e7;
+}
+
+.workspace-page-main .submission-decision-row.is-danger .submission-decision-status {
+    color: #c43b45;
+    background: #fff0f1;
+}
+
+.workspace-page-main .submission-decision-meta {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    color: #8b95a7;
+    font-size: 0.62rem;
+}
+
+.workspace-page-main .submission-decision-comment {
+    margin-top: 9px;
+    padding: 9px 11px;
+    border-left: 3px solid #c8d5ed;
+    border-radius: 0 8px 8px 0;
+    color: #566279;
+    background: #f3f7fd;
+    font-size: 0.68rem;
+    line-height: 1.55;
+}
+
+@media (max-width: 720px) {
+    .workspace-page-main .submission-check-issues {
+        grid-template-columns: 1fr;
+    }
+
+    .workspace-page-main .submission-check-card > summary {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .workspace-page-main .submission-check-card > summary .submission-check-status {
+        grid-column: 1;
+        width: max-content;
+    }
+
+    .workspace-page-main .submission-check-chevron {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+    }
+
+    .workspace-page-main .submission-route-card .workflow-step {
+        min-width: 170px;
+        flex-basis: 170px;
+    }
+
+    .workspace-page-main .submission-decision-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 7px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .workspace-page-main .submission-decision-chevron svg {
+        transition: none;
+    }
+}

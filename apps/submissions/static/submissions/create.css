@@ -1,0 +1,783 @@
+.submission-create-main {
+    padding-top: 36px;
+    padding-bottom: 54px;
+}
+
+.submission-create-main > * {
+    width: min(100%, 1240px);
+}
+
+.submission-create-header {
+    margin-bottom: 26px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 36px;
+}
+
+.submission-create-header > div:first-child {
+    max-width: 790px;
+}
+
+.submission-back-link {
+    width: max-content;
+    margin-bottom: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #748097;
+    font-size: 0.75rem;
+    font-weight: 700;
+    transition: color 0.2s ease;
+}
+
+.submission-back-link:hover {
+    color: var(--dashboard-blue);
+}
+
+.submission-back-link svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.submission-create-kicker {
+    margin-bottom: 9px;
+    display: block;
+    color: var(--dashboard-blue);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.submission-create-header h1 {
+    margin: 0;
+    color: #111a2e;
+    font-size: clamp(2rem, 3.2vw, 3.15rem);
+    line-height: 1.05;
+    letter-spacing: -0.045em;
+}
+
+.submission-create-header p {
+    max-width: 720px;
+    margin: 13px 0 0;
+    color: #6f798d;
+    font-size: 0.88rem;
+    line-height: 1.7;
+}
+
+.submission-create-form {
+    display: grid;
+    gap: 18px;
+}
+
+.submission-form-card {
+    padding: 28px 30px 30px;
+    border: 1px solid var(--dashboard-line);
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: var(--dashboard-shadow);
+}
+
+.submission-section-heading {
+    margin-bottom: 25px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.submission-section-number {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    color: var(--dashboard-blue);
+    background: #edf3ff;
+    font-size: 0.66rem;
+    font-weight: 800;
+}
+
+.submission-section-heading h2 {
+    margin: 0;
+    color: #172137;
+    font-size: 1.06rem;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+}
+
+.submission-section-heading p {
+    margin: 5px 0 0;
+    color: #8993a6;
+    font-size: 0.7rem;
+    line-height: 1.5;
+}
+
+.submission-fields-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: 20px 22px;
+}
+
+.submission-field {
+    position: relative;
+    display: grid;
+    gap: 8px;
+}
+
+.submission-field-wide {
+    grid-column: 1 / -1;
+}
+
+.submission-field label {
+    width: max-content;
+    color: #344057;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.submission-field label > span {
+    color: var(--dashboard-blue);
+}
+
+.submission-field input:not([type="file"]):not([type="checkbox"]),
+.submission-field select,
+.submission-field textarea {
+    width: 100%;
+    min-height: 50px;
+    padding: 0 15px;
+    border: 1px solid #d8dfeb;
+    border-radius: 12px;
+    outline: none;
+    color: #1f2a40;
+    background: #fff;
+    font-family: inherit;
+    font-size: 0.82rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.submission-field textarea {
+    min-height: 122px;
+    padding-top: 13px;
+    padding-bottom: 13px;
+    resize: vertical;
+    line-height: 1.55;
+}
+
+.submission-comment-field {
+    margin-top: 21px;
+}
+
+.submission-document-metadata-grid {
+    margin-bottom: 22px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 22px;
+}
+
+.submission-document-metadata-grid textarea {
+    min-height: 92px;
+}
+
+.submission-metadata-extraction {
+    margin-top: 12px;
+    padding: 13px 15px;
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    border: 1px solid #dbe5fb;
+    border-radius: 12px;
+    color: #31579c;
+    background: #f4f7ff;
+}
+
+.submission-metadata-extraction[hidden] {
+    display: none;
+}
+
+.submission-metadata-extraction.is-success {
+    border-color: #caead7;
+    color: #16723d;
+    background: #f0fbf4;
+}
+
+.submission-metadata-extraction.is-warning {
+    border-color: #f0d7b4;
+    color: #955b15;
+    background: #fff8ed;
+}
+
+.submission-metadata-extraction strong {
+    display: block;
+    font-size: 0.72rem;
+}
+
+.submission-metadata-extraction p {
+    margin: 4px 0 0;
+    color: inherit;
+    font-size: 0.66rem;
+    line-height: 1.5;
+    opacity: 0.82;
+}
+
+.submission-metadata-spinner {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: submission-metadata-spin 0.75s linear infinite;
+}
+
+.submission-metadata-extraction.is-success .submission-metadata-spinner,
+.submission-metadata-extraction.is-warning .submission-metadata-spinner {
+    border: 0;
+    animation: none;
+}
+
+.submission-metadata-extraction.is-success .submission-metadata-spinner::before {
+    content: "✓";
+    font-weight: 900;
+}
+
+.submission-metadata-extraction.is-warning .submission-metadata-spinner::before {
+    content: "!";
+    font-weight: 900;
+}
+
+@keyframes submission-metadata-spin {
+    to { transform: rotate(360deg); }
+}
+
+.submission-comment-field textarea {
+    min-height: 96px;
+}
+
+.submission-field input::placeholder,
+.submission-field textarea::placeholder {
+    color: #a3acbc;
+}
+
+.submission-field select {
+    appearance: none;
+    padding-right: 45px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2377859d' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 17px;
+}
+
+.submission-field input:not([type="file"]):not([type="checkbox"]):focus,
+.submission-field select:focus,
+.submission-field textarea:focus {
+    border-color: #6c91ee;
+    box-shadow: 0 0 0 4px rgba(49, 99, 226, 0.09);
+}
+
+.submission-field > small {
+    color: #929bad;
+    font-size: 0.62rem;
+    line-height: 1.45;
+}
+
+.submission-input-with-icon {
+    position: relative;
+}
+
+.submission-input-with-icon > svg {
+    position: absolute;
+    z-index: 1;
+    left: 15px;
+    top: 50%;
+    width: 17px;
+    height: 17px;
+    transform: translateY(-50%);
+    fill: none;
+    stroke: #8794aa;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+
+.submission-input-with-icon input {
+    padding-left: 43px !important;
+}
+
+.submission-journal-field {
+    z-index: 5;
+}
+
+.journal-suggest {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 7px);
+    right: 0;
+    left: 0;
+    max-height: 280px;
+    padding: 7px;
+    overflow: auto;
+    border: 1px solid #dce3ef;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 18px 40px rgba(24, 39, 74, 0.14);
+}
+
+.journal-suggest[hidden] {
+    display: none;
+}
+
+.journal-suggest-option {
+    width: 100%;
+    padding: 11px 12px;
+    display: grid;
+    gap: 4px;
+    border: 0;
+    border-radius: 9px;
+    color: #26334a;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.journal-suggest-option:hover,
+.journal-suggest-option:focus-visible {
+    background: #f2f6ff;
+}
+
+.journal-suggest-option strong {
+    font-size: 0.72rem;
+}
+
+.journal-suggest-option small {
+    display: flex;
+    gap: 12px;
+    color: #8590a5;
+    font-size: 0.61rem;
+}
+
+.journal-suggest-empty {
+    padding: 16px 12px;
+    color: #8792a5;
+    font-size: 0.7rem;
+}
+
+.submission-file-zone {
+    position: relative;
+    min-height: 122px;
+    padding: 22px 22px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px dashed #b8c6de;
+    border-radius: 15px;
+    background: #fafcff;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.submission-file-zone.is-dragging {
+    border-color: var(--dashboard-blue);
+    background: #f2f6ff;
+    box-shadow: 0 0 0 4px rgba(49, 99, 226, 0.07);
+}
+
+.submission-file-icon {
+    width: 50px;
+    height: 50px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    color: var(--dashboard-blue);
+    background: #edf3ff;
+}
+
+.submission-file-icon svg {
+    width: 25px;
+    height: 25px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.submission-file-copy {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+    gap: 4px;
+}
+
+.submission-file-copy strong {
+    overflow: hidden;
+    color: #27344a;
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.submission-file-copy span {
+    color: #7f8a9e;
+    font-size: 0.68rem;
+}
+
+.submission-file-copy small {
+    color: #a0a8b7;
+    font-size: 0.59rem;
+}
+
+.submission-file-button {
+    min-height: 42px;
+    padding: 0 17px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #b9caef;
+    border-radius: 10px;
+    color: var(--dashboard-blue) !important;
+    background: #fff;
+    font-size: 0.68rem !important;
+    font-weight: 800 !important;
+    cursor: pointer;
+}
+
+.submission-file-zone input[type="file"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.coauthor-picker {
+    overflow: hidden;
+    border: 1px solid #d8dfeb;
+    border-radius: 13px;
+    background: #fff;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.coauthor-picker:focus-within {
+    border-color: #6c91ee;
+    box-shadow: 0 0 0 4px rgba(49, 99, 226, 0.09);
+}
+
+.coauthor-picker-control {
+    position: relative;
+    border-bottom: 1px solid #edf0f5;
+}
+
+.coauthor-picker-control svg {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translateY(-50%);
+    fill: none;
+    stroke: #8794aa;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+
+.coauthor-picker-control input[type="search"] {
+    min-height: 48px !important;
+    padding-left: 41px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+.coauthor-selected {
+    padding: 10px 12px 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.coauthor-selected:empty {
+    display: none;
+}
+
+.coauthor-chip {
+    min-height: 29px;
+    padding: 0 8px 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid #d8e3fb;
+    border-radius: 8px;
+    color: #2e5bc2;
+    background: #eff4ff;
+    font-size: 0.61rem;
+    font-weight: 700;
+}
+
+.coauthor-chip button {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    color: #6080c7;
+    background: transparent;
+    cursor: pointer;
+}
+
+.coauthor-options {
+    max-height: 210px;
+    padding: 7px;
+    overflow: auto;
+}
+
+.coauthor-option {
+    width: 100%;
+    min-height: 38px;
+    padding: 7px 9px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 0;
+    border-radius: 8px;
+    color: #344057;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.coauthor-option:hover {
+    background: #f4f7fc;
+}
+
+.coauthor-option.is-selected {
+    color: #214fae;
+    background: #f2f6ff;
+}
+
+.coauthor-option-mark {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border: 1px solid #b9c3d4;
+    border-radius: 5px;
+    color: transparent;
+    background: #fff;
+    font-size: 0.67rem;
+}
+
+.coauthor-option.is-selected .coauthor-option-mark {
+    border-color: var(--dashboard-blue);
+    color: #fff;
+    background: var(--dashboard-blue);
+}
+
+.coauthor-option-name {
+    font-size: 0.68rem;
+    font-weight: 600;
+}
+
+.coauthor-empty {
+    padding: 14px 11px;
+    color: #8c96a8;
+    font-size: 0.67rem;
+}
+
+.coauthor-results-note {
+    margin: 7px 3px 1px;
+    padding: 11px 10px;
+    border-radius: 8px;
+    color: #768198;
+    background: #f6f8fc;
+    font-size: 0.61rem;
+    line-height: 1.45;
+}
+
+.coauthor-picker.is-enhanced .coauthor-native {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.coauthor-native select {
+    min-height: 170px;
+    border: 0;
+    border-radius: 0;
+    background-image: none;
+}
+
+.submission-form-alert,
+.submission-field-errors {
+    color: #b4232c;
+    font-size: 0.65rem;
+    line-height: 1.5;
+}
+
+.submission-form-alert {
+    padding: 13px 16px;
+    border: 1px solid #f3c9ce;
+    border-radius: 12px;
+    background: #fff4f5;
+}
+
+.submission-field-errors ul,
+.submission-form-alert ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.submission-field.has-error input,
+.submission-field.has-error select,
+.submission-field.has-error textarea,
+.submission-field.has-error .submission-file-zone,
+.submission-field.has-error .coauthor-picker {
+    border-color: #e68a92;
+}
+
+.submission-form-actions {
+    position: sticky;
+    z-index: 10;
+    bottom: 18px;
+    padding: 15px 16px 15px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    border: 1px solid rgba(217, 224, 236, 0.94);
+    border-radius: 17px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 16px 42px rgba(24, 39, 74, 0.12);
+    backdrop-filter: blur(16px);
+}
+
+.submission-secondary-action,
+.submission-primary-action {
+    min-height: 46px;
+    padding: 0 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.submission-secondary-action {
+    border: 1px solid #dce2ec;
+    color: #657087;
+    background: #fff;
+}
+
+.submission-primary-action {
+    min-width: 226px;
+    gap: 24px;
+    border: 0;
+    color: #fff;
+    background: linear-gradient(135deg, #3269ee, #244fc5);
+    box-shadow: 0 12px 25px rgba(37, 86, 210, 0.2);
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.submission-primary-action:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 15px 30px rgba(37, 86, 210, 0.26);
+}
+
+.submission-primary-action svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+@media (max-width: 920px) {
+    .submission-create-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+}
+
+@media (max-width: 720px) {
+    .submission-create-main {
+        padding-top: 88px;
+    }
+
+    .submission-create-header h1 {
+        font-size: 2rem;
+    }
+
+    .submission-fields-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .submission-document-metadata-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .submission-field-wide {
+        grid-column: auto;
+    }
+
+    .submission-form-card {
+        padding: 22px 18px 24px;
+        border-radius: 17px;
+    }
+
+    .submission-file-zone {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .submission-file-copy {
+        min-width: calc(100% - 70px);
+    }
+
+    .submission-file-button {
+        width: 100%;
+    }
+
+    .submission-form-actions {
+        bottom: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    .submission-form-actions {
+        align-items: stretch;
+        flex-direction: column-reverse;
+        padding: 12px;
+    }
+
+    .submission-secondary-action,
+    .submission-primary-action {
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .submission-primary-action,
+    .submission-back-link,
+    .submission-file-zone {
+        transition: none;
+    }
+}

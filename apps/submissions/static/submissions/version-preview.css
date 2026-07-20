@@ -1,0 +1,320 @@
+.workspace-page-main:has(.document-preview-shell) {
+    max-width: none;
+}
+
+.document-preview-header {
+    margin-bottom: 22px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.document-preview-back {
+    margin-bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #69768c;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.document-preview-back:hover {
+    color: #245ce6;
+}
+
+.document-preview-back svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.document-preview-kicker {
+    margin-bottom: 7px;
+    color: #245ce6;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+}
+
+.document-preview-header h1 {
+    margin: 0;
+    color: #17243b;
+    font-size: clamp(1.75rem, 3vw, 2.45rem);
+    letter-spacing: -0.05em;
+}
+
+.document-preview-header p {
+    max-width: 760px;
+    margin: 8px 0 0;
+    color: #69768c;
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+.document-preview-download {
+    min-height: 46px;
+    padding: 0 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    border-radius: 11px;
+    color: #fff;
+    background: linear-gradient(135deg, #2f67ef, #244bcc);
+    box-shadow: 0 12px 24px rgba(38, 84, 213, 0.2);
+    font-size: 0.8rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.document-preview-download:hover {
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.document-preview-download svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.workspace-page-main .document-preview-shell {
+    min-height: calc(100vh - 210px);
+    padding: 0;
+    overflow: hidden;
+    border-radius: 18px;
+}
+
+.document-preview-toolbar {
+    min-height: 72px;
+    padding: 13px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    border-bottom: 1px solid #e1e7f0;
+    background: #fff;
+}
+
+.document-preview-file {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.document-preview-file-icon {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    color: #245ce6;
+    background: #eef4ff;
+}
+
+.document-preview-file-icon svg {
+    width: 21px;
+    height: 21px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
+}
+
+.document-preview-file h2 {
+    max-width: min(65vw, 720px);
+    margin: 0;
+    overflow: hidden;
+    color: #243249;
+    font-size: 0.88rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.document-preview-file span {
+    display: block;
+    margin-top: 3px;
+    color: #8a96aa;
+    font-size: 0.71rem;
+}
+
+.document-preview-format {
+    padding: 6px 10px;
+    border-radius: 8px;
+    color: #245ce6;
+    background: #eef4ff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.document-preview-pdf {
+    height: calc(100vh - 300px);
+    min-height: 620px;
+    padding: 12px;
+    background: #e8edf4;
+}
+
+.document-preview-pdf iframe {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border: 0;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.document-preview-paper {
+    width: min(100% - 44px, 930px);
+    min-height: 720px;
+    margin: 28px auto 40px;
+    padding: 64px 72px;
+    color: #1f2938;
+    background: #fff;
+    box-shadow: 0 18px 45px rgba(30, 50, 83, 0.12);
+}
+
+.document-preview-shell:has(.document-preview-paper) {
+    background: #e9edf3;
+}
+
+.document-preview-paper.text-file pre {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: #28364b;
+    font: 500 0.86rem/1.75 "Manrope", sans-serif;
+    white-space: pre-wrap;
+}
+
+.document-preview-paper.word-file {
+    font-family: Arial, sans-serif;
+    font-size: 0.91rem;
+    line-height: 1.65;
+}
+
+.document-preview-paper.word-file p {
+    margin: 0 0 0.85em;
+}
+
+.word-heading {
+    margin: 1.3em 0 0.55em;
+    color: #18243a;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.word-heading:first-child {
+    margin-top: 0;
+}
+
+.word-heading.level-1 { font-size: 1.65rem; }
+.word-heading.level-2 { font-size: 1.35rem; }
+.word-heading.level-3 { font-size: 1.15rem; }
+.word-heading.level-4,
+.word-heading.level-5,
+.word-heading.level-6 { font-size: 1rem; }
+
+.word-list-item {
+    margin: 0 0 0.55em;
+    padding-left: 18px;
+    display: grid;
+    grid-template-columns: 12px 1fr;
+    gap: 5px;
+}
+
+.document-preview-paper blockquote {
+    margin: 1em 0;
+    padding: 8px 0 8px 18px;
+    border-left: 3px solid #9eb7f8;
+    color: #566279;
+}
+
+.word-table-scroll {
+    margin: 18px 0;
+    overflow-x: auto;
+}
+
+.document-preview-paper table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.document-preview-paper td {
+    padding: 9px 11px;
+    border: 1px solid #cfd6e1;
+    vertical-align: top;
+}
+
+.document-preview-message {
+    width: min(100% - 40px, 620px);
+    margin: 80px auto;
+    padding: 28px;
+    display: grid;
+    gap: 8px;
+    border: 1px solid #d9e2ef;
+    border-radius: 14px;
+    color: #66738a;
+    background: #f8faff;
+    text-align: center;
+}
+
+.document-preview-message strong {
+    color: #243249;
+    font-size: 1rem;
+}
+
+.document-preview-message a {
+    margin-top: 5px;
+    font-weight: 800;
+}
+
+.document-preview-message.error {
+    border-color: #f0c8cd;
+    background: #fff7f8;
+}
+
+.document-preview-truncated {
+    padding: 13px 18px;
+    border-top: 1px solid #d9e2ef;
+    color: #79550f;
+    background: #fff8e8;
+    font-size: 0.76rem;
+    text-align: center;
+}
+
+@media (max-width: 760px) {
+    .document-preview-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .document-preview-download {
+        align-self: flex-start;
+    }
+
+    .document-preview-paper {
+        width: calc(100% - 20px);
+        min-height: 600px;
+        margin: 10px auto 24px;
+        padding: 32px 24px;
+    }
+
+    .document-preview-pdf {
+        min-height: 560px;
+        padding: 7px;
+    }
+}

@@ -1,0 +1,106 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Научный ЭДО университета{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'accounts/site.css' %}?v=20260714a">
+</head>
+<body>
+<div class="site-shell">
+    <header class="topbar">
+        <div class="wrap topbar-inner">
+            <a class="brand" href="{% url 'home' %}">
+                <div class="brand-mark">У</div>
+                <div class="brand-copy">
+                    <div class="brand-title">Научный ЭДО университета</div>
+                    <div class="brand-subtitle">Предпубликационное согласование статей</div>
+                </div>
+            </a>
+
+            <nav class="topbar-nav">
+                {% if request.user.is_authenticated %}
+                    <div class="topbar-links">
+                        <a class="nav-link{% if request.resolver_match.view_name == 'home' %} is-active{% endif %}" href="{% url 'home' %}">
+                            <span>Главная</span>
+                        </a>
+                        <a class="nav-link{% if request.resolver_match.namespace == 'submissions' %} is-active{% endif %}" href="{% url 'submissions:list' %}">
+                            <span>Мои заявки</span>
+                        </a>
+                        <a class="nav-link{% if request.resolver_match.namespace == 'activities' %} is-active{% endif %}" href="{% url 'activities:list' %}?scope=mine">
+                            <span>Мои результаты</span>
+                        </a>
+                        <a class="nav-link{% if request.resolver_match.namespace == 'workflow' %} is-active{% endif %}" href="{% url 'workflow:inbox' %}">
+                            <span>Задачи</span>
+                            {% if workflow_pending_count %}
+                                <span class="nav-badge">{{ workflow_pending_count }}</span>
+                            {% endif %}
+                        </a>
+                        <a class="nav-link{% if request.resolver_match.view_name == 'author_directory' or request.resolver_match.view_name == 'author_profile' or request.resolver_match.view_name == 'profile' %} is-active{% endif %}" href="{% url 'author_directory' %}">
+                            <span>Авторы</span>
+                        </a>
+                        {% if can_access_admin %}
+                            <a class="nav-link" href="{% url 'admin:index' %}">
+                                <span>Root admin</span>
+                            </a>
+                        {% endif %}
+                    </div>
+                    <div class="topbar-controls">
+                        <a class="user-chip" href="{% url 'profile' %}">
+                            <div class="user-avatar">{{ header_user_initials|default:"U" }}</div>
+                            <div class="user-meta">
+                                <span class="user-name">{{ header_user_name }}</span>
+                                <span class="user-unit">{{ header_user_unit|default:"Без группы" }}</span>
+                            </div>
+                        </a>
+                        <form method="post" action="{% url 'logout' %}">
+                            {% csrf_token %}
+                            <button class="nav-button" type="submit">Выйти</button>
+                        </form>
+                    </div>
+                {% else %}
+                    <div class="topbar-links">
+                        <a class="nav-link{% if request.resolver_match.view_name == 'login' %} is-active{% endif %}" href="{% url 'login' %}">
+                            <span>Войти</span>
+                        </a>
+                        <a class="nav-link{% if request.resolver_match.view_name == 'register' %} is-active{% endif %}" href="{% url 'register' %}">
+                            <span>Регистрация</span>
+                        </a>
+                    </div>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="page">
+        <div class="wrap">
+            {% if messages %}
+                <ul class="messages">
+                    {% for message in messages %}
+                        <li class="{{ message.tags }}">{{ message }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <footer class="page-footer">
+        <div class="wrap">
+            <div class="footer-minimal">
+                <div class="footer-minimal-brand">Научный ЭДО университета</div>
+                <div class="footer-inline-links">
+                    <a href="{% url 'submissions:create' %}">Новая заявка</a>
+                    <a href="{% url 'submissions:list' %}">Мои заявки</a>
+                    <a href="{% url 'activities:list' %}">Результаты</a>
+                    <a href="{% url 'workflow:inbox' %}">Задачи</a>
+                    <a href="{% url 'author_directory' %}">Авторы</a>
+                </div>
+                <div class="footer-minimal-meta">science@university.local</div>
+            </div>
+        </div>
+    </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{% extends "workspace_base.html" %}
+{% load workspace_navigation %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block sidebar %}{% workspace_sidebar "plan" %}{% endblock %}
+
+{% block content %}
+    <section class="hero hero-home">
+        <h1>{{ page_title }}</h1>
+        <p>Ответственным будете указаны вы. Для гранта обязательно выберите его вид.</p>
+        {% if activity.imported_from_plan %}
+            <p class="meta">Исходник: {{ activity.source_file }}, лист {{ activity.source_sheet }}, ячейка {{ activity.source_cell }}. Ваши изменения сохранятся при следующем импорте плана.</p>
+        {% endif %}
+        <div class="hero-actions"><a class="button secondary" href="{% url 'activities:list' %}?scope=mine">Назад к моим результатам</a></div>
+    </section>
+
+    <section class="form-card activity-form-card">
+        <form method="post" class="activity-form">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="actions">
+                <button type="submit">{% if activity %}Сохранить изменения{% else %}Добавить в реестр{% endif %}</button>
+                <a class="button secondary" href="{% url 'activities:list' %}?scope=mine">Отмена</a>
+            </div>
+        </form>
+    </section>
+{% endblock %}

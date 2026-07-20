@@ -1,0 +1,199 @@
+{% load static workspace_navigation %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Рабочий кабинет автора и эксперта научных публикаций.">
+    <title>Главная — Научный ЭДО</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
+    <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+</head>
+<body>
+<div class="dashboard-shell">
+    {% workspace_sidebar "home" %}
+
+    <main class="dashboard-main">
+        <header class="dashboard-header">
+            <div>
+                <div class="dashboard-date">{% now "l, j E" %}</div>
+                <h1>Добрый день, {{ dashboard_name }}!</h1>
+                <p>Вот что происходит сегодня</p>
+            </div>
+            <a class="dashboard-primary-action" href="{% url 'submissions:create' %}">
+                <span class="dashboard-primary-action-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                </span>
+                <span>Подать новую статью</span>
+                <svg class="dashboard-primary-action-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg>
+            </a>
+        </header>
+
+        {% if messages %}
+            <ul class="dashboard-messages" aria-live="polite">
+                {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
+            </ul>
+        {% endif %}
+
+        <section class="dashboard-layout" aria-label="Сводка рабочего кабинета">
+            <div class="dashboard-column dashboard-column-main">
+                <article class="dashboard-card dashboard-attention-card">
+                    <div class="dashboard-card-head">
+                        <div>
+                            <span class="dashboard-card-kicker">Сегодня</span>
+                            <h2>Требуют внимания</h2>
+                        </div>
+                        <span class="dashboard-card-count">{{ attention_count }}</span>
+                    </div>
+
+                    <div class="dashboard-attention-list">
+                        {% for task in pending_tasks|slice:":2" %}
+                            <a class="dashboard-attention-item is-review" href="{% url 'workflow:task_detail' task.pk %}">
+                                <span class="dashboard-attention-marker">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l1 2h3a1 1 0 0 1 1 1v14H4V7a1 1 0 0 1 1-1h3l1-2Z"/><path d="m8 14 2.5 2.5L16 11"/></svg>
+                                </span>
+                                <span class="dashboard-attention-copy">
+                                    <strong>{{ task.workflow_step.workflow_run.submission.title }}</strong>
+                                    <small>Проверка: {{ task.workflow_step.name }}</small>
+                                </span>
+                                <span class="dashboard-attention-action">Проверить</span>
+                                <svg class="dashboard-row-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+                            </a>
+                        {% endfor %}
+
+                        {% for submission in attention_submissions|slice:":2" %}
+                            <a class="dashboard-attention-item is-revision" href="{% url 'submissions:detail' submission.pk %}">
+                                <span class="dashboard-attention-marker">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg>
+                                </span>
+                                <span class="dashboard-attention-copy">
+                                    <strong>{{ submission.title }}</strong>
+                                    <small>{{ submission.get_status_display }}</small>
+                                </span>
+                                <span class="dashboard-attention-action">Открыть</span>
+                                <svg class="dashboard-row-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+                            </a>
+                        {% endfor %}
+
+                        {% for appeal in pending_appeals|slice:":1" %}
+                            <a class="dashboard-attention-item is-appeal" href="{% url 'submissions:detail' appeal.submission.pk %}">
+                                <span class="dashboard-attention-marker">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H8l-4 4V5Z"/><path d="M8 9h8M8 13h5"/></svg>
+                                </span>
+                                <span class="dashboard-attention-copy">
+                                    <strong>{{ appeal.submission.title }}</strong>
+                                    <small>Апелляция ожидает рассмотрения</small>
+                                </span>
+                                <span class="dashboard-attention-action">Открыть</span>
+                                <svg class="dashboard-row-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+                            </a>
+                        {% endfor %}
+
+                        {% if not attention_count %}
+                            <div class="dashboard-empty-state">
+                                <span class="dashboard-empty-icon">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+                                </span>
+                                <div><strong>На сегодня всё спокойно</strong><span>Нет задач или статей, требующих вашего внимания.</span></div>
+                            </div>
+                        {% endif %}
+                    </div>
+                </article>
+
+                <article class="dashboard-card dashboard-articles-card">
+                    <div class="dashboard-card-head dashboard-card-head-bordered">
+                        <div>
+                            <span class="dashboard-card-kicker">Последние материалы</span>
+                            <h2>Мои статьи</h2>
+                        </div>
+                        <a class="dashboard-card-link" href="{% url 'submissions:list' %}">Все статьи <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></a>
+                    </div>
+
+                    <div class="dashboard-article-list">
+                        {% for submission in recent_submissions %}
+                            <a class="dashboard-article-row" href="{% url 'submissions:detail' submission.pk %}">
+                                <span class="dashboard-article-title">{{ submission.title }}</span>
+                                <span class="dashboard-status dashboard-status--{{ submission.status }}">{{ submission.get_status_display }}</span>
+                                <time datetime="{{ submission.updated_at|date:'c' }}">{{ submission.updated_at|date:"d.m.Y" }}</time>
+                                <svg class="dashboard-row-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+                            </a>
+                        {% empty %}
+                            <div class="dashboard-empty-state is-compact">
+                                <span class="dashboard-empty-icon">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H4V4a2 2 0 0 1 2-2Z"/><path d="M14 2v6h6"/></svg>
+                                </span>
+                                <div><strong>Статей пока нет</strong><span>Создайте первый материал — он появится в этом списке.</span></div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </article>
+            </div>
+
+            <aside class="dashboard-column dashboard-column-side">
+                <article class="dashboard-card dashboard-plan-card">
+                    <div class="dashboard-card-head">
+                        <div>
+                            <span class="dashboard-card-kicker">Личный план</span>
+                            <h2>Мой план</h2>
+                            <p>{{ personal_activity_year }} учебный год</p>
+                        </div>
+                        <a class="dashboard-icon-link" href="{% url 'activities:list' %}?scope=mine&amp;year={{ personal_activity_year|urlencode }}" aria-label="Открыть мой план">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+                        </a>
+                    </div>
+
+                    <div class="dashboard-plan-progress">
+                        <div class="dashboard-progress-ring" style="--progress: {{ activity_progress_percent }}%;" role="img" aria-label="Выполнено {{ activity_progress_percent }} процентов плана">
+                            <div class="dashboard-progress-ring-center">
+                                <strong>{{ activity_progress_percent }}%</strong>
+                                <span>выполнено</span>
+                                <small>{{ my_activity_completed }} из {{ my_activity_total }}</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-plan-stats">
+                        <div><span class="is-planned"></span><strong>{{ my_activity_planned }}</strong><small>Запланировано</small></div>
+                        <div><span class="is-progress"></span><strong>{{ my_activity_in_progress }}</strong><small>В работе</small></div>
+                        <div><span class="is-completed"></span><strong>{{ my_activity_completed }}</strong><small>Выполнено</small></div>
+                    </div>
+
+                    <div class="dashboard-plan-preview">
+                        <div class="dashboard-plan-preview-title">Мои запланированные результаты</div>
+                        {% for activity in recent_personal_activities|slice:":3" %}
+                            <a href="{% url 'activities:edit' activity.pk %}">
+                                <span>{{ activity.title }}</span>
+                                <small>{{ activity.get_status_display }}</small>
+                            </a>
+                        {% empty %}
+                            <p>В личном плане пока нет записей.</p>
+                        {% endfor %}
+                    </div>
+                </article>
+
+                {% if show_review_navigation %}
+                    <article class="dashboard-card dashboard-review-card">
+                        <div class="dashboard-review-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 2.8 8.1 7 10 4.2-1.9 7-5.5 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+                        </div>
+                        <div>
+                            <span class="dashboard-card-kicker">Экспертиза</span>
+                            <h3>{% if pending_task_count %}Ожидают проверки: {{ pending_task_count }}{% else %}Новых проверок нет{% endif %}</h3>
+                            <p>В истории сохранено решений: {{ review_history_count }}.</p>
+                        </div>
+                        <a href="{% url 'workflow:inbox' %}?scope={% if pending_task_count %}all{% else %}history{% endif %}" aria-label="Открыть раздел экспертизы">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+                        </a>
+                    </article>
+                {% endif %}
+            </aside>
+        </section>
+    </main>
+</div>
+
+<script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
+</body>
+</html>

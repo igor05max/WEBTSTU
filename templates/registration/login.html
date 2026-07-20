@@ -1,0 +1,151 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Вход в систему предпубликационного согласования научных статей университета.">
+    <title>Вход — Научный ЭДО</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'accounts/login.css' %}?v=20260717a">
+    <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+</head>
+<body>
+<div class="auth-shell">
+    <section class="auth-visual" aria-labelledby="auth-visual-title">
+        <div class="auth-visual-glow auth-visual-glow-one"></div>
+        <div class="auth-visual-glow auth-visual-glow-two"></div>
+
+        <div class="auth-visual-copy">
+            <div class="auth-eyebrow">
+                <span></span>
+                Единый цифровой контур
+            </div>
+            <h1 id="auth-visual-title">От рукописи<br>до публикации</h1>
+            <p>Все этапы согласования научной статьи — в одном понятном рабочем пространстве.</p>
+
+        </div>
+
+        <div class="auth-visual-art" aria-hidden="true">
+            <picture>
+                <source srcset="{% static 'accounts/login-research-illustration.webp' %}" type="image/webp">
+                <img src="{% static 'accounts/login-research-illustration.png' %}" alt="">
+            </picture>
+        </div>
+        <div class="auth-visual-index" aria-hidden="true">01</div>
+    </section>
+
+    <main class="auth-panel">
+        <div class="auth-form-wrap">
+            <header class="auth-form-heading">
+                <div class="auth-kicker">Личный кабинет</div>
+                <h2>С возвращением</h2>
+                <p>Введите данные учётной записи, чтобы продолжить работу.</p>
+            </header>
+
+            {% if messages %}
+                <ul class="auth-messages" aria-live="polite">
+                    {% for message in messages %}
+                        <li class="{{ message.tags }}">{{ message }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+
+            {% if form.non_field_errors %}
+                <div class="auth-alert" role="alert">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9"/>
+                        <path d="M12 7.7v5.2M12 16.4h.01"/>
+                    </svg>
+                    <div>
+                        <strong>Не удалось войти</strong>
+                        {{ form.non_field_errors }}
+                    </div>
+                </div>
+            {% endif %}
+
+            <form class="auth-form" method="post" action="{% url 'login' %}" data-auth-form>
+                {% csrf_token %}
+                {% if next %}
+                    <input type="hidden" name="next" value="{{ next }}">
+                {% endif %}
+
+                <div class="auth-field{% if form.username.errors %} has-error{% endif %}">
+                    <label for="{{ form.username.id_for_label }}">Логин</label>
+                    <div class="auth-input-wrap">
+                        <svg class="auth-input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="8" r="4"/>
+                            <path d="M4.8 20c.8-4 3.2-6 7.2-6s6.4 2 7.2 6"/>
+                        </svg>
+                        <input
+                            type="text"
+                            name="{{ form.username.html_name }}"
+                            value="{{ form.username.value|default_if_none:'' }}"
+                            id="{{ form.username.id_for_label }}"
+                            autocomplete="username"
+                            autocapitalize="none"
+                            spellcheck="false"
+                            placeholder="Введите логин"
+                            aria-describedby="username-hint{% if form.username.errors %} username-error{% endif %}"
+                            {% if form.username.errors %}aria-invalid="true"{% endif %}
+                            autofocus
+                            required
+                        >
+                    </div>
+                    <div class="auth-field-meta">
+                        <span id="username-hint">Логин выдан администратором системы</span>
+                        {% if form.username.errors %}
+                            <span class="auth-field-error" id="username-error">{{ form.username.errors|striptags }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="auth-field{% if form.password.errors %} has-error{% endif %}">
+                    <div class="auth-label-row">
+                        <label for="{{ form.password.id_for_label }}">Пароль</label>
+                    </div>
+                    <div class="auth-input-wrap">
+                        <svg class="auth-input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="5" y="10" width="14" height="10" rx="3"/>
+                            <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10M12 14v2"/>
+                        </svg>
+                        <input
+                            type="password"
+                            name="{{ form.password.html_name }}"
+                            id="{{ form.password.id_for_label }}"
+                            autocomplete="current-password"
+                            placeholder="Введите пароль"
+                            {% if form.password.errors %}aria-invalid="true" aria-describedby="password-error"{% endif %}
+                            required
+                        >
+                        <button class="auth-password-toggle" type="button" data-password-toggle aria-label="Показать пароль" aria-pressed="false">
+                            <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M2.8 12s3.2-5.5 9.2-5.5 9.2 5.5 9.2 5.5-3.2 5.5-9.2 5.5S2.8 12 2.8 12Z"/>
+                                <circle cx="12" cy="12" r="2.5"/>
+                            </svg>
+                            <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="m4 4 16 16M9.8 6.8c.7-.2 1.4-.3 2.2-.3 6 0 9.2 5.5 9.2 5.5a16.7 16.7 0 0 1-2.1 2.8M6.2 8.3A16.3 16.3 0 0 0 2.8 12s3.2 5.5 9.2 5.5c1.4 0 2.7-.3 3.8-.8M10.2 10.2a2.5 2.5 0 0 0 3.6 3.6"/>
+                            </svg>
+                        </button>
+                    </div>
+                    {% if form.password.errors %}
+                        <span class="auth-field-error" id="password-error">{{ form.password.errors|striptags }}</span>
+                    {% endif %}
+                </div>
+
+                <button class="auth-submit" type="submit">
+                    <span>Войти в систему</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M5 12h14M14 7l5 5-5 5"/>
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </main>
+</div>
+
+<script src="{% static 'accounts/login.js' %}?v=20260717a" defer></script>
+</body>
+</html>

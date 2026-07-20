@@ -1,0 +1,177 @@
+{% extends "workspace_base.html" %}
+{% load workspace_navigation %}
+
+{% block title %}{% if is_own_profile %}Мой профиль{% else %}Профиль автора{% endif %}{% endblock %}
+
+{% block sidebar %}{% workspace_sidebar "plan" %}{% endblock %}
+
+{% block content %}
+    <section class="hero hero-home">
+        <h1>{% if is_own_profile %}Мой профиль автора{% else %}Профиль автора{% endif %}</h1>
+        <p>
+            {{ author }}
+            {% if author.position %}| {{ author.position.name }}{% endif %}
+            {% if author.org_unit %}| {{ author.org_unit.name }}{% endif %}
+        </p>
+        <div class="hero-actions">
+            {% if is_own_profile %}
+                <a class="button" href="{% url 'submissions:create' %}">Новая заявка</a>
+                <a class="button secondary" href="{% url 'submissions:list' %}">Мои заявки</a>
+            {% endif %}
+            <a class="button secondary" href="{% url 'author_directory' %}">Все авторы</a>
+        </div>
+    </section>
+
+    <section class="overview-strip">
+        <div class="overview-item">
+            <span class="overview-label">Всего материалов</span>
+            <strong class="overview-value">{{ submission_count }}</strong>
+        </div>
+        <div class="overview-item">
+            <span class="overview-label">Отправлено</span>
+            <strong class="overview-value">{{ sent_submission_count }}</strong>
+        </div>
+        <div class="overview-item">
+            <span class="overview-label">Одобрено</span>
+            <strong class="overview-value">{{ approved_submission_count }}</strong>
+        </div>
+        <div class="overview-item">
+            <span class="overview-label">Последняя отправка</span>
+            <strong class="overview-value">{{ latest_submission_at|date:"d.m.Y"|default:"-" }}</strong>
+        </div>
+    </section>
+
+    {% if plan_items %}
+        <section class="surface">
+            <div class="section-head">
+                <div>
+                    <h3>Пункты из плана</h3>
+                    <p>Пункты индивидуального плана сохранены для справки.</p>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table class="plan-items-table">
+                    <thead>
+                    <tr>
+                        <th>Уровень</th>
+                        <th>Журнал</th>
+                        <th>Плановое название</th>
+                        <th>Источник</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for item in plan_items %}
+                        <tr>
+                            <td><strong>{{ item.level }}</strong></td>
+                            <td>{{ item.journal_name }}</td>
+                            <td>{{ item.article_title }}</td>
+                            <td>{{ item.source_sheet }} {{ item.source_cell }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    {% endif %}
+
+    <section class="surface">
+        <div class="section-head">
+            <div>
+                <h3>Профиль</h3>
+            </div>
+        </div>
+        <div class="submission-meta-grid">
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Автор</div>
+                <div class="submission-meta-value">{{ author }}</div>
+            </div>
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Логин</div>
+                <div class="submission-meta-value">{{ author.username }}</div>
+            </div>
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Группа</div>
+                <div class="submission-meta-value">{{ author.org_unit.name|default:"Не указана" }}</div>
+            </div>
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Должность</div>
+                <div class="submission-meta-value">{{ author.position.name|default:"Не указана" }}</div>
+            </div>
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Кафедра</div>
+                <div class="submission-meta-value">{{ author.get_chair_name|default:"Не указана" }}</div>
+            </div>
+            <div class="submission-meta-card">
+                <div class="submission-meta-label">Email</div>
+                <div class="submission-meta-value">{{ author.email|default:"Не указан" }}</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="surface">
+        <div class="section-head">
+            <div>
+                <h3>Отправленные материалы</h3>
+                <p>Все материалы автора, которые уже были отправлены на согласование.</p>
+            </div>
+        </div>
+
+        {% if sent_submissions %}
+            <div class="plain-list">
+                {% for submission in sent_submissions %}
+                    <article class="plain-row">
+                        <div class="plain-row-head">
+                            <div>
+                                <h4><a href="{% url 'submissions:detail' submission.pk %}">{{ submission.title }}</a></h4>
+                                <div class="meta">{{ submission.journal.name }} | {{ submission.article_type.name }}</div>
+                            </div>
+                            <span class="status-pill{% if submission.status == 'approved' %} success{% elif submission.status == 'rejected' %} danger{% elif submission.status == 'revision_requested' or submission.status == 'appeal_pending' %} warning{% else %} primary{% endif %}">
+                                {{ submission.get_status_display }}
+                            </span>
+                        </div>
+                        <div class="meta plain-row-meta">
+                            Отправлена: {{ submission.submitted_at|date:"d.m.Y H:i"|default:"-" }}
+                            | Авторы: {{ submission.get_authors_display|default:"Не указаны" }}
+                            | Область: {{ submission.direction.name|default:"Не выбрано" }}
+                            | Маршрут: {{ submission.route_template.name|default:"Не выбрано" }}
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty">У автора пока нет отправленных материалов.</div>
+        {% endif %}
+    </section>
+
+    <section class="surface">
+        <div class="section-head">
+            <div>
+                <h3>Одобренные материалы</h3>
+                <p>Материалы автора, успешно прошедшие согласование.</p>
+            </div>
+        </div>
+
+        {% if approved_submissions %}
+            <div class="plain-list">
+                {% for submission in approved_submissions %}
+                    <article class="plain-row">
+                        <div class="plain-row-head">
+                            <div>
+                                <h4><a href="{% url 'submissions:detail' submission.pk %}">{{ submission.title }}</a></h4>
+                                <div class="meta">{{ submission.journal.name }} | {{ submission.article_type.name }}</div>
+                            </div>
+                            <span class="status-pill success">Согласована</span>
+                        </div>
+                        <div class="meta plain-row-meta">
+                            Отправлена: {{ submission.submitted_at|date:"d.m.Y H:i"|default:"-" }}
+                            | Авторы: {{ submission.get_authors_display|default:"Не указаны" }}
+                            | Область: {{ submission.direction.name|default:"Не выбрано" }}
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty">У автора пока нет одобренных материалов.</div>
+        {% endif %}
+    </section>
+{% endblock %}

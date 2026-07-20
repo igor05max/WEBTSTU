@@ -1,0 +1,110 @@
+from io import BytesIO
+from types import SimpleNamespace
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
+
+from apps.checks.document_checks import build_file_safety_report
+from apps.checks.models import CheckRunStatus
+from apps.directory.models import ArticleType, Journal
+from apps.submissions.document_analysis import analyze_document_bytes, match_authors_to_users
+from apps.submissions.models import SubmissionStatus
+from apps.submissions.services import create_submission_with_initial_version
+
+
+def build_article_docx(*, dangerous_member=False):
+    paragraphs = [
+        "УДК 004.9",
+        "author-header@example.ru",
+        "author-header@example.ru",
+        "ПРОГРАММНЫЙ МОДУЛЬ ДЛЯ АНАЛИЗА НАУЧНЫХ МАТЕРИАЛОВ",
+        "А.Е. Архипов, В.С. Круглов",
+        "Кафедра информационных систем ФГБОУ ВО «ТГТУ»",
+        "author@example.ru",
+        "Ключевые слова: анализ, документ, метаданные.",
+        "Аннотация: описан метод автоматической проверки научной статьи.",
+        "Введение",
+        "Основной текст с подозрительным словом cистема.",
+        "Материалы и методы",
+        "Результаты",
+        "Обсуждение",
+        "Заключение",
+        "Список литературы",
+        "Иванов И. И. Анализ документов. 2025.",
+    ]
+    body = "".join(
+        f"<w:p><w:r><w:t>{value}</w:t></w:r></w:p>" for value in paragraphs
+    )
+    document_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f"<w:body>{body}<w:sectPr/></w:body></w:document>"
+    )
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", document_xml)
+        if dangerous_member:
+            archive.writestr("word/vbaProject.bin", b"macro")
+    return buffer.getvalue()
+
+
+class DocumentAnalysisTests(TestCase):
+    def test_extracts_editable_metadata_and_matches_directory_users(self):
+        snapshot = analyze_document_bytes(build_article_docx(), "article.docx")
+
+        self.assertEqual(
+            snapshot["metadata"]["title"],
+            "ПРОГРАММНЫЙ МОДУЛЬ ДЛЯ АНАЛИЗА НАУЧНЫХ МАТЕРИАЛОВ",
+        )
+        self.assertEqual(snapshot["metadata"]["authors"], ["А.Е. Архипов", "В.С. Круглов"])
+        self.assertEqual(snapshot["metadata"]["contact_emails"], "author@example.ru")
+
+        user = get_user_model().objects.create_user(
+            username="arhipov_ae",
+            first_name="Архипов Алексей Евгеньевич",
+        )
+        matches = match_authors_to_users(snapshot["metadata"]["authors"], [user])
+        self.assertEqual(matches[0]["user_id"], user.id)
+
+    def test_dangerous_docx_member_is_critical(self):
+        snapshot = analyze_document_bytes(build_article_docx(dangerous_member=True), "article.docx")
+        submission = SimpleNamespace()
+        version = SimpleNamespace(file=True)
+
+        passed, payload = build_file_safety_report(submission, version, snapshot=snapshot)
+
+        self.assertFalse(passed)
+        self.assertTrue(
+            any(issue["code"] == "dangerous_archive_member" for issue in payload["issues"])
+        )
+        self.assertEqual(payload["summary"]["critical"], 1)
+
+
+@override_settings(
+    SUBMISSION_CHECKS_ASYNC=False,
+    SUBMISSION_CONTENT_REVIEW_ENABLED=False,
+    SUBMISSION_ROUTE_SUGGESTION_ENABLED=False,
+)
+class AdvisoryChecksTests(TestCase):
+    def test_failed_quality_check_does_not_block_submission(self):
+        user = get_user_model().objects.create_user(username="quality_author", password="1234")
+        journal = Journal.objects.create(name="Журнал проверки")
+        article_type = ArticleType.objects.create(code="article", name="Статья")
+
+        submission = create_submission_with_initial_version(
+            author=user,
+            title="Короткий материал",
+            abstract="",
+            journal=journal,
+            article_type=article_type,
+            file=SimpleUploadedFile("article.txt", b"short text"),
+        )
+
+        submission.refresh_from_db()
+        metadata_run = submission.check_runs.get(check_definition__code="metadata_complete")
+        self.assertEqual(metadata_run.status, CheckRunStatus.FAILED)
+        self.assertEqual(submission.status, SubmissionStatus.SUBMITTED)
+        self.assertIn("summary", metadata_run.result_payload)
+        self.assertTrue(metadata_run.result_payload["issues"])

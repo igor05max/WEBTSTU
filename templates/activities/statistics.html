@@ -1,0 +1,213 @@
+{% load static workspace_navigation %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Статистика выполнения индивидуальных планов по кафедрам и сотрудникам.">
+    <title>Статистика — Научный ЭДО</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
+    <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+    <link rel="stylesheet" href="{% static 'activities/statistics.css' %}?v=20260719a">
+</head>
+<body>
+<div class="dashboard-shell">
+    {% workspace_sidebar "statistics" %}
+
+    <main class="dashboard-main statistics-main">
+        <header class="statistics-header">
+            <div>
+                <span class="statistics-kicker">Аналитика планов</span>
+                <h1>Статистика выполнения</h1>
+                <p>Подтверждённые результаты, остаток плана и показатели сотрудников по каждой кафедре.</p>
+            </div>
+            <a class="statistics-matrix-link" href="{% url 'activities:matrix' %}?year={{ selected_year|urlencode }}">
+                <span>Открыть таблицу</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg>
+            </a>
+        </header>
+
+        <section class="statistics-filter-card" aria-label="Фильтры статистики">
+            <form method="get" action="{% url 'activities:statistics' %}" class="statistics-filter">
+                <label>
+                    <span>Кафедра</span>
+                    <select name="department">
+                        <option value="all"{% if selected_department == "all" %} selected{% endif %}>Все кафедры</option>
+                        {% for department in department_rows %}
+                            <option value="{{ department.code }}"{% if selected_department == department.code %} selected{% endif %}>{{ department.code }} — {{ department.people_count }} сотрудников</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    <span>Учебный год</span>
+                    <select name="year">
+                        {% for year in years %}
+                            <option value="{{ year }}"{% if selected_year == year %} selected{% endif %}>{{ year }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit">Показать</button>
+            </form>
+            <div class="statistics-filter-context">
+                <span>{{ selected_department_label }}</span>
+                <strong>{{ selected_year }}</strong>
+            </div>
+        </section>
+
+        <section class="statistics-summary" aria-label="Основные показатели">
+            <article class="statistics-progress-card">
+                <div class="statistics-progress-ring" style="--statistics-progress: {{ summary.progress_percent }}%;">
+                    <div>
+                        <strong>{{ summary.progress_percent }}%</strong>
+                        <span>выполнено</span>
+                    </div>
+                </div>
+                <div class="statistics-progress-copy">
+                    <span>Общий показатель</span>
+                    <h2>{{ selected_department_label }}</h2>
+                    <p>{{ summary.confirmed }} из {{ summary.planned }} запланированных результатов подтверждено.</p>
+                </div>
+            </article>
+
+            <div class="statistics-metrics">
+                <article class="statistics-metric is-blue">
+                    <span class="statistics-metric-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a2 2 0 0 1 2 2v16H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 3v18M11 8h6M11 12h6M11 16h4"/></svg>
+                    </span>
+                    <div><span>Запланировано</span><strong>{{ summary.planned }}</strong><small>результатов</small></div>
+                </article>
+                <article class="statistics-metric is-green">
+                    <span class="statistics-metric-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.4c0 4.5 3.1 8.1 7.5 9.6 4.4-1.5 7.5-5.1 7.5-9.6V6L12 3Z"/><path d="m8.5 12.4 2.2 2.2 4.8-5"/></svg>
+                    </span>
+                    <div><span>Подтверждено</span><strong>{{ summary.confirmed }}</strong><small>зачтено в план</small></div>
+                </article>
+                <article class="statistics-metric is-orange">
+                    <span class="statistics-metric-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    </span>
+                    <div><span>Осталось</span><strong>{{ summary.remaining }}</strong><small>до выполнения</small></div>
+                </article>
+                <article class="statistics-metric is-violet">
+                    <span class="statistics-metric-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="9"/></svg>
+                    </span>
+                    <div><span>Сверх плана</span><strong>{{ summary.extra }}</strong><small>отдельных результатов</small></div>
+                </article>
+            </div>
+        </section>
+
+        <section class="statistics-card statistics-departments">
+            <div class="statistics-card-heading">
+                <div>
+                    <span class="statistics-kicker">Сравнение</span>
+                    <h2>Кафедры</h2>
+                </div>
+                <p>{{ summary.completed_people }} из {{ summary.people }} сотрудников полностью выполнили свой план.</p>
+            </div>
+            <div class="statistics-department-grid">
+                {% for department in department_rows %}
+                    <a class="statistics-department{% if department.is_selected %} is-selected{% endif %}" href="{{ department.url }}">
+                        <div class="statistics-department-top">
+                            <span>{{ department.code }}</span>
+                            <strong>{{ department.percent }}%</strong>
+                        </div>
+                        <div class="statistics-bar"><i style="width: {{ department.percent }}%;"></i></div>
+                        <div class="statistics-department-meta">
+                            <span>{{ department.confirmed }} / {{ department.planned }}</span>
+                            <small>{{ department.people_count }} сотрудников{% if department.extra %} · +{{ department.extra }} вне плана{% endif %}</small>
+                        </div>
+                    </a>
+                {% empty %}
+                    <div class="statistics-empty">Для выбранного года состав кафедр пока не загружен.</div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="statistics-card statistics-types">
+            <div class="statistics-card-heading">
+                <div>
+                    <span class="statistics-kicker">Структура результатов</span>
+                    <h2>Выполнение по видам работ</h2>
+                </div>
+                <p>Факт учитывается один раз — в том пункте плана, к которому он привязан.</p>
+            </div>
+            <div class="statistics-type-grid">
+                {% for row in type_rows %}
+                    <article class="statistics-type">
+                        <div class="statistics-type-heading">
+                            <div><strong>{{ row.name }}</strong><span>{{ row.area }}</span></div>
+                            <b>{{ row.percent }}%</b>
+                        </div>
+                        <div class="statistics-bar"><i style="width: {{ row.percent }}%;"></i></div>
+                        <div class="statistics-type-values">
+                            <span>Подтверждено <strong>{{ row.confirmed }}</strong></span>
+                            <span>План <strong>{{ row.planned }}</strong></span>
+                            {% if row.extra %}<span class="is-extra">Вне плана <strong>+{{ row.extra }}</strong></span>{% endif %}
+                        </div>
+                    </article>
+                {% empty %}
+                    <div class="statistics-empty">Нет плановых или фактических результатов для отображения.</div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="statistics-card statistics-employees">
+            <div class="statistics-card-heading">
+                <div>
+                    <span class="statistics-kicker">Сотрудники</span>
+                    <h2>Личный вклад и выполнение</h2>
+                </div>
+                <p>Сначала показаны сотрудники с наибольшим количеством подтверждённых результатов.</p>
+            </div>
+            <div class="statistics-table-wrap">
+                <table class="statistics-table">
+                    <thead>
+                        <tr>
+                            <th>Сотрудник</th>
+                            <th>Должность</th>
+                            <th>План</th>
+                            <th>Подтверждено</th>
+                            <th>Осталось</th>
+                            <th>Вне плана</th>
+                            <th>Выполнение</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in employee_rows %}
+                            <tr>
+                                <td>
+                                    <a class="statistics-person" href="{{ row.plan_url }}">
+                                        <span>{{ row.initials }}</span>
+                                        <div><strong>{{ row.name }}</strong><small>Открыть план</small></div>
+                                    </a>
+                                </td>
+                                <td>{{ row.person.position.name|default:"Не указана" }}</td>
+                                <td><strong>{{ row.planned }}</strong></td>
+                                <td><strong class="statistics-confirmed">{{ row.confirmed }}</strong></td>
+                                <td>{{ row.remaining }}</td>
+                                <td>{% if row.extra %}<span class="statistics-extra">+{{ row.extra }}</span>{% else %}—{% endif %}</td>
+                                <td>
+                                    <div class="statistics-employee-progress">
+                                        <div><i style="width: {{ row.percent }}%;"></i></div>
+                                        <span>{{ row.percent }}%</span>
+                                    </div>
+                                    <small class="statistics-status {{ row.status_class }}">{{ row.status_label }}</small>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="7" class="statistics-empty">Сотрудники не найдены.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+# Секреты и локальные настройки
+.env
+.env.*
+!.env.example
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Рабочая база и пользовательские файлы
+*.sqlite3
+media/
+backups/
+
+# Импортированные наборы данных и локальные корпуса
+2025_2026/
+downloads_2022/
+journals_rcsi.json
+science.txt
+test_materials/
+
+# Генерируемые файлы
+staticfiles/
+tmp/
+tmp_previews/
+*.log
+*.tmp
+*.bak
+*.zip
+*.tar.gz
+
+# Настройки редакторов и служебные каталоги
+.idea/
+.vscode/
+.agents/
+.codex_tmp/
+.DS_Store
+Thumbs.db
