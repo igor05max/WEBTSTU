@@ -2,11 +2,12 @@ from django.contrib.auth.models import Group
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
@@ -16,6 +17,7 @@ from apps.checks.models import CheckRunStatus
 from apps.directory.models import ArticleType, Direction, Journal, OrgUnit
 from apps.directory.journal_search import build_journal_search_index
 from apps.submissions.forms import SubmissionCreateForm, SubmissionSubmitForm
+from apps.submissions.document_preview import _build_word_document_pdf_with_libreoffice
 from apps.submissions.models import Submission, SubmissionAppealStatus, SubmissionStatus, SubmissionVersion
 from apps.submissions.subject_area import detect_direction_for_submission
 from apps.submissions.views import _build_route_preview_templates
@@ -1658,3 +1660,30 @@ class SubmissionVersionPreviewTests(TestCase):
 
         self.assertEqual(preview_response.status_code, 404)
         self.assertEqual(content_response.status_code, 404)
+
+
+class WordConversionEnvironmentTests(SimpleTestCase):
+    @override_settings(LIBREOFFICE_BINARY="/usr/bin/libreoffice")
+    @patch("apps.submissions.document_preview.subprocess.run")
+    def test_libreoffice_receives_writable_home_and_temp_directories(self, mocked_run):
+        def create_converted_pdf(command, **_kwargs):
+            output_directory = Path(command[command.index("--outdir") + 1])
+            (output_directory / "source.pdf").write_bytes(b"%PDF-1.4\n" + (b"0" * 120))
+            return SimpleNamespace(returncode=0)
+
+        mocked_run.side_effect = create_converted_pdf
+        with TemporaryDirectory() as temporary_directory:
+            temporary_directory = Path(temporary_directory)
+            source_path = temporary_directory / "source.docx"
+            output_path = temporary_directory / "result.pdf"
+            source_path.write_bytes(b"docx")
+
+            _build_word_document_pdf_with_libreoffice(
+                source_path=source_path,
+                output_path=output_path,
+                format_name="DOCX",
+            )
+
+        environment = mocked_run.call_args.kwargs["env"]
+        self.assertEqual(Path(environment["HOME"]).name, "home")
+        self.assertTrue(Path(environment["TMPDIR"]).name.startswith("word-preview-"))

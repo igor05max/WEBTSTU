@@ -204,6 +204,8 @@ def _build_word_document_pdf_with_libreoffice(*, source_path, output_path, forma
     ) as temporary_directory:
         temporary_directory = Path(temporary_directory)
         profile_directory = temporary_directory / "libreoffice-profile"
+        home_directory = temporary_directory / "home"
+        home_directory.mkdir()
         command = [
             executable,
             f"-env:UserInstallation={profile_directory.as_uri()}",
@@ -214,12 +216,16 @@ def _build_word_document_pdf_with_libreoffice(*, source_path, output_path, forma
             str(temporary_directory),
             str(source_path),
         ]
+        environment = os.environ.copy()
+        environment["HOME"] = str(home_directory)
+        environment["TMPDIR"] = str(temporary_directory)
         try:
             result = subprocess.run(
                 command,
                 capture_output=True,
                 check=False,
                 timeout=120,
+                env=environment,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise DocumentPreviewError(
