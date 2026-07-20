@@ -6,6 +6,7 @@ from apps.conclusions.services import (
     append_prorector_approval_step,
     create_authenticated_signature,
     ensure_conclusion_document,
+    finalize_conclusion_package,
 )
 from apps.submissions.models import SubmissionAppeal, SubmissionAppealStatus, SubmissionStatus
 from apps.workflow.models import (
@@ -575,6 +576,12 @@ def approve_task(task, actor, comment="", *, request_meta=None):
 
         submission.status = SubmissionStatus.APPROVED
         submission.save()
+        try:
+            conclusion_document = workflow_run.conclusion_document
+        except AttributeError:
+            conclusion_document = None
+        if conclusion_document is not None:
+            finalize_conclusion_package(conclusion_document)
         return task
 
     _activate_step(workflow_run, next_step)

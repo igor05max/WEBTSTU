@@ -16,6 +16,11 @@ def conclusion_pdf_upload_to(instance, filename):
     return f"conclusions/{run_id}/pdf/{filename}"
 
 
+def conclusion_package_upload_to(instance, filename):
+    run_id = instance.workflow_run_id or "run"
+    return f"conclusions/{run_id}/package/{filename}"
+
+
 class ConclusionDocument(models.Model):
     workflow_run = models.OneToOneField(
         "workflow.WorkflowRun",
@@ -49,6 +54,31 @@ class ConclusionDocument(models.Model):
         db_index=True,
         verbose_name="SHA-256 подписываемого заключения",
     )
+    package_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    source_pdf_file = models.FileField(
+        upload_to=conclusion_package_upload_to,
+        blank=True,
+        verbose_name="Исходное заключение PDF",
+    )
+    source_pdf_sha256 = models.CharField(max_length=64, blank=True, editable=False)
+    printed_pdf_file = models.FileField(
+        upload_to=conclusion_package_upload_to,
+        blank=True,
+        verbose_name="Печатная форма с подписями PDF",
+    )
+    printed_pdf_sha256 = models.CharField(max_length=64, blank=True, editable=False)
+    signature_data_file = models.FileField(
+        upload_to=conclusion_package_upload_to,
+        blank=True,
+        verbose_name="Данные электронных подписей XML",
+    )
+    signature_data_sha256 = models.CharField(max_length=64, blank=True, editable=False)
+    package_finalized_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Комплект файлов сформирован",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Сформировано")
     sealed_at = models.DateTimeField(null=True, blank=True, verbose_name="Зафиксировано")
     is_sealed = models.BooleanField(default=False, editable=False)
@@ -71,11 +101,26 @@ class ConclusionDocument(models.Model):
                 "registration_number",
                 "document_file",
                 "document_sha256",
+                "package_id",
             )
             if previous and previous.is_sealed and any(
                 getattr(previous, field) != getattr(self, field) for field in protected_fields
             ):
                 raise ValidationError("Зафиксированное заключение нельзя изменять.")
+            package_fields = (
+                "package_id",
+                "source_pdf_file",
+                "source_pdf_sha256",
+                "printed_pdf_file",
+                "printed_pdf_sha256",
+                "signature_data_file",
+                "signature_data_sha256",
+                "package_finalized_at",
+            )
+            if previous and previous.package_finalized_at and any(
+                getattr(previous, field) != getattr(self, field) for field in package_fields
+            ):
+                raise ValidationError("Сформированный комплект заключения нельзя изменять.")
         super().save(*args, **kwargs)
 
 

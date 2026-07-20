@@ -1,5 +1,8 @@
 import hashlib
+import io
 import tempfile
+from unittest.mock import patch
+from xml.etree import ElementTree
 
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
@@ -7,6 +10,7 @@ from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from pypdf import PdfReader, PdfWriter
 
 from apps.accounts.models import User
 from apps.conclusions.models import ConclusionDocument, ConclusionSignature
@@ -101,6 +105,15 @@ class ConclusionSignatureTests(TestCase):
             assigned_unit=self.reviewer_unit,
             activated_at=timezone.now(),
         )
+        self.final_step = WorkflowStep.objects.create(
+            workflow_run=self.workflow_run,
+            order=2,
+            name="Утверждение",
+            assignee_kind=AssigneeKind.FIXED_UNIT_GROUP,
+            assigned_group=self.reviewer_role,
+            assigned_unit=self.reviewer_unit,
+            status=WorkflowStepStatus.PENDING,
+        )
         self.docx_bytes = b"immutable conclusion docx"
         self.document = ConclusionDocument.objects.create(
             workflow_run=self.workflow_run,
@@ -156,6 +169,82 @@ class ConclusionSignatureTests(TestCase):
         self.assertTrue(document.document_file.name.endswith(".docx"))
         self.assertEqual(document.document_sha256, calculate_file_sha256(document.document_file))
         self.assertTrue(document.is_sealed)
+
+    def test_final_approval_creates_three_file_package_with_visual_signatures(self):
+        approve_task(self.task, self.reviewer)
+        final_task = ApprovalTask.objects.get(workflow_step=self.final_step)
+
+        source_pdf = io.BytesIO()
+        source_writer = PdfWriter()
+        source_writer.add_blank_page(width=595, height=842)
+        source_writer.add_blank_page(width=595, height=842)
+        source_writer.write(source_pdf)
+        with patch(
+            "apps.conclusions.services._convert_conclusion_docx_to_pdf",
+            return_value=source_pdf.getvalue(),
+        ):
+            approve_task(final_task, self.reviewer)
+
+        self.document.refresh_from_db()
+        self.assertIsNotNone(self.document.package_finalized_at)
+        self.assertEqual(self.document.source_pdf_file.name.rsplit("/", 1)[-1], f"{self.document.package_id}.pdf")
+        self.assertEqual(self.document.printed_pdf_file.name.rsplit("/", 1)[-1], "Печатная_форма.pdf")
+        self.assertEqual(self.document.signature_data_file.name.rsplit("/", 1)[-1], "wredc_data.xml")
+        self.assertTrue(verify_conclusion_document(self.document)["package_is_valid"])
+
+        with self.document.printed_pdf_file.open("rb") as source:
+            printed_pdf = PdfReader(source)
+            printed_text = "\n".join(page.extract_text() or "" for page in printed_pdf.pages)
+        self.assertEqual(len(printed_pdf.pages), 2)
+        self.assertIn("ПЭП ТГТУ", printed_text)
+        self.assertIn(self.reviewer.get_full_name(), printed_text)
+        self.assertIn("Согласовано", printed_text)
+        self.assertIn("Подписано", printed_text)
+
+        with self.document.signature_data_file.open("rb") as source:
+            xml_bytes = source.read()
+        root = ElementTree.fromstring(xml_bytes)
+        namespace = {"edoc": "urn:tgtu:electronic-document:1.0"}
+        self.assertEqual(root.get("id"), str(self.document.package_id))
+        self.assertEqual(
+            root.findtext(".//edoc:file", namespaces=namespace),
+            f"{self.document.package_id}.pdf",
+        )
+        self.assertEqual(
+            len(root.findall(".//edoc:signature", namespaces=namespace)),
+            2,
+        )
+
+    def test_final_package_downloads_require_visible_task(self):
+        approve_task(self.task, self.reviewer)
+        final_task = ApprovalTask.objects.get(workflow_step=self.final_step)
+        source_pdf = io.BytesIO()
+        source_writer = PdfWriter()
+        source_writer.add_blank_page(width=595, height=842)
+        source_writer.write(source_pdf)
+        with patch(
+            "apps.conclusions.services._convert_conclusion_docx_to_pdf",
+            return_value=source_pdf.getvalue(),
+        ):
+            approve_task(final_task, self.reviewer)
+
+        self.client.force_login(self.reviewer)
+        expected_types = {
+            "source": "application/pdf",
+            "printed": "application/pdf",
+            "signatures": "application/xml",
+        }
+        for file_kind, content_type in expected_types.items():
+            response = self.client.get(
+                reverse(
+                    "workflow:conclusion_package_file",
+                    args=[final_task.pk, file_kind],
+                )
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], content_type)
+            self.assertTrue(b"".join(response.streaming_content))
+            response.close()
 
     def test_conclusion_download_requires_visible_workflow_task(self):
         download_url = reverse("workflow:conclusion_download", args=[self.task.pk])

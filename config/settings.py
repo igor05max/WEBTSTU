@@ -267,6 +267,10 @@ CONCLUSION_TEMPLATE_PATH = Path(
     )
 )
 CONCLUSION_REGISTRATION_PREFIX = os.getenv("CONCLUSION_REGISTRATION_PREFIX", "ЗОП").strip() or "ЗОП"
+CONCLUSION_EMPLOYER_NAME = (
+    os.getenv("CONCLUSION_EMPLOYER_NAME", "ФГБОУ ВО «ТГТУ»").strip() or "ФГБОУ ВО «ТГТУ»"
+)
+CONCLUSION_PDF_FONT_PATH = os.getenv("CONCLUSION_PDF_FONT_PATH", "").strip()
 PLANNING_ROSTER_SOURCE_ROOT = Path(
     os.getenv(
         "PLANNING_ROSTER_SOURCE_ROOT",

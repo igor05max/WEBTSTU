@@ -123,18 +123,33 @@ def build_word_document_pdf(version):
     if _is_valid_pdf(output_path):
         return output_path
 
+    convert_word_path_to_pdf(
+        source_path,
+        output_path,
+        format_name=format_name,
+    )
+    return output_path
+
+
+def convert_word_path_to_pdf(source_path, output_path, *, format_name="DOCX"):
+    """Convert a local Word document into a PDF at an explicit destination."""
+    source_path = Path(source_path).resolve(strict=True)
+    output_path = Path(output_path).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     if os.name != "nt":
-        return _build_word_document_pdf_with_libreoffice(
+        _build_word_document_pdf_with_libreoffice(
             source_path=source_path,
             output_path=output_path,
             format_name=format_name,
         )
+        return output_path
 
     conversion_script = Path(__file__).with_name("convert_word_to_pdf.ps1")
     if not conversion_script.exists():
         raise DocumentPreviewError("На сервере не настроен конвертер документов Word.")
 
-    temporary_output = cache_directory / f".{version.pk}-{uuid4().hex}.pdf"
+    temporary_output = output_path.parent / f".{output_path.stem}-{uuid4().hex}.pdf"
     command = [
         "powershell.exe",
         "-NoProfile",

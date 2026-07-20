@@ -10,6 +10,7 @@ class ConclusionDocumentAdmin(admin.ModelAdmin):
         "submission",
         "source_version",
         "document_sha256",
+        "package_finalized_at",
         "created_at",
     )
     search_fields = ("registration_number", "submission__title", "document_sha256")
@@ -20,6 +21,14 @@ class ConclusionDocumentAdmin(admin.ModelAdmin):
         "registration_number",
         "document_file",
         "document_sha256",
+        "package_id",
+        "source_pdf_file",
+        "source_pdf_sha256",
+        "printed_pdf_file",
+        "printed_pdf_sha256",
+        "signature_data_file",
+        "signature_data_sha256",
+        "package_finalized_at",
         "created_at",
         "sealed_at",
         "is_sealed",

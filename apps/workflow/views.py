@@ -244,6 +244,36 @@ def conclusion_document_download(request, pk):
     )
 
 
+@login_required
+def conclusion_package_file_download(request, pk, file_kind):
+    task = _get_visible_task_or_404(request.user, pk)
+    document = get_object_or_404(
+        ConclusionDocument,
+        workflow_run=task.workflow_step.workflow_run,
+    )
+    package_files = {
+        "source": (document.source_pdf_file, "application/pdf"),
+        "printed": (document.printed_pdf_file, "application/pdf"),
+        "signatures": (document.signature_data_file, "application/xml"),
+    }
+    file_entry = package_files.get(file_kind)
+    if not document.package_finalized_at or file_entry is None:
+        raise Http404
+    file_field, content_type = file_entry
+    if not file_field:
+        raise Http404
+    try:
+        source = file_field.open("rb")
+    except OSError as exc:
+        raise Http404 from exc
+    return FileResponse(
+        source,
+        as_attachment=True,
+        filename=file_field.name.rsplit("/", maxsplit=1)[-1],
+        content_type=content_type,
+    )
+
+
 def _handle_task_action(request, pk, action, *, form_key, success_message):
     if request.method != "POST":
         raise Http404

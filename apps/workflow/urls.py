@@ -13,6 +13,11 @@ urlpatterns = [
         views.conclusion_document_download,
         name="conclusion_download",
     ),
+    path(
+        "tasks/<int:pk>/conclusion/files/<str:file_kind>/",
+        views.conclusion_package_file_download,
+        name="conclusion_package_file",
+    ),
     path("tasks/<int:pk>/approve/", views.approve_task_view, name="approve_task"),
     path("tasks/<int:pk>/request-revision/", views.request_revision_view, name="request_revision"),
     path("tasks/<int:pk>/reject/", views.reject_task_view, name="reject_task"),

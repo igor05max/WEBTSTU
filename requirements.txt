@@ -2,3 +2,5 @@ Django==5.2.15
 gunicorn==23.0.0
 openai==2.44.0
 psycopg[binary]==3.3.4
+pypdf==6.10.0
+reportlab==4.4.9
