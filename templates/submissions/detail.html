@@ -263,7 +263,7 @@
                                         Посмотреть
                                     </a>
                                 {% endif %}
-                                <a class="submission-inline-link" href="{{ version.file.url }}" download>Скачать</a>
+                                <a class="submission-inline-link" href="{% url 'submissions:version_download' submission.pk version.pk %}">Скачать</a>
                             </div>
                         </div>
                     {% endfor %}

@@ -1602,6 +1602,24 @@ class SubmissionVersionPreviewTests(TestCase):
         self.assertEqual(content_response["X-Frame-Options"], "SAMEORIGIN")
         self.assertEqual(b"".join(content_response.streaming_content), b"%PDF-1.4\n%%EOF")
 
+    def test_original_download_is_protected_and_preserves_filename(self):
+        version = self._create_version("article.pdf", b"private-pdf", "application/pdf")
+        download_url = reverse(
+            "submissions:version_download",
+            args=[self.submission.pk, version.pk],
+        )
+
+        self.client.force_login(self.author)
+        response = self.client.get(download_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('filename="article.pdf"', response["Content-Disposition"])
+        self.assertEqual(b"".join(response.streaming_content), b"private-pdf")
+        response.close()
+
+        self.client.force_login(self.outsider)
+        self.assertEqual(self.client.get(download_url).status_code, 404)
+
     @patch("apps.submissions.views.build_legacy_doc_pdf")
     def test_legacy_doc_preview_uses_converted_pdf(self, mocked_converter):
         version = self._create_version("article.doc", b"legacy-word-content", "application/msword")

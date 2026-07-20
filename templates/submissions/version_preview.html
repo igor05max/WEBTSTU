@@ -18,7 +18,7 @@
             <h1>Просмотр файла</h1>
             <p>{{ submission.title }}</p>
         </div>
-        <a class="document-preview-download" href="{{ version.file.url }}" download>
+        <a class="document-preview-download" href="{% url 'submissions:version_download' submission.pk version.pk %}">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
             Скачать оригинал
         </a>
@@ -42,7 +42,7 @@
             <div class="document-preview-message error">
                 <strong>Не удалось показать файл</strong>
                 <span>{{ preview_error }}</span>
-                <a href="{{ version.file.url }}" download>Скачать оригинал</a>
+                <a href="{% url 'submissions:version_download' submission.pk version.pk %}">Скачать оригинал</a>
             </div>
         {% elif preview_kind == "pdf" or preview_kind == "legacy_doc" or preview_kind == "word_pdf" %}
             <div class="document-preview-pdf">

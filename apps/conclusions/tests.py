@@ -5,6 +5,7 @@ from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -155,3 +156,18 @@ class ConclusionSignatureTests(TestCase):
         self.assertTrue(document.document_file.name.endswith(".docx"))
         self.assertEqual(document.document_sha256, calculate_file_sha256(document.document_file))
         self.assertTrue(document.is_sealed)
+
+    def test_conclusion_download_requires_visible_workflow_task(self):
+        download_url = reverse("workflow:conclusion_download", args=[self.task.pk])
+        self.client.force_login(self.reviewer)
+
+        response = self.client.get(download_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('filename="conclusion.docx"', response["Content-Disposition"])
+        self.assertEqual(b"".join(response.streaming_content), self.docx_bytes)
+        response.close()
+
+        outsider = User.objects.create_user(username="conclusion-outsider", password="1234")
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(download_url).status_code, 404)

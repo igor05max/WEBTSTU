@@ -128,7 +128,7 @@
             {% endif %}
             {% if submission.current_version %}
                 <div class="stack-top-md">
-                    <a class="button secondary" href="{{ submission.current_version.file.url }}">Скачать текущую версию v{{ submission.current_version.version_number }}</a>
+                    <a class="button secondary" href="{% url 'submissions:version_download' submission.pk submission.current_version.pk %}">Скачать текущую версию v{{ submission.current_version.version_number }}</a>
                 </div>
             {% endif %}
         </div>
@@ -260,7 +260,7 @@
             </div>
             <p class="meta">SHA-256: {{ conclusion_document.document_sha256 }}</p>
             <div class="actions">
-                <a class="button secondary" href="{{ conclusion_document.document_file.url }}">Скачать подписываемое заключение DOCX</a>
+                <a class="button secondary" href="{% url 'workflow:conclusion_download' task.pk %}">Скачать подписываемое заключение DOCX</a>
             </div>
             {% if conclusion_document.signatures.all %}
                 <div class="timeline stack-top-md">

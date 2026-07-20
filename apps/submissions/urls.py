@@ -20,6 +20,11 @@ urlpatterns = [
         views.submission_version_content,
         name="version_content",
     ),
+    path(
+        "<int:pk>/versions/<int:version_pk>/download/",
+        views.submission_version_download,
+        name="version_download",
+    ),
     path("<int:pk>/progress/", views.submission_progress_view, name="progress"),
     path("<int:pk>/checks-report/", views.submission_checks_report_view, name="checks_report"),
     path("<int:pk>/upload-version/", views.upload_submission_version, name="upload_version"),

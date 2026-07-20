@@ -1074,6 +1074,21 @@ def submission_version_content(request, pk, version_pk):
 
 
 @login_required
+def submission_version_download(request, pk, version_pk):
+    version = _get_viewable_submission_version(request, pk, version_pk)
+    try:
+        source = version.file.open("rb")
+    except OSError as exc:
+        raise Http404 from exc
+    return FileResponse(
+        source,
+        as_attachment=True,
+        filename=get_display_filename(version.file.name),
+        content_type="application/octet-stream",
+    )
+
+
+@login_required
 def upload_submission_version(request, pk):
     submission = get_object_or_404(Submission, pk=pk)
     if submission.author_id != request.user.id and not request.user.is_superuser:

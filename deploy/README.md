@@ -5,6 +5,18 @@ systemd. Nginx принимает HTTP-запросы и раздаёт толь
 файлы. Загруженные материалы не публикуются напрямую из `media/`: доступ к ним
 остаётся под контролем Django.
 
+Системные зависимости просмотра документов:
+
+```bash
+apt-get install -y --no-install-recommends \
+  libreoffice-writer libreoffice-math \
+  fonts-dejavu-core fonts-liberation \
+  fonts-crosextra-carlito fonts-crosextra-caladea
+```
+
+`libreoffice-math` обязателен: без него LibreOffice оставляет номера формул, но
+не рисует сами объекты Office Math из DOCX.
+
 Каталоги на сервере:
 
 - `/opt/webtstu/app` — Git-репозиторий приложения;

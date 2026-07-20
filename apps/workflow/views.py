@@ -2,8 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Group
 from django.db.models import Prefetch
-from django.http import Http404
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
 
 from apps.accounts.access import is_root_admin
@@ -224,6 +223,25 @@ def assignment_options_view(request):
 def task_detail(request, pk):
     task = _get_visible_task_or_404(request.user, pk)
     return _render_task_detail(request, task)
+
+
+@login_required
+def conclusion_document_download(request, pk):
+    task = _get_visible_task_or_404(request.user, pk)
+    document = get_object_or_404(
+        ConclusionDocument,
+        workflow_run=task.workflow_step.workflow_run,
+    )
+    try:
+        source = document.document_file.open("rb")
+    except OSError as exc:
+        raise Http404 from exc
+    return FileResponse(
+        source,
+        as_attachment=True,
+        filename=document.document_file.name.rsplit("/", maxsplit=1)[-1],
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
 
 def _handle_task_action(request, pk, action, *, form_key, success_message):
