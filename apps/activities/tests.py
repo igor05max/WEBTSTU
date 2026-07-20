@@ -346,6 +346,37 @@ class ActivityRegistryTests(TestCase):
         self.assertTrue(cell["has_value"])
         self.assertContains(response, "подтверждено фактически 1, запланировано не задано")
 
+    def test_employee_plan_marks_confirmed_results_outside_plan(self):
+        Activity.objects.create(
+            owner=self.owner,
+            activity_type=self.article_type,
+            title="Запланированная статья",
+            academic_year="2025/2026",
+        )
+        conference_type = ActivityType.objects.get(code="conference")
+        ScientificResult.objects.create(
+            source_key="employee-plan-unplanned-result",
+            source_id="employee-plan-unplanned-result",
+            external_author_id=self.owner.external_directory_id,
+            owner=self.owner,
+            activity_type=conference_type,
+            title="Доклад, выполненный вне плана",
+            result_year=2026,
+            academic_year="2025/2026",
+            source_file="science.txt",
+            source_line=3,
+        )
+        self.client.force_login(self.other_user)
+
+        response = self.client.get(
+            reverse("activities:list"),
+            {"scope": "mine", "owner": self.owner.pk, "year": "2025/2026"},
+        )
+
+        self.assertContains(response, "Выполнено вне плана: 1")
+        self.assertContains(response, "не увеличивают процент выполнения")
+        self.assertContains(response, "Доклад, выполненный вне плана")
+
     def test_statistics_is_available_to_every_user_and_counts_a_result_once(self):
         PlanningRosterEntry.objects.create(
             user=self.owner,

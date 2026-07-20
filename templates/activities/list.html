@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
-    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260720b">
+    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260720c">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
 </head>
 <body>
@@ -114,6 +114,12 @@
                                     Подтверждено фактов: {{ scientific_result_count }}
                                 </span>
                             {% endif %}
+                            {% if unplanned_scientific_results %}
+                                <a class="activity-source-badge is-extra" href="#activity-outside-plan">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>
+                                    Вне плана: {{ unplanned_scientific_results|length }}
+                                </a>
+                            {% endif %}
                         </div>
                     </div>
 
@@ -145,6 +151,19 @@
                             <small>отмечено в системе</small>
                         </div>
                     </div>
+
+                    {% if unplanned_scientific_results %}
+                        <a class="activity-outside-plan-notice" href="#activity-outside-plan">
+                            <span class="activity-outside-plan-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/></svg>
+                            </span>
+                            <span>
+                                <strong>Выполнено вне плана: {{ unplanned_scientific_results|length }}</strong>
+                                <small>Эти подтверждённые результаты показаны отдельно и не увеличивают процент выполнения утверждённого плана.</small>
+                            </span>
+                            <b>Посмотреть</b>
+                        </a>
+                    {% endif %}
                 </section>
 
                 <section class="activity-plan-layout" aria-label="Содержание личного плана">
@@ -254,7 +273,7 @@
                 {% endif %}
 
                 {% if unplanned_scientific_results %}
-                    <section class="activity-factual-card" aria-labelledby="activity-factual-title">
+                    <section class="activity-factual-card" id="activity-outside-plan" aria-labelledby="activity-factual-title">
                         <div class="activity-card-heading">
                             <div>
                                 <span class="activity-card-kicker">Подтверждено в системе</span>
@@ -355,7 +374,7 @@
             </section>
 
             {% if selected_owner_object and unplanned_scientific_results %}
-                <section class="activity-factual-card is-registry" aria-labelledby="activity-registry-factual-title">
+                    <section class="activity-factual-card is-registry" id="activity-outside-plan" aria-labelledby="activity-registry-factual-title">
                     <div class="activity-card-heading">
                         <div>
                             <span class="activity-card-kicker">Подтверждено в системе</span>
