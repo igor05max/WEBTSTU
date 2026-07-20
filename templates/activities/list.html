@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
-    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260717c">
+    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260720b">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
 </head>
 <body>
@@ -20,7 +20,7 @@
     <main class="dashboard-main activity-plan-main">
         <header class="activity-plan-header">
             <div>
-                <span class="activity-plan-kicker">{% if is_employee_plan_preview %}Администраторский просмотр{% elif current_scope == 'mine' %}Личный кабинет{% else %}Общий реестр{% endif %}</span>
+                <span class="activity-plan-kicker">{% if is_employee_plan_preview %}Карточка сотрудника{% elif current_scope == 'mine' %}Личный кабинет{% else %}Общий реестр{% endif %}</span>
                 <h1>{% if is_employee_plan_preview %}План сотрудника{% elif current_scope == 'mine' %}Мой план{% else %}Планируемые результаты{% endif %}</h1>
                 <p>
                     {% if is_employee_plan_preview %}
@@ -54,6 +54,37 @@
                 </a>
             {% endif %}
         </header>
+
+        {% if is_employee_plan_preview %}
+            <section class="activity-employee-card" aria-label="Сведения о сотруднике">
+                <div class="activity-employee-identity">
+                    <span class="activity-employee-avatar">{{ plan_subject_profile.initials }}</span>
+                    <div>
+                        <span>Сотрудник</span>
+                        <h2>{{ plan_subject_profile.name }}</h2>
+                        <small>План и фактические результаты за {{ selected_year }} учебный год</small>
+                    </div>
+                </div>
+                <dl class="activity-employee-details">
+                    <div>
+                        <dt>Должность</dt>
+                        <dd>{{ plan_subject_profile.position }}</dd>
+                    </div>
+                    <div>
+                        <dt>Кафедра</dt>
+                        <dd>{{ plan_subject_profile.department }}</dd>
+                    </div>
+                    <div>
+                        <dt>Место работы</dt>
+                        <dd>{{ plan_subject_profile.workplace }}</dd>
+                    </div>
+                    <div>
+                        <dt>Источник данных</dt>
+                        <dd>{% if has_imported_plan %}Индивидуальный план{% else %}Данные системы{% endif %}</dd>
+                    </div>
+                </dl>
+            </section>
+        {% endif %}
 
         {% if messages %}
             <ul class="dashboard-messages" aria-live="polite">

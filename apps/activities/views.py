@@ -89,7 +89,10 @@ def activity_list(request):
     query = (request.GET.get("q") or "").strip() if scope == "all" else ""
     selected_type = request.GET.get("type", "").strip() if scope == "all" else ""
     selected_year = request.GET.get("year", "").strip()
-    can_view_employee_plan = scope == "mine" and request.user.is_superuser
+    # Plans are already visible to authenticated users in the common registry.
+    # Keep the same data available as a focused employee plan when a person is
+    # opened from the matrix or statistics pages.
+    can_view_employee_plan = scope == "mine"
     selected_owner = (
         request.GET.get("owner", "").strip()
         if scope == "all" or can_view_employee_plan
@@ -97,7 +100,12 @@ def activity_list(request):
     )
     selected_owner_object = None
     if selected_owner.isdigit():
-        selected_owner_object = get_user_model().objects.filter(pk=int(selected_owner)).first()
+        selected_owner_object = (
+            get_user_model()
+            .objects.select_related("position", "org_unit", "chair_org_unit")
+            .filter(pk=int(selected_owner))
+            .first()
+        )
         if selected_owner_object is None:
             selected_owner = ""
     else:
@@ -224,6 +232,17 @@ def activity_list(request):
             reverse=True,
         )
 
+    plan_subject = selected_owner_object or request.user
+    plan_subject_name = plan_subject.get_full_name().strip() or plan_subject.username
+    plan_subject_initials = "".join(
+        part[0] for part in plan_subject_name.split()[:2] if part
+    ).upper()
+    plan_subject_department = getattr(plan_subject, "chair_org_unit", None)
+    if plan_subject_department is None:
+        general_unit = getattr(plan_subject, "org_unit", None)
+        if general_unit is not None and general_unit.name.startswith("Кафедра"):
+            plan_subject_department = general_unit
+
     return render(
         request,
         "activities/list.html",
@@ -243,7 +262,17 @@ def activity_list(request):
             "scientific_results": visible_scientific_results,
             "unplanned_scientific_results": unplanned_scientific_results,
             "scientific_result_count": len(visible_scientific_results),
-            "plan_subject": selected_owner_object or request.user,
+            "plan_subject": plan_subject,
+            "plan_subject_profile": {
+                "name": plan_subject_name,
+                "initials": plan_subject_initials or "С",
+                "position": getattr(getattr(plan_subject, "position", None), "name", "")
+                or "Не указана",
+                "department": getattr(plan_subject_department, "name", "")
+                or "Не указана",
+                "workplace": getattr(getattr(plan_subject, "org_unit", None), "name", "")
+                or "Не указано",
+            },
             "is_employee_plan_preview": bool(scope == "mine" and selected_owner_object),
         },
     )
@@ -386,7 +415,7 @@ def activity_matrix(request):
                 "person": person,
                 "cells": cells,
                 "source_files": matrix_person["source_files"],
-                "plan_url": f"{reverse('activities:list')}?{urlencode({'scope': 'mine' if request.user.is_superuser else 'all', 'owner': person.pk, **({'year': selected_year} if selected_year else {})})}",
+                "plan_url": f"{reverse('activities:list')}?{urlencode({'scope': 'mine', 'owner': person.pk, **({'year': selected_year} if selected_year else {})})}",
             }
         )
 
@@ -544,7 +573,7 @@ def activity_statistics(request):
                 "percent": percent,
                 "status_label": status_label,
                 "status_class": status_class,
-                "plan_url": f"{reverse('activities:list')}?{urlencode({'scope': 'all', 'owner': owner_id, 'year': selected_year})}",
+                "plan_url": f"{reverse('activities:list')}?{urlencode({'scope': 'mine', 'owner': owner_id, 'year': selected_year})}",
             }
         )
     employee_rows.sort(key=lambda row: (-row["confirmed"], -row["percent"], row["name"]))

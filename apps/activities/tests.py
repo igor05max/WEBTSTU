@@ -28,7 +28,7 @@ from apps.activities.science_import import (
     extract_scientific_results,
     sync_scientific_results,
 )
-from apps.directory.models import ArticleType, Journal, OrgUnit
+from apps.directory.models import ArticleType, Journal, OrgUnit, Position
 from apps.submissions.models import Submission, SubmissionStatus
 
 
@@ -287,6 +287,7 @@ class ActivityRegistryTests(TestCase):
         departments = dict(response.context["departments"])
         matrix_rows = departments["матрицы"]
         owner_row = next(row for row in matrix_rows if row["person"] == self.owner)
+        self.assertIn("scope=mine", owner_row["plan_url"])
         article_column = next(
             index
             for index, activity_type in enumerate(
@@ -866,7 +867,13 @@ class ActivityRegistryTests(TestCase):
         self.assertTrue(response.context["is_employee_plan_preview"])
         self.assertEqual(response.context["summary"]["completed"], 1)
 
-    def test_regular_user_cannot_preview_another_employee_as_own_plan(self):
+    def test_regular_user_can_open_another_employee_plan_with_workplace_details(self):
+        workplace = OrgUnit.objects.create(name="Институт цифровых технологий")
+        position = Position.objects.create(name="Доцент")
+        self.other_user.position = position
+        self.other_user.org_unit = workplace
+        self.other_user.chair_org_unit = self.unit
+        self.other_user.save(update_fields=["position", "org_unit", "chair_org_unit"])
         Activity.objects.create(
             owner=self.other_user,
             activity_type=self.article_type,
@@ -886,6 +893,10 @@ class ActivityRegistryTests(TestCase):
             {"scope": "mine", "owner": self.other_user.pk, "year": "2025/2026"},
         )
 
-        self.assertContains(response, "Собственный пункт")
-        self.assertNotContains(response, "Чужой пункт через owner")
-        self.assertFalse(response.context["is_employee_plan_preview"])
+        self.assertContains(response, "План сотрудника")
+        self.assertContains(response, "Чужой пункт через owner")
+        self.assertNotContains(response, "Собственный пункт")
+        self.assertContains(response, "Доцент")
+        self.assertContains(response, "Кафедра тестовых результатов")
+        self.assertContains(response, "Институт цифровых технологий")
+        self.assertTrue(response.context["is_employee_plan_preview"])
