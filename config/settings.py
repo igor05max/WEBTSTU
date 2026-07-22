@@ -45,7 +45,14 @@ _load_local_env(BASE_DIR / ".env")
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-only-key")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 ROOT_ADMIN_USERNAME = os.getenv("DJANGO_ROOT_ADMIN_USERNAME", "rootUser")
-DEFAULT_USER_PASSWORD = os.getenv("DJANGO_DEFAULT_USER_PASSWORD", "1234")
+DEFAULT_USER_PASSWORD = os.getenv(
+    "DJANGO_DEFAULT_USER_PASSWORD",
+    "1234" if DEBUG else "",
+)
+if not DEFAULT_USER_PASSWORD:
+    raise ImproperlyConfigured(
+        "DJANGO_DEFAULT_USER_PASSWORD must be configured when DJANGO_DEBUG=0."
+    )
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",")
