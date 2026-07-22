@@ -27,11 +27,6 @@ MATCH_STOP_WORDS = {
     "журнал", "журнале", "подготовка", "подготовки", "изданию", "публикация",
     "работа", "работы", "выполнение", "участие", "соавторстве",
 }
-RELATED_PLAN_TYPES = {
-    frozenset(("article", "conference")),
-    frozenset(("research_project", "contract_research")),
-    frozenset(("teaching_aid", "methodical_material")),
-}
 GENERIC_PLAN_PATTERNS = {
     "article": re.compile(r"написан\w*.*стат|подготов\w*.*стат|статьи,?\s+опубликован"),
     "conference": re.compile(r"участи\w*.*конференц|организац\w*.*конференц|тезис\w*\s+доклад"),
@@ -103,7 +98,10 @@ def _title_match_score(plan_title, result_title):
 
 
 def _types_are_related(plan_code, result_code):
-    return plan_code == result_code or frozenset((plan_code, result_code)) in RELATED_PLAN_TYPES
+    # A factual result must stay in its own matrix column.  Similar titles do
+    # not turn an article into a conference or a teaching aid into methodical
+    # material.
+    return plan_code == result_code
 
 
 def _is_generic_plan(activity):

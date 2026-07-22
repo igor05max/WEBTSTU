@@ -21,6 +21,7 @@ from apps.activities.plan_import import (
     _classify_activity_codes,
     _grant_type_code,
     _quantity_for,
+    repair_imported_plan_classification,
     sync_plan_activities,
 )
 from apps.activities.science_import import (
@@ -636,6 +637,70 @@ class ActivityRegistryTests(TestCase):
 
         self.assertEqual(_quantity_for(title, "article"), 3)
 
+    def test_plan_article_in_conference_proceedings_is_not_duplicated_as_conference(self):
+        title = "Статья в материалах международной научно-практической конференции"
+
+        self.assertEqual(_classify_activity_codes(title), ("article",))
+
+    def test_plan_keeps_explicit_conference_presentation_and_article_as_two_results(self):
+        title = "2 выступления и 2 статьи в материалах международной конференции"
+
+        self.assertEqual(_classify_activity_codes(title), ("article", "conference"))
+        self.assertEqual(_quantity_for(title, "article"), 2)
+        self.assertEqual(_quantity_for(title, "conference"), 2)
+
+    def test_quantity_does_not_read_number_word_inside_international(self):
+        title = "Доклад на международной конференции"
+
+        self.assertEqual(_quantity_for(title, "conference"), 1)
+
+    def test_plan_career_guidance_competition_is_not_an_olympiad(self):
+        title = "Проведение конкурсов и семинаров для абитуриентов профориентационного характера"
+
+        self.assertEqual(_classify_activity_codes(title), ("career_guidance",))
+
+    def test_plan_combined_training_caption_is_counted_once(self):
+        title = "Повышение квалификации и профессиональная переподготовка: повышение квалификации в ТГТУ"
+
+        self.assertEqual(_classify_activity_codes(title), ("advanced_training",))
+
+    def test_repair_removes_old_duplicate_category_and_reallocates_results(self):
+        conference_type = ActivityType.objects.get(code="conference")
+        title = "Статья в материалах международной конференции"
+        article = Activity.objects.create(
+            owner=self.owner,
+            activity_type=self.article_type,
+            title=title,
+            academic_year="2025/2026",
+            source_key="old-article-row",
+        )
+        obsolete_conference = Activity.objects.create(
+            owner=self.owner,
+            activity_type=conference_type,
+            title=title,
+            academic_year="2025/2026",
+            source_key="old-conference-row",
+        )
+        result = ScientificResult.objects.create(
+            source_key="repair-result",
+            source_id="repair-result",
+            external_author_id="70001",
+            owner=self.owner,
+            activity_type=self.article_type,
+            planned_activity=obsolete_conference,
+            title="Фактическая статья",
+            result_year=2025,
+            academic_year="2025/2026",
+            source_file="science.txt",
+        )
+
+        stats = repair_imported_plan_classification("2025/2026")
+
+        self.assertEqual(stats["deleted"], 1)
+        self.assertFalse(Activity.objects.filter(pk=obsolete_conference.pk).exists())
+        result.refresh_from_db()
+        self.assertEqual(result.planned_activity, article)
+
     def test_editing_imported_result_preserves_user_change_during_next_sync(self):
         PlanningRosterEntry.objects.create(
             user=self.owner,
@@ -809,7 +874,7 @@ class ActivityRegistryTests(TestCase):
         self.assertEqual(unrelated_result.planned_activity, unrelated_plan)
         self.assertEqual(unrelated_plan.status, ActivityStatus.COMPLETED)
 
-    def test_conference_plan_can_match_same_named_article_from_science(self):
+    def test_conference_plan_does_not_capture_same_named_article_from_science(self):
         conference_type = ActivityType.objects.get(code="conference")
         conference_plan = Activity.objects.create(
             owner=self.owner,
@@ -836,8 +901,8 @@ class ActivityRegistryTests(TestCase):
         stats = sync_scientific_results([record], "2025/2026")
 
         result = ScientificResult.objects.get(source_id="conference-as-article")
-        self.assertEqual(stats["linked"], 1)
-        self.assertEqual(result.planned_activity, conference_plan)
+        self.assertEqual(stats["linked"], 0)
+        self.assertIsNone(result.planned_activity)
 
     def test_science_extraction_recovers_approved_row_shifted_by_raw_semicolon(self):
         header = (

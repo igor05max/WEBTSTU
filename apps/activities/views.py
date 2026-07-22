@@ -328,9 +328,9 @@ def activity_matrix(request):
     if selected_year:
         scientific_results = scientific_results.filter(academic_year=selected_year)
     for row in scientific_results.filter(planned_activity__isnull=False).values(
-        "owner_id", "planned_activity__activity_type_id"
+        "owner_id", "activity_type_id"
     ).annotate(total=Count("id")):
-        matched_counts[(row["owner_id"], row["planned_activity__activity_type_id"])] = row["total"]
+        matched_counts[(row["owner_id"], row["activity_type_id"])] = row["total"]
     for row in scientific_results.filter(planned_activity__isnull=True).values(
         "owner_id", "activity_type_id"
     ).annotate(total=Count("id")):
@@ -525,9 +525,9 @@ def activity_statistics(request):
         if selected_year:
             result_rows = result_rows.filter(academic_year=selected_year)
         for row in result_rows.filter(planned_activity__isnull=False).values(
-            "owner_id", "planned_activity__activity_type_id"
+            "owner_id", "activity_type_id"
         ).annotate(total=Count("id")):
-            key = (row["owner_id"], row["planned_activity__activity_type_id"])
+            key = (row["owner_id"], row["activity_type_id"])
             confirmed_by_owner_type[key] = row["total"]
             confirmed_by_owner[row["owner_id"]] += row["total"]
         for row in result_rows.filter(planned_activity__isnull=True).values(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import zipfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree
@@ -35,7 +36,7 @@ from apps.activities.source_files import current_individual_plan_paths
 RESULT_HEADER = "наименование результата"
 LETTER_RE = re.compile(r"[A-Za-zА-Яа-яЁё]")
 SPACE_RE = re.compile(r"\s+")
-COUNT_TOKEN = r"(?P<count>\d+|один|одна|одно|одного|одной|две|два|двух|три|трех|трёх|четыре|четырех|четырёх|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти)"
+COUNT_TOKEN = r"(?<![\w])(?P<count>\d+|один|одна|одно|одного|одной|две|два|двух|три|трех|трёх|четыре|четырех|четырёх|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти)"
 
 NUMBER_WORDS = {
     "один": 1,
@@ -114,7 +115,7 @@ QUANTITY_PATTERNS = {
     "article": re.compile(COUNT_TOKEN + r"\s+(?:научн\w*\s+)?стат", re.IGNORECASE),
     "monograph": re.compile(COUNT_TOKEN + r"\s+монограф", re.IGNORECASE),
     "grant": re.compile(COUNT_TOKEN + r"\s+(?:заяв\w*|грант\w*)", re.IGNORECASE),
-    "conference": re.compile(COUNT_TOKEN + r"\s+(?:конференц|доклад)", re.IGNORECASE),
+    "conference": re.compile(COUNT_TOKEN + r"\s+(?:конференц|доклад|выступлен)", re.IGNORECASE),
     "patent": re.compile(COUNT_TOKEN + r"\s+(?:патент|изобретен)", re.IGNORECASE),
     "software_registration": re.compile(COUNT_TOKEN + r"\s+(?:свидетельств|регистрац)", re.IGNORECASE),
     "textbook": re.compile(COUNT_TOKEN + r"\s+учебник", re.IGNORECASE),
@@ -191,6 +192,48 @@ def _result_cells(cells):
 def _classify_activity_codes(text):
     normalized = _normalise(text)
     codes = [code for code, pattern in TYPE_PATTERNS if pattern.search(normalized)]
+
+    # A result name often mentions the venue or a neighbouring KPI without
+    # planning a second result.  For example, "статья в материалах
+    # конференции" is one article, while "выступление и статья" really is two
+    # deliverables.  Keep the latter, but do not duplicate the former across
+    # two matrix columns.
+    if "article" in codes and "conference" in codes:
+        has_separate_conference_result = bool(
+            re.search(r"\b(?:выступлен\w*|доклад\w*|тезис\w*)", normalized)
+        )
+        if not has_separate_conference_result:
+            codes.remove("conference")
+
+    # "Конкурс ... в рамках конференции" and "конкурс докладов" describe a
+    # competition result; the conference is only its context.
+    if "olympiad" in codes and "conference" in codes:
+        codes.remove("conference")
+
+    # Competitions and seminars for applicants belong to career guidance, not
+    # to the olympiad column merely because the word "конкурс" is present.
+    if "career_guidance" in codes and "olympiad" in codes:
+        codes.remove("olympiad")
+
+    # Several individual-plan forms contain a combined KPI caption.  It is a
+    # single planned result, not one grant plus one contract-research result.
+    if "grant" in codes and "contract_research" in codes and re.search(
+        r"объем\w*\s+освоенн\w*\s+грант\w*.*?(?:или|/)\s*хоз", normalized
+    ):
+        codes.remove("contract_research")
+
+    # The standard form also has a combined training caption.  Select the
+    # concrete item written after the caption; when it remains generic, count
+    # it once in the more common advanced-training category.
+    if "professional_retraining" in codes and "advanced_training" in codes:
+        details = normalized.partition(":")[2]
+        details_has_retraining = bool(re.search(r"профессиональн\w*\s+переподготов", details))
+        details_has_training = bool(re.search(r"повышен\w*\s+квалификац", details))
+        if details_has_retraining and not details_has_training:
+            codes.remove("advanced_training")
+        else:
+            codes.remove("professional_retraining")
+
     if "grant" in codes and "olympiad" in codes:
         codes.remove("olympiad")
     if codes:
@@ -428,3 +471,60 @@ def sync_plan_activities(records, academic_year, *, prune=False):
         "unmatched": unmatched,
         **allocation,
     }
+
+
+def repair_imported_plan_classification(academic_year, *, dry_run=False):
+    """Remove obsolete duplicate categories from already imported plans.
+
+    The source key contains the category code, so tightening classification
+    rules does not remove an old duplicate until a source-file sync with
+    ``--prune`` is run.  This helper applies the current classifier directly
+    to stored, non-overridden import rows and is safe when the original Excel
+    directory is not present on the application server.
+    """
+
+    imported = list(
+        Activity.objects.filter(
+            academic_year=academic_year,
+            source_key__isnull=False,
+            source_is_overridden=False,
+        ).select_related("activity_type")
+    )
+    obsolete = [
+        activity
+        for activity in imported
+        if activity.activity_type.code not in _classify_activity_codes(activity.title)
+    ]
+    changes = Counter(
+        activity.activity_type.code
+        for activity in obsolete
+    )
+    obsolete_ids = {activity.pk for activity in obsolete}
+    quantity_changes = []
+    for activity in imported:
+        if activity.pk in obsolete_ids:
+            continue
+        desired_quantity = _quantity_for(activity.title, activity.activity_type.code)
+        if desired_quantity != activity.quantity:
+            activity.quantity = desired_quantity
+            quantity_changes.append(activity)
+    result = {
+        "examined": len(imported),
+        "obsolete": len(obsolete),
+        "deleted": 0,
+        "quantity_changes": len(quantity_changes),
+        "deleted_by_type": dict(sorted(changes.items())),
+    }
+    if dry_run:
+        return result
+
+    with transaction.atomic():
+        Activity.objects.filter(pk__in=[activity.pk for activity in obsolete]).delete()
+        result["deleted"] = len(obsolete)
+        if quantity_changes:
+            Activity.objects.bulk_update(quantity_changes, ("quantity",))
+
+        from apps.activities.science_import import allocate_scientific_results
+
+        result.update(allocate_scientific_results(academic_year))
+    return result
