@@ -181,6 +181,22 @@ def activity_list(request):
         activity.scientific_results_list = results_by_activity.get(activity.pk, [])
         activity.actual_count = len(activity.scientific_results_list)
 
+    scientific_result_groups_by_type = OrderedDict()
+    for result in visible_scientific_results:
+        group = scientific_result_groups_by_type.setdefault(
+            result.activity_type_id,
+            {
+                "name": result.activity_type.name,
+                "is_article": result.activity_type.code == "article",
+                "results": [],
+            },
+        )
+        group["results"].append(result)
+    scientific_result_groups = sorted(
+        scientific_result_groups_by_type.values(),
+        key=lambda group: (-len(group["results"]), group["name"]),
+    )
+
     total_quantity = sum(activity.quantity for activity in visible_activities)
     completed_quantity = planned_quantity = in_progress_quantity = 0
     for activity in visible_activities:
@@ -260,6 +276,7 @@ def activity_list(request):
             "type_breakdown": type_breakdown,
             "has_imported_plan": any(activity.imported_from_plan for activity in visible_activities),
             "scientific_results": visible_scientific_results,
+            "scientific_result_groups": scientific_result_groups,
             "unplanned_scientific_results": unplanned_scientific_results,
             "scientific_result_count": len(visible_scientific_results),
             "plan_subject": plan_subject,
@@ -386,7 +403,10 @@ def activity_matrix(request):
             planned_count = counts[key]
             matched_count = matched_counts[key]
             unplanned_count = unplanned_counts[key]
-            actual_count = matched_count if planned_count else unplanned_count
+            # The matrix shows the employee's complete factual output for a
+            # result type. Results beyond the plan therefore increase the
+            # numerator instead of being rendered as a separate text label.
+            actual_count = matched_count + unplanned_count
             extra_count = unplanned_count if planned_count else 0
             detail_params = {"owner": person.pk, "type": activity_type.pk}
             if selected_year:

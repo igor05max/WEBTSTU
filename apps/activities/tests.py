@@ -303,8 +303,8 @@ class ActivityRegistryTests(TestCase):
         self.assertEqual(owner_row["cells"][article_column]["planned_count"], 2)
         self.assertEqual(owner_row["cells"][article_column]["actual_count"], 1)
         self.assertEqual(owner_row["cells"][article_column]["ratio_state"], "is-progress")
-        self.assertContains(response, "Подтверждено по плану")
-        self.assertContains(response, "подтверждено по плану 1, запланировано 2")
+        self.assertContains(response, "Фактически выполнено")
+        self.assertContains(response, "выполнено 1, запланировано 2")
         self.assertIn("owner=", owner_row["cells"][article_column]["url"])
 
     def test_matrix_shows_fact_without_plan_as_actual_over_dash(self):
@@ -344,7 +344,69 @@ class ActivityRegistryTests(TestCase):
         self.assertEqual(cell["planned_count"], 0)
         self.assertEqual(cell["actual_count"], 1)
         self.assertTrue(cell["has_value"])
-        self.assertContains(response, "подтверждено фактически 1, запланировано не задано")
+        self.assertContains(response, "выполнено 1, запланировано не задано")
+
+    def test_matrix_includes_results_beyond_plan_in_the_ratio_without_extra_label(self):
+        activity = Activity.objects.create(
+            owner=self.owner,
+            activity_type=self.article_type,
+            title="Одна статья по плану",
+            academic_year="2025/2026",
+            quantity=1,
+        )
+        ScientificResult.objects.create(
+            source_key="matrix-planned-article",
+            source_id="matrix-planned-article",
+            owner=self.owner,
+            activity_type=self.article_type,
+            planned_activity=activity,
+            title="Статья по плану",
+            result_year=2026,
+            academic_year="2025/2026",
+            source_file="science.txt",
+            source_line=1,
+        )
+        ScientificResult.objects.create(
+            source_key="matrix-extra-article",
+            source_id="matrix-extra-article",
+            owner=self.owner,
+            activity_type=self.article_type,
+            title="Статья сверх плана",
+            result_year=2026,
+            academic_year="2025/2026",
+            source_file="science.txt",
+            source_line=2,
+        )
+        self.client.force_login(self.other_user)
+
+        response = self.client.get(reverse("activities:matrix"), {"year": "2025/2026"})
+
+        owner_row = next(
+            row
+            for rows in dict(response.context["departments"]).values()
+            for row in rows
+            if row["person"] == self.owner
+        )
+        article_types = [
+            activity_type
+            for group in response.context["type_groups"]
+            for activity_type in group["types"]
+        ]
+        article_column = next(
+            index for index, activity_type in enumerate(article_types) if activity_type.code == "article"
+        )
+        cell = owner_row["cells"][article_column]
+        self.assertEqual(cell["actual_count"], 2)
+        self.assertEqual(cell["planned_count"], 1)
+        self.assertContains(response, "выполнено 2, запланировано 1")
+        self.assertNotContains(response, "+1 вне плана")
+
+        plan_response = self.client.get(owner_row["plan_url"])
+        self.assertContains(plan_response, "Что сделано")
+        self.assertContains(plan_response, "Статья — 2")
+        self.assertContains(plan_response, "Показать названия написанных статей")
+        self.assertContains(plan_response, "Статья по плану")
+        self.assertContains(plan_response, "Статья сверх плана")
 
     def test_employee_plan_marks_confirmed_results_outside_plan(self):
         Activity.objects.create(
@@ -849,7 +911,8 @@ class ActivityRegistryTests(TestCase):
         self.assertEqual(response.context["summary"]["completed"], 1)
         self.assertEqual(response.context["summary"]["in_progress"], 1)
         self.assertContains(response, "Подтверждённая публикация")
-        self.assertContains(response, "Подтверждено фактически: 1 из 2")
+        self.assertContains(response, "Зачтено в этот пункт 1/2")
+        self.assertContains(response, "Показать написанные статьи")
 
     def test_unmatched_science_author_is_kept_without_guessing_an_owner(self):
         record = ExtractedScientificResult(

@@ -215,6 +215,22 @@ class ConclusionSignatureTests(TestCase):
             2,
         )
 
+        self.client.force_login(self.author)
+        detail_response = self.client.get(reverse("submissions:detail", args=[self.submission.pk]))
+        self.assertContains(detail_response, self.document.registration_number)
+        self.assertContains(detail_response, "Заключение с подписями ПЭП")
+        self.assertContains(detail_response, self.reviewer.get_full_name())
+
+        printed_response = self.client.get(
+            reverse(
+                "submissions:conclusion_package_file",
+                args=[self.submission.pk, self.document.pk, "printed"],
+            )
+        )
+        self.assertEqual(printed_response.status_code, 200)
+        self.assertEqual(printed_response["Content-Type"], "application/pdf")
+        printed_response.close()
+
     def test_final_package_downloads_require_visible_task(self):
         approve_task(self.task, self.reviewer)
         final_task = ApprovalTask.objects.get(workflow_step=self.final_step)
@@ -259,4 +275,29 @@ class ConclusionSignatureTests(TestCase):
 
         outsider = User.objects.create_user(username="conclusion-outsider", password="1234")
         self.client.force_login(outsider)
+        self.assertEqual(self.client.get(download_url).status_code, 404)
+
+    def test_submission_conclusion_is_visible_to_author_and_past_route_participant(self):
+        approve_task(self.task, self.reviewer)
+        self.reviewer.groups.clear()
+
+        author_url = reverse("submissions:detail", args=[self.submission.pk])
+        download_url = reverse(
+            "submissions:conclusion_download",
+            args=[self.submission.pk, self.document.pk],
+        )
+
+        for user in (self.author, self.reviewer):
+            self.client.force_login(user)
+            detail_response = self.client.get(author_url)
+            self.assertContains(detail_response, self.document.registration_number)
+            self.assertContains(detail_response, "Подписано ПЭП")
+            response = self.client.get(download_url)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(b"".join(response.streaming_content), self.docx_bytes)
+            response.close()
+
+        outsider = User.objects.create_user(username="submission-conclusion-outsider", password="1234")
+        self.client.force_login(outsider)
+        self.assertEqual(self.client.get(author_url).status_code, 404)
         self.assertEqual(self.client.get(download_url).status_code, 404)

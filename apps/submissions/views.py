@@ -16,6 +16,7 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from apps.accounts.roles import has_chair_head_role
 from apps.accounts.models import User
 from apps.checks.models import CheckDefinition, CheckRunStatus
+from apps.conclusions.models import ConclusionDocument
 from apps.submissions.forms import (
     SubmissionAppealDecisionForm,
     SubmissionAppealForm,
@@ -461,8 +462,28 @@ def _can_view_submission(user, submission):
     if not user.is_authenticated:
         return False
     return ApprovalTask.objects.filter(
-        workflow_step__workflow_run__submission=submission,
-    ).filter(_task_visibility_filter(user)).exists()
+        Q(workflow_step__workflow_run__submission=submission)
+        & (_task_visibility_filter(user) | Q(decisions__actor=user))
+    ).exists()
+
+
+def _get_viewable_submission_or_404(user, pk):
+    submission = get_object_or_404(
+        Submission.objects.select_related("author").prefetch_related("authors"),
+        pk=pk,
+    )
+    if not _can_view_submission(user, submission):
+        raise Http404
+    return submission
+
+
+def _get_viewable_conclusion_or_404(user, submission_pk, conclusion_pk):
+    submission = _get_viewable_submission_or_404(user, submission_pk)
+    return get_object_or_404(
+        ConclusionDocument,
+        pk=conclusion_pk,
+        submission=submission,
+    )
 
 
 def _get_route_state_text(step):
@@ -870,6 +891,11 @@ def submission_detail(request, pk):
         )
         run.ordered_steps = ordered_steps
     primary_workflow_run = workflow_runs[0] if workflow_runs else None
+    conclusion_document = (
+        ConclusionDocument.objects.filter(submission=submission)
+        .prefetch_related("signatures__signer", "signatures__submission_version")
+        .first()
+    )
     upload_form = None
     submit_form = None
     appeal_form = None
@@ -952,6 +978,7 @@ def submission_detail(request, pk):
             "submission": submission,
             "workflow_runs": workflow_runs,
             "primary_workflow_run": primary_workflow_run,
+            "conclusion_document": conclusion_document,
             "versions": versions,
             "check_runs": check_runs,
             "check_entries": check_entries,
@@ -985,6 +1012,47 @@ def submission_detail(request, pk):
             and submission.current_version_id is not None,
             "route_selection_ready": route_suggestion is not None,
         },
+    )
+
+
+@login_required
+def submission_conclusion_document_download(request, pk, conclusion_pk):
+    document = _get_viewable_conclusion_or_404(request.user, pk, conclusion_pk)
+    try:
+        source = document.document_file.open("rb")
+    except OSError as exc:
+        raise Http404 from exc
+    return FileResponse(
+        source,
+        as_attachment=True,
+        filename=document.document_file.name.rsplit("/", maxsplit=1)[-1],
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@login_required
+def submission_conclusion_package_file_download(request, pk, conclusion_pk, file_kind):
+    document = _get_viewable_conclusion_or_404(request.user, pk, conclusion_pk)
+    package_files = {
+        "source": (document.source_pdf_file, "application/pdf"),
+        "printed": (document.printed_pdf_file, "application/pdf"),
+        "signatures": (document.signature_data_file, "application/xml"),
+    }
+    file_entry = package_files.get(file_kind)
+    if not document.package_finalized_at or file_entry is None:
+        raise Http404
+    file_field, content_type = file_entry
+    if not file_field:
+        raise Http404
+    try:
+        source = file_field.open("rb")
+    except OSError as exc:
+        raise Http404 from exc
+    return FileResponse(
+        source,
+        as_attachment=True,
+        filename=file_field.name.rsplit("/", maxsplit=1)[-1],
+        content_type=content_type,
     )
 
 

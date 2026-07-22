@@ -22,7 +22,7 @@
             <div>
                 <span class="activity-matrix-kicker">Сводные данные</span>
                 <h1>Таблица планов</h1>
-                <p>Плановые и фактические результаты сотрудников по кафедрам. Нажмите на имя или дробь, чтобы открыть подробный список.</p>
+                <p>Плановые и фактические результаты сотрудников по кафедрам. Нажмите на имя, чтобы открыть план с перечнем выполненных работ.</p>
             </div>
             <a class="activity-matrix-personal-link" href="{% url 'activities:list' %}?scope=mine&amp;year={{ selected_year|urlencode }}">
                 <span>Открыть мой план</span>
@@ -63,7 +63,7 @@
                     <h2>Планы и выполнение сотрудников</h2>
                 </div>
                 <div class="activity-matrix-heading-meta">
-                    <span><strong>Подтверждено по плану</strong> / запланировано</span>
+                    <span><strong>Фактически выполнено</strong> / запланировано</span>
                     <p>Прокручивайте таблицу по горизонтали, чтобы посмотреть все виды результатов.</p>
                 </div>
             </div>
@@ -103,12 +103,11 @@
                                     {% for cell in row.cells %}
                                         <td class="matrix-value{% if cell.has_value %} has-value{% endif %}">
                                             {% if cell.has_value %}
-                                                <a class="matrix-ratio {{ cell.ratio_state }}" href="{{ cell.url }}" title="{{ cell.type_name }}: {% if cell.planned_count %}подтверждено по плану{% else %}подтверждено фактически{% endif %} {{ cell.actual_count }}, запланировано {% if cell.planned_count %}{{ cell.planned_count }}{% else %}не задано{% endif %}{% if cell.extra_count %}, вне плана {{ cell.extra_count }}{% endif %}">
+                                                <a class="matrix-ratio {{ cell.ratio_state }}" href="{{ row.plan_url }}" title="{{ cell.type_name }}: выполнено {{ cell.actual_count }}, запланировано {% if cell.planned_count %}{{ cell.planned_count }}{% else %}не задано{% endif %}">
                                                     <strong>{{ cell.actual_count }}</strong>
                                                     <span aria-hidden="true">/</span>
                                                     <b>{% if cell.planned_count %}{{ cell.planned_count }}{% else %}—{% endif %}</b>
                                                 </a>
-                                                {% if cell.extra_count %}<small class="matrix-extra">+{{ cell.extra_count }} вне плана</small>{% endif %}
                                                 {% if cell.grant_summary %}<small>{{ cell.grant_summary|join:", " }}</small>{% endif %}
                                             {% else %}<span>—</span>{% endif %}
                                         </td>

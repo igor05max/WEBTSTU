@@ -239,6 +239,52 @@
         {% endif %}
     </section>
 
+    {% if conclusion_document %}
+        <section class="surface submission-form-panel" id="submission-conclusion">
+            <div class="section-head">
+                <div>
+                    <h3>Заключение {{ conclusion_document.registration_number }}</h3>
+                    {% if conclusion_document.package_finalized_at %}
+                        <p>Заключение завершено. Здесь доступны печатная форма со всеми подписями ПЭП и данные подписей.</p>
+                    {% else %}
+                        <p>Заключение сформировано и подписывается участниками маршрута. Уже поставленные подписи показаны ниже.</p>
+                    {% endif %}
+                </div>
+                {% if conclusion_document.package_finalized_at %}
+                    <span class="status-pill success">Подписано</span>
+                {% else %}
+                    <span class="status-pill warning">На подписании</span>
+                {% endif %}
+            </div>
+
+            {% if conclusion_document.package_finalized_at %}
+                <p class="meta">Итоговый комплект сформирован {{ conclusion_document.package_finalized_at|date:"d.m.Y H:i" }}</p>
+                <div class="actions">
+                    <a class="button secondary" href="{% url 'submissions:conclusion_package_file' submission.pk conclusion_document.pk 'source' %}">Исходное заключение PDF</a>
+                    <a class="button secondary" href="{% url 'submissions:conclusion_package_file' submission.pk conclusion_document.pk 'printed' %}">Заключение с подписями ПЭП</a>
+                    <a class="button secondary" href="{% url 'submissions:conclusion_package_file' submission.pk conclusion_document.pk 'signatures' %}">Данные подписей XML</a>
+                </div>
+            {% else %}
+                <div class="actions">
+                    <a class="button secondary" href="{% url 'submissions:conclusion_download' submission.pk conclusion_document.pk %}">Скачать заключение DOCX</a>
+                </div>
+            {% endif %}
+
+            {% if conclusion_document.signatures.all %}
+                <div class="timeline stack-top-md">
+                    {% for signature in conclusion_document.signatures.all %}
+                        <div class="timeline-item">
+                            <strong>{{ signature.signer_name }} — {{ signature.signer_role }}</strong>
+                            <div class="meta">Подписано ПЭП {{ signature.signed_at|date:"d.m.Y H:i" }} · версия рукописи v{{ signature.submission_version_number }}</div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="meta stack-top-sm">Подписей ПЭП пока нет.</p>
+            {% endif %}
+        </section>
+    {% endif %}
+
     <section class="dashboard-grid">
         <div class="surface submission-side-card">
             <div class="submission-section-title">Версии файла</div>

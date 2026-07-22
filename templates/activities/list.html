@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
-    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260720c">
+    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260722a">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
 </head>
 <body>
@@ -166,6 +166,43 @@
                     {% endif %}
                 </section>
 
+                {% if scientific_result_groups %}
+                    <section class="activity-completed-card" aria-labelledby="activity-completed-title">
+                        <div class="activity-card-heading">
+                            <div>
+                                <span class="activity-card-kicker">Фактические результаты</span>
+                                <h2 id="activity-completed-title">Что сделано</h2>
+                            </div>
+                            <span class="activity-card-count">{{ scientific_result_count }}</span>
+                        </div>
+                        <div class="activity-result-groups">
+                            {% for group in scientific_result_groups %}
+                                <details class="activity-result-details activity-result-group">
+                                    <summary>
+                                        <span>
+                                            <strong>{{ group.name }} — {{ group.results|length }}</strong>
+                                            <small>{% if group.is_article %}Показать названия написанных статей{% else %}Показать выполненные результаты{% endif %}</small>
+                                        </span>
+                                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+                                    </summary>
+                                    <div class="activity-result-list">
+                                        {% for result in group.results %}
+                                            <div class="activity-result-item">
+                                                <span class="activity-result-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg></span>
+                                                <div>
+                                                    <strong>{{ result.title }}</strong>
+                                                    <small>{{ result.result_year }}{% if result.publication_name %} · {{ result.publication_name }}{% endif %}{% if result.planned_activity_id %} · зачтено в план{% else %} · вне плана{% endif %}</small>
+                                                    {% if result.bibliographic_data %}<p>{{ result.bibliographic_data }}</p>{% endif %}
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </details>
+                            {% endfor %}
+                        </div>
+                    </section>
+                {% endif %}
+
                 <section class="activity-plan-layout" aria-label="Содержание личного плана">
                     <article class="activity-plan-card">
                         <div class="activity-card-heading">
@@ -199,7 +236,10 @@
                                         {% if activity.scientific_results_list %}
                                             <details class="activity-result-details">
                                                 <summary>
-                                                    <span>Подтверждено фактически: {{ activity.actual_count }} из {{ activity.quantity }}</span>
+                                                    <span>
+                                                        <strong>Зачтено в этот пункт {{ activity.actual_count }}/{{ activity.quantity }}</strong>
+                                                        <small>{% if activity.activity_type.code == 'article' %}Показать написанные статьи{% else %}Показать выполненные результаты{% endif %}</small>
+                                                    </span>
                                                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
                                                 </summary>
                                                 <div class="activity-result-list">

@@ -9,6 +9,16 @@ urlpatterns = [
     path("new/", views.submission_create, name="create"),
     path("extract-metadata/", views.extract_submission_metadata_view, name="extract_metadata"),
     path("<int:pk>/", views.submission_detail, name="detail"),
+    path(
+        "<int:pk>/conclusions/<int:conclusion_pk>/download/",
+        views.submission_conclusion_document_download,
+        name="conclusion_download",
+    ),
+    path(
+        "<int:pk>/conclusions/<int:conclusion_pk>/files/<str:file_kind>/",
+        views.submission_conclusion_package_file_download,
+        name="conclusion_package_file",
+    ),
     path("<int:pk>/delete-draft/", views.delete_submission_draft_view, name="delete_draft"),
     path(
         "<int:pk>/versions/<int:version_pk>/preview/",

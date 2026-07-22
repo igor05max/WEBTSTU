@@ -202,6 +202,7 @@
 }
 
 .activity-summary-card,
+.activity-completed-card,
 .activity-plan-card,
 .activity-insight-card,
 .activity-registry-card,
@@ -215,6 +216,11 @@
 .activity-summary-card {
     margin-bottom: 22px;
     padding: 26px 28px 28px;
+}
+
+.activity-completed-card {
+    margin-bottom: 22px;
+    overflow: hidden;
 }
 
 .activity-summary-heading {
@@ -473,6 +479,7 @@
 }
 
 .activity-plan-card,
+.activity-completed-card,
 .activity-insight-card,
 .activity-registry-card {
     overflow: hidden;
@@ -634,6 +641,24 @@
     list-style: none;
 }
 
+.activity-result-details summary > span {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.activity-result-details summary strong {
+    color: inherit;
+    font-size: 13px;
+}
+
+.activity-result-details summary small {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+}
+
 .activity-result-details summary::-webkit-details-marker {
     display: none;
 }
@@ -652,6 +677,21 @@
 
 .activity-result-details[open] summary svg {
     transform: rotate(180deg);
+}
+
+.activity-result-groups {
+    padding: 18px 24px 22px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.activity-result-group {
+    margin-top: 0;
+}
+
+.activity-result-group[open] {
+    grid-column: 1 / -1;
 }
 
 .activity-result-list {
@@ -1157,6 +1197,11 @@
 }
 
 @media (max-width: 720px) {
+    .activity-result-groups {
+        padding: 14px 18px 18px;
+        grid-template-columns: 1fr;
+    }
+
     .activity-employee-card {
         padding: 19px;
     }
