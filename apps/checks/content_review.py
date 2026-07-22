@@ -5,7 +5,14 @@ import urllib.error
 from django.conf import settings
 
 from apps.checks.document_checks import _build_payload, _context_around, _is_success, _issue
-from apps.checks.gemini_client import GeminiAPIError, generate_content, get_configured_model
+from apps.checks.gemini_client import (
+    GeminiAPIError,
+    generate_content,
+    get_ai_source,
+    get_configured_model,
+    get_provider_label,
+    is_ai_configured,
+)
 
 
 ALLOWED_CATEGORIES = {
@@ -34,7 +41,7 @@ def _parse_json_response(value):
         value = value[value.find("{") :]
     parsed, _end = json.JSONDecoder().raw_decode(value)
     if not isinstance(parsed, dict):
-        raise ValueError("Gemini returned a non-object JSON response.")
+        raise ValueError("AI-модель вернула JSON не в виде объекта.")
     return parsed
 
 
@@ -107,10 +114,16 @@ def _fallback_payload(message, *, source, severity="info", details=""):
 
 
 def build_content_review_report(submission, snapshot):
+    provider_label = get_provider_label()
+    ai_source = get_ai_source()
     if not getattr(settings, "SUBMISSION_CONTENT_REVIEW_ENABLED", True):
-        return _fallback_payload("Проверка содержания Gemini отключена в настройках.", source="disabled")
-    if not settings.GEMINI_API_KEY:
-        return _fallback_payload("Не задан ключ Gemini; доступна только ручная оценка экспертом.", source="missing_api_key", severity="warning")
+        return _fallback_payload("AI-проверка содержания отключена в настройках.", source="disabled")
+    if not is_ai_configured():
+        return _fallback_payload(
+            "Подключение к AI-модели не настроено; доступна только ручная оценка экспертом.",
+            source="missing_ai_configuration",
+            severity="warning",
+        )
     document_text = snapshot.get("text") or ""
     if not document_text:
         return _fallback_payload("Текст документа не удалось извлечь для анализа содержания.", source="no_text", severity="warning")
@@ -118,7 +131,7 @@ def build_content_review_report(submission, snapshot):
     parsed = None
     model_name = ""
     last_error = ""
-    error_source = "gemini_error"
+    error_source = f"{ai_source}_error"
     for _attempt in range(2):
         try:
             response_payload, model_name = _call_gemini(_build_prompt(submission, document_text))
@@ -133,10 +146,10 @@ def build_content_review_report(submission, snapshot):
             error_source = "http_error"
         except (OSError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
             last_error = str(exc)
-            error_source = "gemini_error"
+            error_source = f"{ai_source}_error"
     if parsed is None:
         return _fallback_payload(
-            "Gemini временно не выполнил проверку содержания.",
+            f"{provider_label} временно не выполнила проверку содержания.",
             source=error_source,
             severity="warning",
             details=last_error,
@@ -173,7 +186,7 @@ def build_content_review_report(submission, snapshot):
                 f"ai_{category}",
                 str(raw_issue.get("title") or ALLOWED_CATEGORIES[category]).strip(),
                 severity,
-                explanation or "Gemini отметил фрагмент для внимания эксперта.",
+                explanation or "AI-модель отметила фрагмент для внимания эксперта.",
                 location=ALLOWED_CATEGORIES[category],
                 context=context,
                 highlight=quote,
@@ -183,14 +196,14 @@ def build_content_review_report(submission, snapshot):
 
     assessment = str(parsed.get("overall_assessment") or "").strip()
     if issues:
-        message = f"Gemini сформировал {len(issues)} рекомендаций по содержанию. Они не блокируют отправку."
+        message = f"{provider_label} сформировала {len(issues)} рекомендаций по содержанию. Они не блокируют отправку."
     else:
-        message = "Gemini не обнаружил явных признаков неадекватного, экстремистского или иного опасного содержания."
+        message = f"{provider_label} не обнаружила явных признаков неадекватного, экстремистского или иного опасного содержания."
     payload = _build_payload(
         "mock_content_screening",
         message,
         issues,
-        metrics={"source": "gemini", "model": model_name, "reviewed_characters": min(len(document_text), int(getattr(settings, "SUBMISSION_CONTENT_REVIEW_EXCERPT_LIMIT", 60000)))},
+        metrics={"source": ai_source, "model": model_name, "reviewed_characters": min(len(document_text), int(getattr(settings, "SUBMISSION_CONTENT_REVIEW_EXCERPT_LIMIT", 60000)))},
         details={"overall_assessment": assessment},
     )
     return _is_success(issues), payload

@@ -1,4 +1,5 @@
 from io import BytesIO
+import json
 import urllib.error
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ from apps.checks.gemini_client import (
     GeminiAPIError,
     choose_generation_model,
     fetch_generation_models,
+    generate_content,
     normalize_model_id,
     parse_generation_models,
     validate_api_key,
@@ -98,6 +100,66 @@ class GeminiClientTests(SimpleTestCase):
         rendered = f"{caught.exception} {caught.exception.as_dict()}"
         self.assertNotIn(api_key, rendered)
         self.assertIn("[API_KEY_REDACTED]", rendered)
+
+
+@override_settings(
+    AI_PROVIDER="openai_compatible",
+    AI_BASE_URL="http://192.0.2.10:8088/v1",
+    AI_API_KEY="",
+    AI_MODEL="Qwen-local.gguf",
+    AI_DISABLE_THINKING=True,
+)
+class OpenAICompatibleClientTests(SimpleTestCase):
+    def test_fetches_openai_compatible_models_without_api_key(self):
+        observed = {}
+
+        def opener(request, timeout):
+            observed["url"] = request.full_url
+            observed["authorization"] = request.get_header("Authorization")
+            return _JSONResponse(b'{"data":[{"id":"Qwen-local.gguf","object":"model"}]}')
+
+        models = fetch_generation_models(opener=opener)
+
+        self.assertEqual(models[0]["id"], "Qwen-local.gguf")
+        self.assertEqual(observed["url"], "http://192.0.2.10:8088/v1/models")
+        self.assertIsNone(observed["authorization"])
+
+    def test_translates_gemini_payload_to_chat_completions(self):
+        observed = {}
+
+        def opener(request, timeout):
+            observed["url"] = request.full_url
+            observed["payload"] = json.loads(request.data.decode("utf-8"))
+            return _JSONResponse(
+                b'{"choices":[{"message":{"role":"assistant","content":"{\\"ok\\":true}"}}]}'
+            )
+
+        response, model = generate_content(
+            {
+                "systemInstruction": {"parts": [{"text": "Return JSON."}]},
+                "contents": [{"role": "user", "parts": [{"text": "Test"}]}],
+                "generationConfig": {
+                    "maxOutputTokens": 128,
+                    "responseMimeType": "application/json",
+                },
+            },
+            models=[{"id": "Qwen-local.gguf"}],
+            opener=opener,
+        )
+
+        self.assertEqual(model, "Qwen-local.gguf")
+        self.assertEqual(observed["url"], "http://192.0.2.10:8088/v1/chat/completions")
+        self.assertEqual(observed["payload"]["model"], "Qwen-local.gguf")
+        self.assertEqual(observed["payload"]["messages"][0]["role"], "system")
+        self.assertEqual(observed["payload"]["response_format"], {"type": "json_object"})
+        self.assertEqual(
+            observed["payload"]["chat_template_kwargs"],
+            {"enable_thinking": False},
+        )
+        self.assertEqual(
+            response["candidates"][0]["content"]["parts"][0]["text"],
+            '{"ok":true}',
+        )
 
 
 @override_settings(ROOT_ADMIN_USERNAME="rootUser", GEMINI_API_KEY="AQ.ui-secret-key")

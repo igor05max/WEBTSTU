@@ -10,7 +10,15 @@ from xml.etree import ElementTree
 
 from django.conf import settings
 
-from apps.checks.gemini_client import GeminiAPIError, generate_content, get_configured_model
+from apps.checks.gemini_client import (
+    GeminiAPIError,
+    generate_content,
+    get_ai_source,
+    get_configured_model,
+    get_provider,
+    get_provider_label,
+    is_ai_configured,
+)
 
 
 _TEXT_EXTENSIONS = {
@@ -394,7 +402,10 @@ def _detect_direction_locally(submission, directions, *, details=""):
 
     confidence = min(85, 35 + best_score * 8)
     reasoning = f"Локальный фолбэк по ключевым словам: {', '.join(best_matches[:6])}."
-    fallback_message = "Gemini недоступен, поэтому область экспертизы определена локально по ключевым словам."
+    provider_unavailable = (
+        "Gemini недоступен" if get_provider() == "gemini" else "Локальная AI-модель недоступна"
+    )
+    fallback_message = f"{provider_unavailable}, поэтому область экспертизы определена локально по ключевым словам."
     try:
         diagnostic = json.loads(details or "{}")
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -402,7 +413,7 @@ def _detect_direction_locally(submission, directions, *, details=""):
     http_status = diagnostic.get("http_status") if isinstance(diagnostic, dict) else None
     if http_status:
         fallback_message = (
-            f"Gemini недоступен (HTTP {http_status}), поэтому область экспертизы "
+            f"{provider_unavailable} (HTTP {http_status}), поэтому область экспертизы "
             "определена локально по ключевым словам."
         )
     return {
@@ -610,16 +621,18 @@ def detect_direction_for_submission(submission, *, directions):
             source="disabled",
         )
 
-    if not settings.GEMINI_API_KEY:
+    if not is_ai_configured():
         return _build_unmatched_payload(
-            "Не задан GEMINI_API_KEY, поэтому область экспертизы не определена автоматически.",
-            source="missing_api_key",
+            "Подключение к AI-модели не настроено, поэтому область экспертизы не определена автоматически.",
+            source="missing_ai_configuration",
         )
 
     excerpt = _build_document_excerpt(submission)
     prompt = _build_prompt(submission, directions, excerpt=excerpt)
     directions_by_code = {direction.code: direction for direction in directions}
-    inline_file_part = _build_inline_file_part(submission)
+    # Gemini умеет принимать файлы inline. OpenAI-совместимому локальному API
+    # передаём уже извлечённый текст, чтобы не отправлять ему неподдерживаемый base64.
+    inline_file_part = _build_inline_file_part(submission) if get_provider() == "gemini" else None
 
     response_text = ""
     response_details = ""
@@ -656,20 +669,24 @@ def detect_direction_for_submission(submission, *, directions):
             return local_payload
 
         return _build_unmatched_payload(
-            "Gemini не смог уверенно определить область экспертизы по материалу.",
-            source="gemini_error" if response_details else "gemini_parse_error",
+            f"{get_provider_label()} не смогла уверенно определить область экспертизы по материалу.",
+            source=f"{get_ai_source()}_error" if response_details else f"{get_ai_source()}_parse_error",
             details=response_details or response_text,
         )
 
     direction = directions_by_code[parsed["direction_code"]]
     confidence = parsed["confidence"]
-    message = "Gemini определил предметную область по материалу."
+    message = (
+        "Gemini определил предметную область по материалу."
+        if get_provider() == "gemini"
+        else "Локальная AI-модель определила предметную область по материалу."
+    )
     if confidence:
         message = f"{message} Уверенность модели: {confidence}%."
 
     return {
         "matched": True,
-        "source": "gemini",
+        "source": get_ai_source(),
         "message": message,
         "direction_code": direction.code,
         "direction_name": direction.name,

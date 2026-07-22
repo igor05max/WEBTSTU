@@ -22,7 +22,7 @@ DEFAULT_CHECK_DEFINITIONS = (
     {
         "code": "mock_content_screening",
         "name": "Содержание и риски",
-        "description": "Gemini оценивает связность, адекватность и признаки опасного содержания без проверки плагиата.",
+        "description": "AI-модель оценивает связность, адекватность и признаки опасного содержания без проверки плагиата.",
         "order": 10,
         "is_blocking": False,
         "backend_code": "gemini_content_review",

@@ -1,19 +1,23 @@
 {% extends "workspace_base.html" %}
 {% load static workspace_navigation %}
 
-{% block title %}Настройка Gemini — Научный ЭДО{% endblock %}
+{% block title %}Настройка AI-модели — Научный ЭДО{% endblock %}
 {% block sidebar %}{% workspace_sidebar "gemini" %}{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'checks/gemini-settings.css' %}?v=20260720a">{% endblock %}
 
 {% block content %}
     <header class="gemini-header">
         <div>
-            <div class="gemini-kicker">Интеграция Google AI</div>
-            <h1>Настройка Gemini</h1>
-            <p>Ключ берётся из переменной окружения <code>GEMINI_API_KEY</code>, никогда не показывается на странице и не сохраняется в базе данных.</p>
+            <div class="gemini-kicker">Интеллектуальные проверки</div>
+            <h1>Настройка AI-модели</h1>
+            {% if provider == "openai_compatible" %}
+                <p>Используется локальный OpenAI-совместимый API <code>{{ models_endpoint }}</code>. Адрес и возможный ключ задаются только через окружение сервера.</p>
+            {% else %}
+                <p>Ключ берётся из переменной окружения <code>GEMINI_API_KEY</code>, никогда не показывается на странице и не сохраняется в базе данных.</p>
+            {% endif %}
         </div>
-        <span class="gemini-state {% if api_key_configured %}is-ready{% else %}is-error{% endif %}">
-            {% if api_key_configured %}Ключ настроен{% else %}Ключ не задан{% endif %}
+        <span class="gemini-state {% if connection_configured %}is-ready{% else %}is-error{% endif %}">
+            {% if connection_configured %}{% if provider == "gemini" %}Ключ настроен{% else %}Подключение настроено{% endif %}{% else %}Подключение не настроено{% endif %}
         </span>
     </header>
 
@@ -27,7 +31,7 @@
         <div class="gemini-panel-head">
             <div>
                 <span>01</span>
-                <div><h2>Доступные модели</h2><p>Показываются только модели с методом <code>generateContent</code>.</p></div>
+                <div><h2>Доступные модели</h2><p>Список загружается через <code>{{ generation_method }}</code>-совместимый API.</p></div>
             </div>
             <form method="post">
                 {% csrf_token %}
@@ -59,7 +63,7 @@
         <div class="gemini-panel-head">
             <div>
                 <span>02</span>
-                <div><h2>Test Gemini Connection</h2><p>Сначала получает модели, затем выполняет короткий запрос <code>generateContent</code>.</p></div>
+                <div><h2>Проверка подключения</h2><p>Сначала получает модели, затем выполняет короткий запрос через <code>{{ generation_method }}</code>.</p></div>
             </div>
             <form method="post">
                 {% csrf_token %}
@@ -74,7 +78,7 @@
                 <div><span>Error code</span><strong>{{ diagnostics.error_code|default:"—" }}</strong></div>
                 <div><span>Модель</span><strong>{{ diagnostics.model|default:"—" }}</strong></div>
                 <div class="wide"><span>Endpoint без ключа</span><code>{{ diagnostics.endpoint|default:"—" }}</code></div>
-                <div class="wide"><span>Сообщение Google API</span><p>{{ diagnostics.google_message|default:"—" }}</p></div>
+                <div class="wide"><span>Сообщение AI API</span><p>{{ diagnostic_message|default:"—" }}</p></div>
             </div>
         {% else %}
             <div class="gemini-empty">Подключение ещё не проверялось.</div>
