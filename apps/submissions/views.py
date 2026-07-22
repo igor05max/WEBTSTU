@@ -401,6 +401,8 @@ def _build_check_entries(submission, check_runs):
         CheckRunStatus.RUNNING: "primary",
         CheckRunStatus.PASSED: "success",
         CheckRunStatus.FAILED: "danger",
+        CheckRunStatus.PARTIAL: "warning",
+        CheckRunStatus.NOT_PERFORMED: "warning",
     }
     entries = []
     for definition in definitions:
@@ -418,7 +420,13 @@ def _build_check_entries(submission, check_runs):
         summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
         metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
         details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
-        if status in {CheckRunStatus.PASSED, CheckRunStatus.FAILED}:
+        if status == CheckRunStatus.NOT_PERFORMED:
+            status_display = "Не выполнена"
+            tone = "warning"
+        elif status == CheckRunStatus.PARTIAL:
+            status_display = "Выполнена частично"
+            tone = "warning"
+        elif status in {CheckRunStatus.PASSED, CheckRunStatus.FAILED}:
             if summary.get("critical") or summary.get("error"):
                 status_display = "Есть замечания"
                 tone = "danger"

@@ -104,13 +104,15 @@ def _fallback_payload(message, *, source, severity="info", details=""):
         location="Проверка содержания",
         suggestion="Эксперт может оценить материал вручную; отправка не блокируется.",
     )
-    return True, _build_payload(
+    payload = _build_payload(
         "mock_content_screening",
         message,
         [issue],
-        metrics={"source": source},
+        metrics={"source": source, "ai_check_performed": False},
         details={"technical_details": details[:1500]},
     )
+    payload["execution_status"] = "not_performed"
+    return True, payload
 
 
 def build_content_review_report(submission, snapshot):
@@ -203,7 +205,8 @@ def build_content_review_report(submission, snapshot):
         "mock_content_screening",
         message,
         issues,
-        metrics={"source": ai_source, "model": model_name, "reviewed_characters": min(len(document_text), int(getattr(settings, "SUBMISSION_CONTENT_REVIEW_EXCERPT_LIMIT", 60000)))},
+        metrics={"source": ai_source, "model": model_name, "ai_check_performed": True, "reviewed_characters": min(len(document_text), int(getattr(settings, "SUBMISSION_CONTENT_REVIEW_EXCERPT_LIMIT", 60000)))},
         details={"overall_assessment": assessment},
     )
+    payload["execution_status"] = "completed"
     return _is_success(issues), payload

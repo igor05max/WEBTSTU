@@ -1329,6 +1329,8 @@ class SubmissionSubjectAreaDetectionTests(TestCase):
 
         self.assertTrue(payload["matched"])
         self.assertEqual(payload["source"], "local_keywords")
+        self.assertEqual(payload["execution_status"], "partial")
+        self.assertFalse(payload["ai_check_performed"])
         self.assertEqual(payload["direction_code"], self.direction.code)
         self.assertEqual(payload["direction_name"], self.direction.name)
         self.assertIn("Gemini недоступен", payload["message"])

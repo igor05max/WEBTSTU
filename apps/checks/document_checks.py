@@ -29,7 +29,6 @@ SEVERITIES = ("info", "warning", "error", "critical")
 WORD_RE = re.compile(r"[0-9A-Za-zА-Яа-яЁё][0-9A-Za-zА-Яа-яЁё'’-]*")
 MIXED_SCRIPT_RE = re.compile(r"[A-Za-zА-Яа-яЁё]{3,}")
 EQUATION_LABEL_RE = re.compile(r"^\(?\s*(\d{1,3})\s*\)?$")
-REFERENCE_HEADING_RE = re.compile(r"^(?:список\s+литературы|литература|references)$", re.I)
 DEFAULT_REQUIRED_SECTIONS = list(SECTION_ALIASES)
 DEFAULT_WORD_LIMITS = {
     "article": (2000, 12000),
@@ -314,11 +313,10 @@ def build_document_quality_report(submission, version, *, snapshot=None):
             )
         )
 
-    reference_index = None
-    for index, paragraph in enumerate(paragraphs):
-        if REFERENCE_HEADING_RE.fullmatch(normalize_for_match(paragraph["text"]).strip(" .:")):
-            reference_index = index
-            break
+    reference_index, _reference_heading = _find_section(
+        paragraphs,
+        SECTION_ALIASES["Список литературы"],
+    )
     references = []
     if reference_index is not None:
         references = [item["text"] for item in paragraphs[reference_index + 1 :] if len(item["text"]) > 20]

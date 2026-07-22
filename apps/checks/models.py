@@ -6,6 +6,8 @@ class CheckRunStatus(models.TextChoices):
     RUNNING = "running", "Выполняется"
     PASSED = "passed", "Пройдена"
     FAILED = "failed", "Не пройдена"
+    PARTIAL = "partial", "Выполнена частично"
+    NOT_PERFORMED = "not_performed", "Не выполнена"
 
 
 class CheckDefinition(models.Model):

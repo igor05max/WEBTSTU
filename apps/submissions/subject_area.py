@@ -419,6 +419,8 @@ def _detect_direction_locally(submission, directions, *, details=""):
     return {
         "matched": True,
         "source": "local_keywords",
+        "execution_status": "partial",
+        "ai_check_performed": False,
         "message": fallback_message,
         "direction_code": best_direction.code,
         "direction_name": best_direction.name,
@@ -584,10 +586,19 @@ def _call_gemini(prompt, *, inline_file_part=None, timeout=45):
     return response
 
 
-def _build_unmatched_payload(message, *, source="unavailable", reasoning="", details=""):
+def _build_unmatched_payload(
+    message,
+    *,
+    source="unavailable",
+    reasoning="",
+    details="",
+    execution_status="not_performed",
+):
     return {
         "matched": False,
         "source": source,
+        "execution_status": execution_status,
+        "ai_check_performed": False,
         "message": message,
         "direction_code": "",
         "direction_name": "",
@@ -607,6 +618,8 @@ def detect_direction_for_submission(submission, *, directions):
         return {
             "matched": True,
             "source": "single_direction",
+            "execution_status": "completed",
+            "ai_check_performed": False,
             "message": "Для выбранного типа материала доступна только одна область экспертизы.",
             "direction_code": direction.code,
             "direction_name": direction.name,
@@ -687,6 +700,8 @@ def detect_direction_for_submission(submission, *, directions):
     return {
         "matched": True,
         "source": get_ai_source(),
+        "execution_status": "completed",
+        "ai_check_performed": True,
         "message": message,
         "direction_code": direction.code,
         "direction_name": direction.name,

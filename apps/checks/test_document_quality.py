@@ -5,8 +5,9 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.urls import reverse
 
-from apps.checks.document_checks import build_file_safety_report
+from apps.checks.document_checks import build_document_quality_report, build_file_safety_report
 from apps.checks.models import CheckRunStatus
 from apps.directory.models import ArticleType, Journal
 from apps.submissions.document_analysis import analyze_document_bytes, match_authors_to_users
@@ -14,7 +15,7 @@ from apps.submissions.models import SubmissionStatus
 from apps.submissions.services import create_submission_with_initial_version
 
 
-def build_article_docx(*, dangerous_member=False):
+def build_article_docx(*, dangerous_member=False, reference_heading="Список литературы"):
     paragraphs = [
         "УДК 004.9",
         "author-header@example.ru",
@@ -31,7 +32,7 @@ def build_article_docx(*, dangerous_member=False):
         "Результаты",
         "Обсуждение",
         "Заключение",
-        "Список литературы",
+        reference_heading,
         "Иванов И. И. Анализ документов. 2025.",
     ]
     body = "".join(
@@ -81,6 +82,37 @@ class DocumentAnalysisTests(TestCase):
         )
         self.assertEqual(payload["summary"]["critical"], 1)
 
+    def test_recognizes_list_of_used_literature_heading(self):
+        snapshot = analyze_document_bytes(
+            build_article_docx(reference_heading="СПИСОК ИСПОЛЬЗОВАННОЙ ЛИТЕРАТУРЫ"),
+            "article.docx",
+        )
+        submission = SimpleNamespace(
+            title="Программный модуль для анализа научных материалов",
+            document_authors="А.Е. Архипов, В.С. Круглов",
+            organizations="ФГБОУ ВО «ТГТУ»",
+            contact_emails="author@example.ru",
+            keywords="анализ, документ, метаданные",
+            abstract="Описан метод автоматической проверки научной статьи.",
+            journal=SimpleNamespace(editorial_policy={}),
+            article_type=SimpleNamespace(
+                code="article",
+                name="Статья",
+                min_word_count=1,
+                max_word_count=100000,
+            ),
+            get_authors_display=lambda: "А.Е. Архипов, В.С. Круглов",
+        )
+
+        _passed, payload = build_document_quality_report(
+            submission,
+            SimpleNamespace(file=True),
+            snapshot=snapshot,
+        )
+
+        self.assertEqual(payload["metrics"]["references"], 1)
+        self.assertNotIn("missing_references", {issue["code"] for issue in payload["issues"]})
+
 
 @override_settings(
     SUBMISSION_CHECKS_ASYNC=False,
@@ -104,7 +136,16 @@ class AdvisoryChecksTests(TestCase):
 
         submission.refresh_from_db()
         metadata_run = submission.check_runs.get(check_definition__code="metadata_complete")
+        content_run = submission.check_runs.get(check_definition__code="mock_content_screening")
+        subject_area_run = submission.check_runs.get(check_definition__code="subject_area_detection")
         self.assertEqual(metadata_run.status, CheckRunStatus.FAILED)
+        self.assertEqual(content_run.status, CheckRunStatus.NOT_PERFORMED)
+        self.assertEqual(subject_area_run.status, CheckRunStatus.NOT_PERFORMED)
+        self.assertEqual(content_run.result_payload["execution_status"], "not_performed")
         self.assertEqual(submission.status, SubmissionStatus.SUBMITTED)
         self.assertIn("summary", metadata_run.result_payload)
         self.assertTrue(metadata_run.result_payload["issues"])
+
+        self.client.force_login(user)
+        response = self.client.get(reverse("submissions:detail", args=[submission.pk]))
+        self.assertContains(response, "Не выполнена", count=2)

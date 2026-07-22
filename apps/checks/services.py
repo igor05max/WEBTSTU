@@ -290,8 +290,15 @@ def run_mock_checks(submission, *, expected_version_id=None, resume_workflow_aft
                 "metrics": {},
                 "extracted_metadata": {},
                 "details": {"error_type": type(exc).__name__},
+                "execution_status": "not_performed",
             }
-        run.status = CheckRunStatus.PASSED if passed else CheckRunStatus.FAILED
+        execution_status = str(payload.get("execution_status") or "").strip()
+        if execution_status == "not_performed":
+            run.status = CheckRunStatus.NOT_PERFORMED
+        elif execution_status == "partial":
+            run.status = CheckRunStatus.PARTIAL
+        else:
+            run.status = CheckRunStatus.PASSED if passed else CheckRunStatus.FAILED
         run.result_payload = payload
         run.finished_at = timezone.now()
         run.save(update_fields=["status", "result_payload", "finished_at"])
