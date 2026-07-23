@@ -5,6 +5,7 @@ from django.test import SimpleTestCase
 from document_template_engine import (
     build_docx_from_template,
     build_docx_plan,
+    interpret_template_text,
     normalize_template_rules,
 )
 
@@ -89,6 +90,44 @@ def _sample_docx():
 
 
 class ReusableTemplateEngineTests(SimpleTestCase):
+    def test_ai_unspecified_false_values_do_not_erase_author_formatting(self):
+        rules = interpret_template_text(
+            document_type="Тезисы",
+            target_name="Конференция",
+            text="Список литературы при необходимости оформляется по СТБ.",
+            complete_json=lambda _prompt: """
+                {
+                  "document": {
+                    "blocks": [
+                      {
+                        "role": "title",
+                        "required": true,
+                        "style": {"bold": false, "italic": false}
+                      },
+                      {
+                        "role": "references",
+                        "required": false,
+                        "style": {
+                          "alignment": "justify",
+                          "first_line_indent_cm": 1,
+                          "bold": false
+                        }
+                      }
+                    ]
+                  }
+                }
+            """,
+        )
+
+        blocks = {
+            block["role"]: block
+            for block in rules["document"]["blocks"]
+        }
+        self.assertNotIn("bold", blocks["title"]["style"])
+        self.assertNotIn("italic", blocks["title"]["style"])
+        self.assertNotIn("alignment", blocks["references"]["style"])
+        self.assertNotIn("first_line_indent_cm", blocks["references"]["style"])
+
     def test_legacy_placeholders_become_blocks_not_required_sections(self):
         normalized = normalize_template_rules(LEGACY_RULES)
 

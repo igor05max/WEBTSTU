@@ -122,4 +122,27 @@ def interpret_template_text(
         target_name=target_name,
         text=text,
     )
-    return normalize_template_rules(parse_json_object(complete_json(prompt)))
+    normalized = normalize_template_rules(parse_json_object(complete_json(prompt)))
+    source = str(text or "").casefold().replace("ё", "е")
+    for block in (normalized.get("document") or {}).get("blocks") or []:
+        style = block.get("style")
+        if not isinstance(style, dict):
+            continue
+        # Local models often serialize unspecified boolean values as false.
+        # False must not erase the author's bold/italic formatting unless the
+        # source explicitly requires regular/non-italic text.
+        for key in ("bold", "italic"):
+            if style.get(key) is False:
+                style.pop(key, None)
+        if block.get("role") == "references":
+            references_context = ""
+            match = re.search(
+                r"(?:список\s+(?:использованн\w+\s+)?литератур\w*|references)",
+                source,
+            )
+            if match:
+                references_context = source[match.start() : match.start() + 350]
+            if not re.search(r"(?:абзацн\w*\s+отступ|выравнив)", references_context):
+                style.pop("first_line_indent_cm", None)
+                style.pop("alignment", None)
+    return normalized
