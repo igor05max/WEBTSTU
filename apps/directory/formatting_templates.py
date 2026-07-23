@@ -129,6 +129,7 @@ def _extract_template_content(template):
     suffix = Path(template.file.name).suffix.casefold()
     snapshot = analyze_document_bytes(data, template.file.name)
     text = snapshot.get("text") or ""
+    parse_warning = snapshot.get("parse_error") or ""
     deterministic_rules = _extract_docx_rules(data) if suffix == ".docx" else {}
 
     if suffix == ".pdf":
@@ -137,11 +138,13 @@ def _extract_template_content(template):
 
             reader = PdfReader(io.BytesIO(data))
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            if text.strip():
+                parse_warning = ""
         except Exception:
             text = ""
     elif suffix in TEXT_EXTENSIONS:
         text = snapshot.get("text") or ""
-    return text[:120_000], deterministic_rules, snapshot.get("parse_error") or ""
+    return text[:120_000], deterministic_rules, parse_warning
 
 
 def _merge_dict(base, override):

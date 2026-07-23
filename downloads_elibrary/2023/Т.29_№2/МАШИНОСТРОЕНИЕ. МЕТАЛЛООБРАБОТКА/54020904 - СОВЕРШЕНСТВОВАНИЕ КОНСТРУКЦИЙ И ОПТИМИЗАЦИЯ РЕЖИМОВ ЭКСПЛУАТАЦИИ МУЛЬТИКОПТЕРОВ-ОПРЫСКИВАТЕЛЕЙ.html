@@ -1,0 +1,1470 @@
+﻿<!DOCTYPE html><html><head>
+
+<meta name="robots" content="noarchive">
+
+<meta name="description" content="Толочко Н.К., Романюк Н.Н., Еднач В.Н., Попов А.И.
+Вестник Тамбовского государственного технического университета, 2023">
+<title>Совершенствование конструкций и оптимизация режимов эксплуатации мультикоптеров-опрыскивателей</title>
+
+<meta property="og:image" content="https://elibrary.ru/images/orgs_access.png">
+<meta property="og:title" content="Совершенствование конструкций и оптимизация режимов эксплуатации мультикоптеров-опрыскивателей">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://elibrary.ru/jircpw">
+<meta property="og:site_name" content="eLIBRARY.RU">
+<meta property="og:description" content="Толочко Н.К., Романюк Н.Н., Еднач В.Н., Попов А.И.
+Вестник Тамбовского государственного технического университета, 2023">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+
+<link rel="canonical" href="https://elibrary.ru/item.asp?id=54020904">
+
+
+<meta name="doi" content="10.17277/vestnik.2023.02.pp.324-334">
+
+
+<script type="text/javascript" src="/jquery.min.js"></script>
+<script type="text/javascript" src="/jquery.tools.min.js"></script>
+<script type="text/javascript" src="/fancybox/jquery.fancybox-1.3.4.pack.js"></script>
+<script type="text/javascript" src="/fancybox/jquery.easydrag.js"></script>
+<script type="text/javascript" src="/elibrary.js"></script>
+<script type="text/javascript" src="/MathJax/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+<link rel="stylesheet" href="/fancybox/jquery.fancybox-1.3.4.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style_sm.css" type="text/css" media="screen">
+
+<script language="JavaScript">
+
+but_blue_hover=new Image();
+but_blue_hover.src="/images/but_blue_hover.png";
+but_red_hover=new Image();
+but_red_hover.src="/images/but_red_hover.png";
+but_gray_hover=new Image();
+but_gray_hover.src="/images/but_gray_hover.png";
+ref_down=new Image();
+ref_down.src="/images/but_orange_down.gif";
+ref_up=new Image();
+ref_up.src="/images/but_orange_up.gif";
+comment_exist=new Image();
+comment_exist.src="/images/comments-r.png";
+comment_absent=new Image();
+comment_absent.src="/images/comments-g.png";
+
+function load_article(iid){
+
+	document.forms["results"].action="/full_text.asp?id=" + iid;
+	document.forms["results"].target="_blank";
+	document.forms["results"].submit()
+
+}
+function show_contents(){
+
+	document.forms["results"].action="/show_contents.asp";
+	document.forms["results"].target="_blank";
+	document.forms["results"].submit()
+
+}
+function show_freepart(){
+
+	document.forms["results"].action="/show_freepart.asp";
+	document.forms["results"].target="_blank";
+	document.forms["results"].submit()
+
+}
+function file_article(fid, filenum){
+
+	document.forms["results"].action="/file_article.asp";
+	document.forms["results"].filenum.value=filenum;
+	document.forms["results"].fileid.value=fid;
+	document.forms["results"].target="_blank";
+	document.forms["results"].submit()
+
+}
+function url_article(idid, urlnum){
+
+	document.forms["results"].action="/url_article.asp";
+	document.forms["results"].did.value=idid;
+	document.forms["results"].urlnum.value=urlnum;
+	document.forms["results"].target="_blank";
+	document.forms["results"].submit()
+
+}
+function email_article(){
+
+	if (document.forms["results"].email.value==''){
+		alerts("Не указан адрес электронной почты!");}
+	else{
+		$.fancybox({
+			href : '/email_article.asp?id=54020904&email='+document.forms["results"].email.value+'&rand=' + Math.random(),
+			title : '',
+			padding : 20,     
+			width : 400,
+			height : 150,
+			overlayOpacity : 0.3,	
+			overlayColor : '#000',
+			speedIn : 500,
+			hideOnOverlayClick : false,
+			enableEscapeButton : true,
+			type : 'iframe'
+			});
+		}
+
+}
+function show_itemrefs(){
+  alerts("Для просмотра списка цитируемой литературы необходимо вначале войти в библиотеку!");
+  document.getElementById("win_login").className = "expanded";
+  document.getElementById("img_login").src = w_up.src;
+  document.forms["login"].login.focus()
+}
+function edit_notes(){
+
+  $.fancybox({
+    href : '/item_notes_add.asp?itemid=54020904&rand=' + Math.random(),
+    title : '',
+	  padding : 20,     
+	  width : 520,
+	  height : 300,
+	  overlayOpacity : 0.3,	
+	  overlayColor : '#000',
+	  speedIn : 500,
+	  hideOnOverlayClick : false,
+	  enableEscapeButton : true,
+	  type : 'iframe'
+    });
+
+}
+
+function add_link(link){
+
+  $.fancybox({
+      href : '/itemlink_add.asp?itemid=54020904&linkid='+link+'&rand=' + Math.random(),
+      title : '',
+	  padding : 20,     
+	  width : 520,
+	  height : 320,
+	  overlayOpacity : 0.3,	
+	  overlayColor : '#000',
+	  speedIn : 500,
+	  hideOnOverlayClick : false,
+	  enableEscapeButton : true,
+	  type : 'iframe'
+    });
+
+}
+function reply_comments(commentid){
+
+  alerts("Для того, чтобы участвовать в обсуждении публикаций, необходимо зарегистрироваться в системе Science Index в качестве автора научных публикаций!");
+  document.getElementById("win_login").className = "expanded";
+  document.getElementById("img_login").src = w_up.src;
+  document.forms["login"].login.focus();
+
+}
+function edit_comments(commentid){
+
+  alerts("Для того, чтобы участвовать в обсуждении публикаций, необходимо зарегистрироваться в системе Science Index в качестве автора научных публикаций!");
+  document.getElementById("win_login").className = "expanded";
+  document.getElementById("img_login").src = w_up.src;
+  document.forms["login"].login.focus();
+
+}
+function new_comments(){
+
+  alerts("Для того, чтобы участвовать в обсуждении публикаций, необходимо зарегистрироваться в системе Science Index в качестве автора научных публикаций!");
+  document.getElementById("win_login").className = "expanded";
+  document.getElementById("img_login").src = w_up.src;
+  document.forms["login"].login.focus();
+
+}
+
+function translate_abstract(){
+  $.fancybox({
+      href : '/translate_abstract.asp?id=54020904&rand=' + Math.random(),
+      title : '',
+	  padding : 20,     
+	  width : 640,
+	  height : 350,
+	  overlayOpacity : 0.3,	
+	  overlayColor : '#000',
+	  speedIn : 500,
+	  hideOnOverlayClick : false,
+	  enableEscapeButton : true,
+	  type : 'iframe'
+    });
+}
+
+function welcome(par){
+  document.forms["results"].counterid.value=par;
+  document.forms["results"].target="_blank";
+  document.forms["results"].action="/counter.asp";
+  document.forms["results"].submit();
+}
+function newquery(){
+  document.forms["results"].action="/querybox.asp";
+  document.forms["results"].target="";
+  document.forms["results"].submit()
+}
+function order_item_add(){
+  anewwin=window.open("", "addwin", "resizable=yes,scrollbars=yes,height=300,width=500,top=0,left=0");
+  document.forms["results"].action="/order_item_add.asp";
+  document.forms["results"].target="addwin";
+  document.forms["results"].submit()
+}
+function show_help(topic){
+  anewwin=window.open("", "addwin", "resizable=yes,scrollbars=yes,height=300,width=500,top=0,left=0");
+  document.forms["results"].action=topic;
+  document.forms["results"].target="addwin";
+  document.forms["results"].submit()
+}
+function RowSelect(row,sel){
+  var rbgc = sel==1 ? "#e8e8e8" : "#f5f5f5";
+  $('#'+row+' td').attr('bgColor', rbgc);
+}
+
+function isVisible(tag) {
+    var t = $(tag);
+    var w = $(window);
+    var wt = w.scrollTop();
+    var tt = t.offset().top;
+    var tb = tt + t.height();
+    return ((tb <= wt + w.height()) && (tt >= wt));
+}
+function pdf_icon(b) {
+  if (!b.prop("shown") && isVisible(b)) {
+    b.prop("shown", true);
+    b.load("/ispdf.asp?itemid=" + b.attr('name').substring(4) + "&rand=" + Math.random());
+  }
+}
+function get_pdfs(){
+  $('div[id^="pdf_"]:not(prop("shown"))').each(function(){
+    pdf_icon($(this))
+  });
+}
+setInterval(function() {
+  if ( didScroll2 ) {
+	didScroll2=false;
+	get_pdfs();
+    }
+ }, 200);
+
+$(document).ready(function() { 
+	didScroll=true;
+})
+
+function select_all(){
+  $('input:checkbox[name^="tid"]').attr('checked', true);
+  $('input:checkbox[name^="pid"]').attr('checked', true);
+  $('tr[id^="arw"] td').attr('bgColor', "#e8e8e8");
+  $('tr[id^="brw"] td').attr('bgColor', "#e8e8e8");
+}
+function deselect_all(){
+  $('input:checkbox[name^="tid"]').attr('checked', false);
+  $('input:checkbox[name^="pid"]').attr('checked', false);
+  $('tr[id^="arw"] td').attr('bgColor', "#f5f5f5");
+  $('tr[id^="brw"] td').attr('bgColor', "#f5f5f5");
+}
+
+function itembox_add(){
+  var frm = document.forms["results"];
+  $.fancybox({
+    href : '/itembox_item_add1.asp?itemboxid='+frm.itemboxid.value+'&id='+frm.id.value ,
+    title : '',
+	  padding : 20,     
+	  width : 480,
+	  height : 150,
+	  overlayOpacity : 0.3,	
+	  overlayColor : '#000',
+	  speedIn : 500,
+	  hideOnOverlayClick : false,
+	  enableEscapeButton : true,
+	  type : 'iframe'
+  });
+}
+function itembox_adds(){
+  var frm = document.forms["results"];
+  var issel=0;
+  frm.items_all.value="";
+  for (var i = 0; i < frm.elements.length; i++) {
+    if (frm.elements[i].name.substring(0,3)=="tid"){
+       if (frm.elements[i].checked) {
+	     issel=issel+1;
+	     frm.items_all.value = frm.items_all.value + frm.elements[i].name.substring(3, frm.elements[i].name.length) + "|";
+	   }
+    }
+ }
+ if (issel==0) {
+    alerts ("Не выделено ни одной публикации")}
+ else {
+    $.fancybox({
+      href : '/itembox_item_add2.asp?itemboxid='+frm.itemboxid.value+'&items_all='+frm.items_all.value ,
+      title : '',
+	  padding : 20,     
+	  width : 480,
+	  height : 150,
+	  overlayOpacity : 0.3,	
+	  overlayColor : '#000',
+	  speedIn : 500,
+	  hideOnOverlayClick : false,
+	  enableEscapeButton : true,
+	  type : 'iframe'
+    });
+  }
+}
+function for_reference(){
+    $.fancybox({
+      href : '/for_reference.asp?id=54020904&rand=' + Math.random(),
+      title : '',
+			padding : 20,     
+			width : 480,
+			height : 250,
+			overlayOpacity : 0.3,	
+			overlayColor : '#000',
+			speedIn : 500,
+			hideOnOverlayClick : false,
+			enableEscapeButton : true,
+			type : 'iframe'
+    });
+}
+function qr_code(dd){
+  $.fancybox({
+    href : '/qr_code_edn.asp?edn='+dd+'&rand=' + Math.random(),
+    title : '',
+	  padding : 20,     
+	  width : 250,
+	  height : 300,
+	  overlayOpacity : 0.3,	
+	  overlayColor : '#000',
+	  speedIn : 500,
+	  hideOnOverlayClick : false,
+	  enableEscapeButton : true,
+	  type : 'iframe'
+    });
+}
+
+</script>
+<style type="text/css">.MathJax_Hover_Frame {border-radius: .25em; -webkit-border-radius: .25em; -moz-border-radius: .25em; -khtml-border-radius: .25em; box-shadow: 0px 0px 15px #83A; -webkit-box-shadow: 0px 0px 15px #83A; -moz-box-shadow: 0px 0px 15px #83A; -khtml-box-shadow: 0px 0px 15px #83A; border: 1px solid #A6D ! important; display: inline-block; position: absolute}
+.MathJax_Hover_Arrow {position: absolute; width: 15px; height: 11px; cursor: pointer}
+</style><style type="text/css">#MathJax_About {position: fixed; left: 50%; width: auto; text-align: center; border: 3px outset; padding: 1em 2em; background-color: #DDDDDD; color: black; cursor: default; font-family: message-box; font-size: 120%; font-style: normal; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; z-index: 201; border-radius: 15px; -webkit-border-radius: 15px; -moz-border-radius: 15px; -khtml-border-radius: 15px; box-shadow: 0px 10px 20px #808080; -webkit-box-shadow: 0px 10px 20px #808080; -moz-box-shadow: 0px 10px 20px #808080; -khtml-box-shadow: 0px 10px 20px #808080; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+.MathJax_Menu {position: absolute; background-color: white; color: black; width: auto; padding: 2px; border: 1px solid #CCCCCC; margin: 0; cursor: default; font: menu; text-align: left; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; z-index: 201; box-shadow: 0px 10px 20px #808080; -webkit-box-shadow: 0px 10px 20px #808080; -moz-box-shadow: 0px 10px 20px #808080; -khtml-box-shadow: 0px 10px 20px #808080; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+.MathJax_MenuItem {padding: 2px 2em; background: transparent}
+.MathJax_MenuTitle {background-color: #CCCCCC; margin: -1px -1px 1px -1px; text-align: center; font-style: italic; font-size: 80%; color: #444444; padding: 2px 0; overflow: hidden}
+.MathJax_MenuArrow {position: absolute; right: .5em; color: #666666}
+.MathJax_MenuActive .MathJax_MenuArrow {color: white}
+.MathJax_MenuCheck {position: absolute; left: .7em}
+.MathJax_MenuRadioCheck {position: absolute; left: 1em}
+.MathJax_MenuLabel {padding: 2px 2em 4px 1.33em; font-style: italic}
+.MathJax_MenuRule {border-top: 1px solid #CCCCCC; margin: 4px 1px 0px}
+.MathJax_MenuDisabled {color: GrayText}
+.MathJax_MenuActive {background-color: Highlight; color: HighlightText}
+.MathJax_Menu_Close {position: absolute; width: 31px; height: 31px; top: -15px; left: -15px}
+</style><style type="text/css">#MathJax_Zoom {position: absolute; background-color: #F0F0F0; overflow: auto; display: block; z-index: 301; padding: .5em; border: 1px solid black; margin: 0; font-weight: normal; font-style: normal; text-align: left; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; box-shadow: 5px 5px 15px #AAAAAA; -webkit-box-shadow: 5px 5px 15px #AAAAAA; -moz-box-shadow: 5px 5px 15px #AAAAAA; -khtml-box-shadow: 5px 5px 15px #AAAAAA; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+#MathJax_ZoomOverlay {position: absolute; left: 0; top: 0; z-index: 300; display: inline-block; width: 100%; height: 100%; border: 0; padding: 0; margin: 0; background-color: white; opacity: 0; filter: alpha(opacity=0)}
+#MathJax_ZoomEventTrap {position: absolute; left: 0; top: 0; z-index: 302; display: inline-block; border: 0; padding: 0; margin: 0; background-color: white; opacity: 0; filter: alpha(opacity=0)}
+</style><style type="text/css">.MathJax_Preview {color: #888}
+#MathJax_Message {position: fixed; left: 1em; bottom: 1.5em; background-color: #E6E6E6; border: 1px solid #959595; margin: 0px; padding: 2px 8px; z-index: 102; color: black; font-size: 80%; width: auto; white-space: nowrap}
+#MathJax_MSIE_Frame {position: absolute; top: 0; left: 0; width: 0px; z-index: 101; border: 0px; margin: 0px; padding: 0px}
+.MathJax_Error {color: #CC0000; font-style: italic}
+</style></head>
+
+<body><div id="MathJax_Message" style="display: none;"></div> 
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tbody><tr><td width="100%" align="center" valign="top">
+
+<table cellpadding="0" cellspacing="0" border="0">
+<tbody><tr><td width="170" align="left" valign="top" id="leftcol" style="width: 170px;">
+
+<table border="0" cellspacing="0" cellpadding="0" width="150">
+
+
+
+<tbody><tr><td>
+<a href="/projects/conference/sochi2026/info.asp"><img src="/projects/conference/sochi2026/images/SO26_1.jpg" width="150" border="0" vspace="0" class="shadow help2" style="border-radius: 15px; margin: 20px 0 10px 0;"></a></td></tr>
+
+<tr><td align="center" valign="top"><a href="/projects/conference/sochi2026/info.asp"><font color="#000000">Международная конференция</font><br>
+<div style="height:2px;">&nbsp;</div>
+<font color="#F26C4F"><b>SCIENCE ONLINE XXIII:<br>информационные ресурсы, сервисы и аналитические системы для науки и образования</b></font></a>
+<div style="height:2px;">&nbsp;</div>
+<font color="#000000">Сочи, Красная Поляна,<br>26 сентября - 3 октября</font>
+</td></tr>
+
+<tr><td><div style="height:25px;">&nbsp;</div><a href="/defaultx.asp"><img id="elibrary_logo" src="/images/elibrary_logo2.svg" width="150" height="39" border="0" title="eLIBRARY.RU - НАУЧНАЯ ЭЛЕКТРОННАЯ БИБЛИОТЕКА"></a></td></tr>
+
+
+<tr><td><div style="height:10px;"></div></td></tr>
+<tr><td width="150" align="center" valign="top">
+
+<a href="/title_about_new.asp?id=8557"><img src="/itemfiles/0/5/4/0/2/0/8/8/7//Обл._1.jpg" border="0" width="120" title="О журнале &quot;Вестник Тамбовского государственного технического университета&quot;" style="behavior: url(/pie/PIE.htc); box-shadow: 1px 2px 3px #888;" hspace="0"></a>
+
+</td></tr>
+
+
+<tr><td><div style="height:20px;"></div></td></tr>
+<script language="JavaScript">
+if (supportsSVG) {
+  document.getElementById("elibrary_logo").src="/images/elibrary_logo2.svg";}
+else {
+  document.getElementById("elibrary_logo").src="/images/elibrary_logo.gif";}
+</script>
+
+<tr><td width="100%" align="center" valign="top">
+
+<div class="left-panel">
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr><td width="100%" align="center" valign="top"><font color="#F26C4F"><b><span class="expandable" onclick="$('#win_basket').slideToggle(500, function(){didScroll = true;})" title="Состояние корзины в электронном магазине eLIBRARY.ru">КОРЗИНА</span></b></font>
+</td></tr>
+</tbody></table>
+
+<div id="win_basket" class="collapsed">
+<div style="height: 10px;"></div>
+
+<table border="0" cellspacing="0" cellpadding="2" width="140">
+
+<tbody><tr><td width="100%" align="center" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Всего в корзине:&nbsp;</font><font color="#00008f"><b><span id="basket_num">0</span></b>&nbsp;публ.</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+&nbsp;<font color="#000000">на сумму:&nbsp;</font><font color="#00008f"><b><span id="basket_sum">0</span></b>&nbsp;руб.</font></td></tr>
+
+
+</tbody></table>
+
+<div style="height: 10px;"></div>
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr class="menub"><td align="center" width="30" valign="bottom"><a href="/basket.asp"><img src="/images/basket.png" width="15" height="15" border="0"></a></td><td align="left" width="110" valign="top"><a href="/basket.asp">Содержание корзины</a></td></tr>
+</tbody></table>
+
+</div>
+</div>
+</td></tr>
+
+<tr><td><img src="/pic/1pix.gif" vspace="9"></td></tr>
+<script language="JavaScript">
+function check_search(){
+if (document.forms["search"].ftext.value.length > 1) {
+  var frm = document.forms["search"];
+  frm.action="/query_results.asp";
+  frm.target="";
+  frm.submit();
+  }
+else {
+  alert("Введите не менее двух символов");
+  }
+}
+function search_enter(event){ 
+  var keycode; 
+  event = event || window.event; 
+  keycode = event.keyCode || event.which;
+  if(keycode==13){
+    check_search();
+	return false;
+  }
+} 
+</script>
+<form method="post" name="search" onsubmit="return false"></form>
+<input type="hidden" name="where_fulltext" value="on">
+<input type="hidden" name="where_name" value="on">
+<input type="hidden" name="where_abstract" value="on">
+<input type="hidden" name="where_keywords" value="on">
+<input type="hidden" name="where_affiliation" value="">
+<input type="hidden" name="where_references" value="">
+<input type="hidden" name="type_article" value="on">
+<input type="hidden" name="type_disser" value="on">
+<input type="hidden" name="type_book" value="on">
+<input type="hidden" name="type_report" value="on">
+<input type="hidden" name="type_conf" value="on">
+<input type="hidden" name="type_patent" value="on">
+<input type="hidden" name="type_preprint" value="on">
+<input type="hidden" name="type_grant" value="on">
+<input type="hidden" name="type_dataset" value="on">
+<input type="hidden" name="search_freetext" value="">
+<input type="hidden" name="search_morph" value="on">
+<input type="hidden" name="search_fulltext" value="">
+<input type="hidden" name="search_open" value="">
+<input type="hidden" name="search_results" value="">
+<input type="hidden" name="titles_all" value="">
+<input type="hidden" name="authors_all" value="">
+<input type="hidden" name="rubrics_all" value="">
+<input type="hidden" name="queryboxid" value="">
+<input type="hidden" name="itemboxid" value="">
+<input type="hidden" name="begin_year" value="">
+<input type="hidden" name="end_year" value="">
+<input type="hidden" name="issues" value="all">
+<input type="hidden" name="orderby" value="rank">
+<input type="hidden" name="order" value="rev">
+<input type="hidden" name="changed" value="1">
+
+<tr><td width="100%" align="center" valign="top">
+
+<div class="left-panel">
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr><td width="100%" align="center" valign="top"><font color="#F26C4F"><b><span class="expandable" onclick="$('#win_search').slideToggle(500, function(){didScroll = true;})" title="Поиск в Научной электронной библиотеке">ПОИСК</span></b></font>
+</td></tr>
+</tbody></table>
+<div id="win_search" class="collapsed">
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr><td width="140" align="center" valign="top">
+<div style="height: 10px;"></div>
+<div class="formfr" style="width:126px;"><input type="text" id="ftext" name="ftext" value="" style="width:118px;" class="inputt" onkeypress="search_enter(event);"></div>
+<div style="height: 11px;"></div>
+
+<div class="butblue" style="width: 52px;" onclick="check_search()">Найти</div>
+
+</td></tr>
+<tr><td><img src="/pic/1pix.gif"></td></tr>
+</tbody></table>
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr class="menub"><td align="center" width="20" valign="bottom"><img src="/images/or_kv.gif" width="7" height="7" vspace="1" class="shadow"></td><td align="left" width="120" valign="top"><a href="/querybox.asp?scope=newquery">Расширенный поиск</a></td></tr>
+
+
+<tr><td colspan="2"><div style="height:3px;"></div></td></tr>
+<tr class="menub"><td align="center" width="20" valign="bottom"><img src="/images/or_kv.gif" width="7" height="7" vspace="1" class="shadow"></td><td align="left" width="120" valign="top"><a href="/neural_search.asp">Нейропоиск</a></td></tr>
+</tbody></table>
+<div style="height: 4px;"></div>
+</div>
+</div>
+
+
+
+</td></tr>
+
+<tr><td><img src="/pic/1pix.gif" vspace="9"></td></tr>
+<tr><td width="100%" align="center" valign="top">
+
+<div class="left-panel">
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr><td width="100%" align="center" valign="top"><font color="#F26C4F"><b><span class="expandable" onclick="$('#win_goto').slideToggle(500, function(){didScroll = true;})" title="Быстрый переход на популярные страницы сайта">НАВИГАТОР</span></b></font>
+</td></tr>
+</tbody></table>
+
+<div id="win_goto" class="collapsed">
+<div style="height: 10px;"></div>
+
+<table border="0" cellspacing="4" cellpadding="0" width="140">
+
+<tbody><tr valign="top"><td width="25" align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left" width="115"><a href="/titles.asp">ЖУРНАЛЫ</a></td></tr>
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/books.asp">КНИГИ</a></td></tr>
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/patents.asp">ПАТЕНТЫ</a></td></tr>
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/querybox.asp">ПОИСК</a></td></tr>
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/authors.asp">АВТОРЫ</a></td></tr>
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/orgs.asp">ОРГАНИЗАЦИИ</a></td></tr>
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/keywords.asp">КЛЮЧЕВЫЕ СЛОВА</a></td></tr>
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/rubrics.asp">РУБРИКАТОР</a></td></tr>
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/region_compare.asp">РЕГИОНЫ</a></td></tr>
+
+<tr valign="top"><td align="center"><img src="/images/bl_kv.gif" border="0" width="7" height="7" hspace="3" class="shadow"></td><td align="left"><a href="/itembox.asp">ПОДБОРКИ</a></td></tr>
+
+
+</tbody></table>
+
+<div style="height: 10px;"></div>
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr class="menub"><td align="right" width="25" valign="bottom"><img src="/images/or_kv.gif" width="7" height="7" border="0" hspace="6" vspace="1" class="shadow"></td><td align="left" width="115" valign="top"><a href="/defaultx.asp">Начальная страница</a></td></tr></tbody></table>
+<div style="height: 4px;"></div>
+
+</div>
+</div>
+</td></tr>
+
+<tr><td><img src="/pic/1pix.gif" vspace="9"></td></tr>
+<script language="JavaScript">
+function end_session(){
+
+  document.forms["session"].saveuser.value="0";
+
+  document.forms["session"].action="/end_session.asp";
+  document.forms["session"].target="";
+  document.forms["session"].submit()
+}
+</script>
+<form action="/end_session.asp" method="POST" name="session"></form>
+<input type="hidden" name="saveuser" value="1">
+
+<tr><td width="100%" align="center" valign="top">
+
+<div class="left-panel">
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr><td width="100%" align="center" valign="top"><font color="#F26C4F"><b><span class="expandable" onclick="$('#win_session').slideToggle(500, function(){didScroll = true;})" title="Информация о текущей сессии пользователя">СЕССИЯ</span></b></font>
+</td></tr>
+</tbody></table>
+
+
+<div id="win_session" class="collapsed">
+<div style="height: 10px;"></div>
+
+<table border="0" cellspacing="0" cellpadding="2" width="140">
+<tbody><tr><td width="100%" align="left" valign="top">
+&nbsp;<font color="#000000">Имя пользователя:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f"><a href="/author_info.asp?isold=1" title="Персональная карточка пользователя">М.Игорь&nbsp;</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">IP-адрес компьютера:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">151.241.227.170</font></td></tr>
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Название организации:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+
+<font color="#00008f">не определена</font></td></tr>
+
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Начало работы:</font></td></tr>
+
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">13.07.2026 10:49</font></td></tr>
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Время работы:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">03:04</font></td></tr>
+</tbody></table>
+
+<div style="height: 10px;"></div>
+
+<table border="0" cellspacing="3" cellpadding="0" width="140">
+<tbody><tr class="menub"><td align="right" width="30" valign="top"><img src="/images/or_kv.gif" width="7" height="7" border="0" hspace="9" vspace="1" class="shadow"></td><td align="left" width="101" valign="top"><a href="/project_user_office.asp">Личный кабинет</a></td></tr>
+<tr class="menub"><td align="right" width="30" valign="top"><img src="/images/or_kv.gif" width="7" height="7" border="0" hspace="9" vspace="1" class="shadow"></td><td align="left" width="101" valign="top"><a href="javascript:end_session()">Закрыть сессию</a></td></tr>
+
+
+</tbody></table>
+<div style="height: 4px;"></div>
+
+</div>
+</div>
+</td></tr>
+
+<tr><td><img src="/pic/1pix.gif" vspace="9"></td></tr>
+
+
+<tr><td width="100%" align="center" valign="top">
+
+<div class="left-panel">
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr><td width="100%" align="center" valign="top"><font color="#F26C4F"><b><span class="expandable" onclick="$('#win_contact').slideToggle(500, function(){didScroll = true;})" title="Контактная информация Научной электронной библиотеки">КОНТАКТЫ</span></b></font>
+</td></tr>
+</tbody></table>
+
+<div id="win_contact" class="collapsed">
+<div style="height: 10px;"></div>
+
+<table border="0" cellspacing="0" cellpadding="2" width="140">
+
+
+<tbody><tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Служба поддержки:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">+7 (495) 544-2494 доб. 1<br></font>
+<font color="#00008f"><a href="mailto:support@elibrary.ru">support@elibrary.ru</a></font></td></tr>
+
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Издателям журналов:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">+7 (495) 544-2494 доб. 2<br></font>
+<font color="#00008f"><a href="mailto:publish@elibrary.ru">publish@elibrary.ru</a></font></td></tr>
+
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Издателям книг:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">+7 (495) 544-2494 доб. 3<br></font>
+<font color="#00008f"><a href="mailto:book@elibrary.ru">book@elibrary.ru</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Science Space для издательств:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">+7 (495) 544-2494 доб. 4<br></font>
+<font color="#00008f"><a href="mailto:info@sciencespace.ru">info@sciencespace.ru</a></font></td></tr>
+
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Science Index для организаций:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">+7 (495) 544-2494 доб. 4<br></font>
+<font color="#00008f"><a href="mailto:org@scienceindex.ru">org@scienceindex.ru</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Доступ к API:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">+7 (495) 544-2494 доб. 4<br></font>
+<font color="#00008f"><a href="mailto:api@elibrary.ru">api@elibrary.ru</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Подписчикам:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">+7 (495) 544-2494 доб. 6<br></font>
+<font color="#00008f"><a href="mailto:sales.team@elibrary.ru">sales.team@elibrary.ru</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Конференции, семинары:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f">+7 (495) 544-2494 доб. 7<br></font>
+<font color="#00008f"><a href="mailto:conf@elibrary.ru">conf@elibrary.ru</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Почтовый адрес:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f"><a href="/contact_new.asp">117246, г. Москва,
+Научный проезд, д. 14А, стр. 3, таунхаус 1</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Веб-сайт:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f"><a href="https://elibrary.ru">https://elibrary.ru</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Telegram-канал:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f"><a href="https://t.me/elibrary_ru_official" target="_blank">t.me/elibrary_ru_official</a></font></td></tr>
+
+<tr><td width="100%" align="left" valign="top">
+<div style="height: 2px;"></div>
+&nbsp;<font color="#000000">Размещение рекламы:</font></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<font color="#00008f"><a href="mailto:reklama@elibrary.ru">reklama@elibrary.ru</a></font></td></tr>
+
+</tbody></table>
+
+<div style="height: 10px;"></div>
+
+<table border="0" cellspacing="0" cellpadding="0" width="140">
+<tbody><tr class="menub"><td align="right" width="30" valign="bottom"><img src="/images/or_kv.gif" width="7" height="7" border="0" hspace="6" vspace="1" class="shadow"></td><td align="left" width="110" valign="top"><a href="/contact_new.asp">Схема проезда</a></td></tr>
+
+<tr class="menub"><td align="right" width="30" valign="bottom"><img src="/images/or_kv.gif" width="7" height="7" border="0" hspace="6" vspace="1" class="shadow"></td><td align="left" width="110" valign="top"><a href="https://support.elibrary.ru">Задать вопрос</a></td></tr>
+
+<tr class="menub"><td align="right" width="30" valign="bottom"><img src="/images/or_kv.gif" width="7" height="7" border="0" hspace="6" vspace="1" class="shadow"></td><td align="left" width="110" valign="top"><a href="/vacancy.asp">Вакансии</a></td></tr>
+
+</tbody></table>
+<div style="height: 4px;"></div>
+
+</div>
+</div>
+</td></tr>
+
+<tr><td><img src="/pic/1pix.gif" vspace="9"></td></tr>
+<tr><td width="100%" align="center" valign="top">
+<div style="width: 140px;" class="help-panel">
+<table width="140" cellspacing="0" cellpadding="3" border="0">
+<tbody><tr><td width="15%" align="right" valign="top">
+<img src="/images/but_orange_i.gif" width="15" height="15" hspace="0" border="0"></td>
+<td width="85%" align="left" valign="middle"><font color="#00008f">По всем вопросам, связанным с работой в системе Science Index, обращайтесь, пожалуйста, в службу поддержки:<br><br>
++7 (495) 544-2494<br><a href="mailto:support@elibrary.ru">support@elibrary.ru</a></font>
+</td></tr>
+</tbody></table>
+</div>
+</td></tr>
+
+<tr><td><img src="/pic/1pix.gif" vspace="9"></td></tr>
+
+
+</tbody></table>
+
+</td><td align="left" valign="top">
+
+<table border="0" cellspacing="0" cellpadding="0">
+<tbody><tr><td width="600" align="left" valign="top">
+
+<table width="580" border="0" cellspacing="0" cellpadding="0">
+<tbody><tr><td width="100%" align="left" valign="top">
+
+
+
+<div class="header-panel">
+<div style="margin: 0; border: 0; padding: 0 0 5px 0; text-align: center; font-size: 9pt;"><font color="#5674b9"><b>ИНФОРМАЦИЯ О ПУБЛИКАЦИИ</b></font></div>
+</div>
+
+</td></tr></tbody></table>
+
+</td><td width="200" align="right" valign="middle" id="rightcol" style="width: 200px;">
+
+
+<table width="200" cellspacing="0" cellpadding="3" border="0">
+<tbody><tr><td width="12%" align="right" valign="top">
+<a href="https://t.me/elibrary_ru_official/118" target="_blank"><img src="/images/telegram.svg" width="24" height="24" border="0"></a></td>
+<td width="88%" align="left" valign="middle"><font color="#00008f"><a href="https://t.me/elibrary_ru_official/118" target="_blank">Обновления в анализе публикационной активности организаций</a></font>
+</td></tr>
+</tbody></table>
+</td></tr>
+
+
+
+<form method="post" name="results" action=""></form>
+
+<tr><td align="left" valign="top">
+
+<table width="550" cellspacing="0" cellpadding="3" border="0">
+<tbody><tr valign="middle">
+<td width="2%"></td>
+<td width="25%" align="left">eLIBRARY ID:&nbsp;<font color="#00008f"><a href="/item.asp?id=54020904" rel="nofollow">54020904</a></font></td>
+<td width="15%" align="center">EDN:&nbsp;<font color="#00008f"><a href="/jircpw" rel="nofollow">JIRCPW</a></font></td>
+
+<td align="left" width="5%"><a href="javascript:qr_code(&quot;jircpw&quot;)" rel="nofollow"><img src="/images/qr_code2.png" width="16" height="16" class="help"></a></td>
+
+<td width="53%" align="right">DOI:&nbsp;<font color="#00008f"><a href="https://doi.org/10.17277/vestnik.2023.02.pp.324-334" target="_blank" rel="nofollow">10.17277/vestnik.2023.02.pp.324-334</a></font></td>
+</tr>
+
+</tbody></table>
+<div style="height:5px;"></div>
+
+<table width="550" cellspacing="0" cellpadding="3" border="0" style="table-layout: fixed;">
+<tbody><tr align="center" valign="middle">
+<td width="4"></td>
+<td width="534"><span style="font-size: 9pt; color: #000000; overflow-wrap: break-word;"><b><p class="bigtext" style="color: #F26C4F;">СОВЕРШЕНСТВОВАНИЕ КОНСТРУКЦИЙ И ОПТИМИЗАЦИЯ РЕЖИМОВ ЭКСПЛУАТАЦИИ МУЛЬТИКОПТЕРОВ-ОПРЫСКИВАТЕЛЕЙ</p></b></span></td></tr>
+</tbody></table>
+
+<div style="width:580px; margin:0; border:0; padding:0; ">
+
+
+<div style="height:10px;"></div>
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr>
+<td width="24"></td>
+<td width="514" valign="middle" align="center">
+<div style="display: inline-block; white-space: nowrap"><span class="help pointer"><b><font color="#00008f">ТОЛОЧКО&nbsp;Н.К.</font></b></span><img src="/images/about_author.gif" border="0" hspace="2" height="10" width="9" class="help pointer"><font color="#000000"><sup>1</sup></font>,</div> <div style="display: inline-block; white-space: nowrap"><span class="help pointer"><b><font color="#00008f">РОМАНЮК&nbsp;Н.Н.</font></b></span><img src="/images/about_author.gif" border="0" hspace="2" height="10" width="9" class="help pointer"><font color="#000000"><sup>1</sup></font>,</div> <div style="display: inline-block; white-space: nowrap"><span class="help pointer"><b><font color="#00008f">ЕДНАЧ&nbsp;В.Н.</font></b></span><img src="/images/about_author.gif" border="0" hspace="2" height="10" width="9" class="help pointer"><font color="#000000"><sup>1</sup></font>,</div> <div style="display: inline-block; white-space: nowrap"><span class="help pointer"><b><font color="#00008f">ПОПОВ&nbsp;А.И.</font></b></span><img src="/images/about_author.gif" border="0" hspace="2" height="10" width="9" class="help pointer"><font color="#000000"><sup>2</sup></font></div>
+<div style="height:10px;"></div>
+<font color="#000000"><sup>1</sup></font>&nbsp;<span class="help1 pointer"><font color="#00008f">УО «Белорусский государственный аграрный технический университет»</font></span>, Минск, Республика Беларусь<br><font color="#000000"><sup>2</sup></font>&nbsp;<span class="help1 pointer"><font color="#00008f">ФГБОУ ВО «ТГТУ»</font></span>, Тамбов Россия<br>
+</td></tr>
+</tbody></table>
+
+<div style="height:12px;"></div>
+
+
+
+<table width="580" border="0" cellspacing="0" cellpadding="2">
+
+
+
+<tbody><tr><td width="574" align="center" valign="middle">
+Тип:&nbsp;<font color="#00008f">статья в журнале - научная статья</font>
+<span style="margin-left:20px;"></span>Язык:&nbsp;<font color="#00008f">русский</font>
+</td></tr>
+
+<tr><td></td></tr>
+
+<tr><td width="574" align="center" valign="middle">
+Том:&nbsp;<font color="#00008f">29</font><span style="margin-left:20px;"></span>Номер:&nbsp;<a href="/contents.asp?id=54020887&amp;selid=54020904" title="Содержание выпуска">2</a>
+<span style="margin-left:20px;"></span>Год:&nbsp;<font color="#00008f">2023</font>
+
+<span style="margin-left:20px;"></span><div style="display: inline-block; white-space: nowrap">Страницы:&nbsp;<font color="#00008f">324-334</font></div>
+
+
+
+</td></tr>
+
+
+<tr><td></td></tr>
+
+<tr><td width="574" align="center" valign="middle">&nbsp;&nbsp;&nbsp;&nbsp; УДК:&nbsp;<font color="#00008f">629.735</font></td></tr>
+
+
+</tbody></table>
+
+
+
+<div style="height:10px;"></div>
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">
+<font color="#000000">ЖУРНАЛ:</font></td></tr>
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle">
+<div style="height:3px;"></div>
+
+<a href="/contents.asp?id=54020887" title="Содержание выпусков этого журнала">ВЕСТНИК ТАМБОВСКОГО ГОСУДАРСТВЕННОГО ТЕХНИЧЕСКОГО УНИВЕРСИТЕТА</a>
+<br>Издательство:&nbsp;Тамбовский государственный технический университет
+<br>
+ISSN:&nbsp;<font color="#00008f">0136-5835</font><span style="margin-left:20px;"></span>eISSN:&nbsp;<font color="#00008f">2542-1409</font><span style="margin-left:20px;"></span>
+
+<div style="height:10px"></div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="3">
+
+<tbody><tr align="left" valign="bottom">
+<td width="52%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Web of Science:&nbsp;<font color="#00008f"><span id="InWOS">нет</span></font></td>
+
+<td width="48%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Scopus:&nbsp;<font color="#00008f"><span id="InScopus">нет</span></font></td>
+</tr>
+
+<tr align="left" valign="bottom">
+<td width="52%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Белый список:&nbsp;<font color="#00008f"><span id="InWhileList">нет</span></font></td>
+
+<td width="48%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;ЕГПНИ:&nbsp;<font color="#00008f"><span id="InEGPNI">да (уровень 3)</span></font></td>
+</tr>
+
+<tr align="left" valign="bottom">
+<td><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Перечень ВАК:&nbsp;<font color="#00008f"><span id="InVAK">да (категория 2)</span></font></td>
+
+<td><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;RSCI:&nbsp;<font color="#00008f"><span id="InRSCI">нет</span></font></td>
+</tr>
+
+
+<tr align="left" valign="bottom">
+<td><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Рейтинг Science Index:&nbsp;<font color="#00008f"><span id="InSI">да (процентиль 45)</span></font></td>
+
+<td></td></tr>
+
+
+</tbody></table>
+
+
+</td></tr></tbody></table>
+
+
+
+<div style="height:10px;"></div>
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">
+<font color="#000000">КЛЮЧЕВЫЕ СЛОВА:</font></td></tr>
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle">
+<div style="height:3px;"></div>
+<a href="/keyword_items.asp?id=25064985" rel="nofollow">МУЛЬТИКОПТЕРЫ-ОПРЫСКИВАТЕЛИ</a>, 
+<a href="/keyword_items.asp?id=2328076" rel="nofollow">ПЕСТИЦИДЫ</a>, 
+<a href="/keyword_items.asp?id=2897235" rel="nofollow">СЕЛЬСКОХОЗЯЙСТВЕННОЕ МАШИНОСТРОЕНИЕ</a>, 
+<a href="/keyword_items.asp?id=25064986" rel="nofollow">СТРУЯ РАСПЫЛА</a>, 
+<a href="/keyword_items.asp?id=25064987" rel="nofollow">ТОЧЕЧНОЕ И СПЛОШНОЕ ОПРЫСКИВАНИЕ</a>, 
+<a href="/keyword_items.asp?id=2943548" rel="nofollow">ФОРСУНКА</a>
+</td></tr>
+</tbody></table>
+
+<div style="height:10px;"></div>
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">
+<font color="#000000">АННОТАЦИЯ:</font></td></tr>
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle">
+
+<div id="abstract1" style="width:504px; border:0; margin:0; padding:0; text-align:left;"><p align="justify" style="margin-top: 0.3em;">Показано, что обработка полей пестицидами (гербицидами, инсектицидами, фунгицидами) обеспечивает повышение урожайности растениеводства АПК. Предприятия сельскохозяйственного машиностроения предлагают различные конструкции мультикоптеров-опрыскивателей. Сформулированы критерии оценки эффективности опрыскивания с помощью мультикоптеров. Исследованы конструкции мультикоптеров для сплошного и точечного опрыскивания, предложены конструктивные решения для расширения круга выполняемых оборудованием задач при точечном опрыскивании. Рассмотрены процессы точечного и сплошного опрыскивания. Исследовано влияние воздушных потоков, создаваемых пропеллерами мультикоптера, на формирование струи распыла. Проанализированы особенности распыления эмульсий и указано на перспективность использования ультразвуковых форсунок. Обоснована необходимость учета скоростных и высотных режимов работы мультикоптера для повышения эффективности обработки растений пестицидами. Определены рекомендации по выбору оптимальных режимов эксплуатации мультикоптеров-опрыскивателей в различных условиях.</p></div>
+
+</td></tr></tbody></table>
+
+
+
+<div style="height:10px;"></div>
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">
+<font color="#000000">БИБЛИОМЕТРИЧЕСКИЕ ПОКАЗАТЕЛИ:</font></td></tr>
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle">
+<div style="height:3px;"></div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="3">
+
+<tbody><tr align="left" valign="bottom">
+<td width="52%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Входит в РИНЦ:&nbsp;<font color="#00008f">да</font></td>
+
+
+<td width="48%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Цитирований в РИНЦ:&nbsp;<a href="/cit_items.asp?id=54020904" title="Список публикаций в РИНЦ, цитирующих данную" rel="nofollow">4</a></td></tr>
+
+<tr align="left" valign="bottom">
+<td><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Входит в ядро РИНЦ:&nbsp;<font color="#00008f"><span id="InCoreRisc">нет</span></font></td>
+
+<td><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Цитирований из ядра РИНЦ:&nbsp;<font color="#00008f">1</font></td>
+</tr>
+
+
+<tr align="left" valign="bottom">
+<td><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Рецензии:&nbsp;<font color="#00008f">нет данных</font></td>
+<td></td>
+</tr>
+
+
+</tbody></table>
+
+</td></tr></tbody></table>
+
+<div style="height:10px;"></div>
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">
+<font color="#000000">ТЕМАТИЧЕСКИЕ НАПРАВЛЕНИЯ:</font></td></tr>
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle">
+<div style="height:3px;"></div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="3">
+
+<tbody><tr align="left" valign="top">
+<td width="27%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Рубрика&nbsp;OECD:&nbsp;</td><td width="73%"><font color="#00008f"><span id="rubric_oecd">Civil engineering</span></font></td>
+</tr>
+</tbody></table>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="3">
+
+<tbody><tr align="left" valign="top">
+<td width="27%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Рубрика&nbsp;ASJC:&nbsp;</td><td width="73%"><font color="#00008f"><span id="rubric_asjc">нет</span></font></td>
+</tr>
+</tbody></table>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="3">
+
+<tbody><tr align="left" valign="top">
+<td width="27%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Рубрика&nbsp;ГРНТИ:&nbsp;</td><td width="73%"><font color="#00008f"><span id="rubric_grnti">нет</span></font></td>
+</tr>
+</tbody></table>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="3">
+
+<tbody><tr align="left" valign="top">
+<td width="27%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Специальность&nbsp;ВАК:&nbsp;</td><td width="73%"><font color="#00008f"><span id="rubric_vak">нет</span></font></td>
+</tr>
+</tbody></table>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="3">
+
+<tbody><tr align="left" valign="top">
+<td width="27%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Приоритет&nbsp;СНТР&nbsp;РФ:&nbsp;</td><td width="73%"><font color="#00008f"><span id="rubric_prior">нет</span></font></td>
+</tr>
+</tbody></table>
+
+</td></tr></tbody></table>
+
+
+<div style="height:10px;"></div>
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">
+<font color="#000000">АЛЬТМЕТРИКИ:</font></td></tr>
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle">
+<div style="height:3px;"></div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr align="left" valign="bottom">
+
+<td width="30%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Просмотров:&nbsp;<font color="#00008f">23 (15)</font></td>
+
+<td width="35%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Загрузок:&nbsp;<font color="#00008f">11 (9)</font></td>
+
+<td width="35%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Включено в подборки:&nbsp;<font color="#00008f">23</font></td>
+</tr>
+
+<tr align="left" valign="bottom">
+
+<td width="30%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Всего оценок:&nbsp;<font color="#00008f"><span id="score_count">0</span></font></td>
+
+<td width="35%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Средняя оценка:&nbsp;<font color="#00008f"><span id="avg_score"></span></font>
+</td>
+
+<td width="35%"><img src="/images/but_orange_question.gif" class="imghelp help">&nbsp;&nbsp;Всего отзывов:&nbsp;<font color="#00008f"><span id="comment_count">0</span></font></td>
+</tr></tbody></table>
+
+
+
+</td></tr></tbody></table>
+
+
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">
+<font color="#000000">ОПИСАНИЕ НА АНГЛИЙСКОМ ЯЗЫКЕ:</font></td></tr>
+<tr><td width="34">&nbsp;</td><td width="504" align="center" valign="middle">
+<div style="height:5px;"></div>
+<font color="#F26C4F">IMPROVEMENT OF DESIGNS AND OPTIMIZATION OF OPERATION MODES OF MULTICOPTER-SPRAYERS</font>
+
+<div style="height:5px;"></div>
+<div style="display: inline-block; white-space: nowrap"><span class="help pointer"><font color="#00008f">TOLOCHKO&nbsp;N.K.</font></span><img src="/images/about_author.gif" border="0" hspace="2" height="10" width="9" class="help pointer"><font color="#000000"><sup>1</sup></font>,</div> <div style="display: inline-block; white-space: nowrap"><span class="help pointer"><font color="#00008f">ROMANYUK&nbsp;N.N.</font></span><img src="/images/about_author.gif" border="0" hspace="2" height="10" width="9" class="help pointer"><font color="#000000"><sup>1</sup></font>,</div> <div style="display: inline-block; white-space: nowrap"><span class="help pointer"><font color="#00008f">EDNACH&nbsp;V.N.</font></span><img src="/images/about_author.gif" border="0" hspace="2" height="10" width="9" class="help pointer"><font color="#000000"><sup>1</sup></font>,</div> <div style="display: inline-block; white-space: nowrap"><span class="help pointer"><font color="#00008f">POPOV&nbsp;A.I.</font></span><img src="/images/about_author.gif" border="0" hspace="2" height="10" width="9" class="help pointer"><font color="#000000"><sup>2</sup></font></div>
+<br>
+
+<div style="height:5px;"></div>
+<font color="#000000"><sup>1</sup></font>&nbsp;<span class="help1 pointer"><font color="#00008f">Mechanics of Materials and Machine Parts (2), Belarusian State Agrarian Technical University</font></span>, Minsk, Republic of Belarus<br><font color="#000000"><sup>2</sup></font>&nbsp;<span class="help1 pointer"><font color="#00008f">TSTU</font></span>, Tambov Russia<br>
+</td></tr>
+
+
+
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle">
+
+<div id="eabstract1" style="width:504px; border:0; margin:0; padding:0; text-align:left;"><p align="justify" style="margin-top: 0.3em;">It is shown that the treatment of fields with pesticides (herbicides, insecticides, fungicides) provides an increase in the yield of crop production in the agro-industrial complex. Agricultural engineering enterprises offer various designs of multicopter sprayers. Criteria for evaluating the effectiveness of spraying with the help of multicopters are formulated. The designs of multicopters for continuous and spot spraying have been studied; constructive solutions to expand the range of tasks performed by the equipment during spot spraying have been proposed. The processes of point and continuous spraying are considered. The effect of air flows generated by the propellers of the multicoptor on the formation of the spray jet has been studied. The features of spraying emulsions are analyzed and the prospects of using ultrasonic nozzles are indicated. The necessity of taking into account the speed and altitude modes of operation of the multicopter to improve the efficiency of plant treatment with pesticides is substantiated. Recommendations for choosing the optimal modes of operation of multicopter sprayers in various conditions are determined.</p></div>
+
+</td></tr>
+
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle"><p>
+Keywords: <a href="/keyword_items.asp?id=25064988" rel="nofollow">MULTICOPTER SPRAYERS</a>, 
+<a href="/keyword_items.asp?id=403" rel="nofollow">PESTICIDES</a>, 
+<a href="/keyword_items.asp?id=1136730" rel="nofollow">AGRICULTURAL ENGINEERING</a>, 
+<a href="/keyword_items.asp?id=3664209" rel="nofollow">SPRAY JET</a>, 
+<a href="/keyword_items.asp?id=25064989" rel="nofollow">SPOT AND CONTINUOUS SPRAYING</a>, 
+<a href="/keyword_items.asp?id=5595" rel="nofollow">NOZZLE</a>
+</p></td></tr>
+
+</tbody></table>
+
+<div style="height:10px;"></div>
+
+
+
+<div id="your_notes" class="collapsed">
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">
+<font color="#000000">ВАША ЗАМЕТКА:</font></td></tr>
+<tr><td width="34">&nbsp;</td><td width="504" align="left" valign="middle">
+<div style="height:3px;"></div>
+<span id="your_notes_text"><p></p></span>
+</td></tr></tbody></table>
+<div style="height:10px;"></div>
+</div>
+
+
+
+<script type="text/javascript">
+function show_context(refid) {
+  $('#context_expand_'+refid).hide();
+  $('#context_'+refid).show();
+}
+</script>
+
+<div style="height:10px;"></div>
+<table width="580" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td width="574" align="left" valign="middle">
+<font color="#000000">СПИСОК ЦИТИРУЕМОЙ ЛИТЕРАТУРЫ:</font>
+<div style="height:5px;"></div>
+</td></tr></tbody></table>
+
+<table width="100%" border="0" cellspacing="1" cellpadding="2" style="table-layout:fixed; word-wrap:break-word; overflow:hidden; hyphens: auto">
+
+<tbody><tr bgcolor="#f5f5f5"><td width="6%" align="right" valign="top" nowrap=""><font color="#000000">1.&nbsp;</font></td>
+<td width="89%" align="justify" valign="top" style="hyphens: auto"><font color="#000000">
+Дашковский, И. Робот над полем. Растущая потребность АПК в беспилотниках подталкивает ученых на разработку специализированных дронов для сельского хозяйства / И. Дашковский, И. Шивков // Агротехника и технологии. - 2017. - № 6. - С. 32 - 35.</font>
+<span title="Показать ссылку в тексте публикации" class="win_expandable" id="context_expand_1057231226" style="color:#00008f; margin:0 5px 0 0;" onclick="show_context('1057231226')"> &nbsp;<font color="#F26C4F">▼</font>&nbsp;Контекст</span>
+<div id="context_1057231226" style="border:0; margin:0; padding:0; text-align:left; display:none;">
+<div style="height:3px;"></div>
+<table width="100%" border="0" cellspacing="1" cellpadding="3">
+<tbody><tr><td width="8%" align="right" valign="top" bgcolor="#f5f5f5"><font color="#000000">Контекст:</font></td>
+<td width="92%" align="left" valign="top" bgcolor="#f5f5f5">
+<font color="#555555"><i>...Конструкции мультикоптеров-опрыскивателей Большинство современных видов мультикоптеров-опрыскивателей имеет типовую конструкцию, содержащую нескольких форсунок, размещенных на концах горизонтальных лучей рамы непосредственно под пропеллерами (рис. 1, а) [1]...</i></font>
+</td></tr></tbody></table>
+</div>
+
+</td><td align="center" valign="top" width="5%">&nbsp;</td>
+</tr>
+
+<tr bgcolor="#f5f5f5"><td width="6%" align="right" valign="top" nowrap=""><font color="#000000">2.&nbsp;</font></td>
+<td width="89%" align="justify" valign="top" style="hyphens: auto"><font color="#000000">
+Роль дронов в аграрном секторе: новые помощники фермеров. - Текст: электрон. - 2019. - URL: https://mentamore.com/covremennye-texnologii/rol-dronov-v-agrarnom-sektore.html (дата обращения: 08.02.2023).</font>
+<span title="Показать ссылку в тексте публикации" class="win_expandable" id="context_expand_1057231227" style="color:#00008f; margin:0 5px 0 0;" onclick="show_context('1057231227')"> &nbsp;<font color="#F26C4F">▼</font>&nbsp;Контекст</span>
+<div id="context_1057231227" style="border:0; margin:0; padding:0; text-align:left; display:none;">
+<div style="height:3px;"></div>
+<table width="100%" border="0" cellspacing="1" cellpadding="3">
+<tbody><tr><td width="8%" align="right" valign="top" bgcolor="#f5f5f5"><font color="#000000">Контекст:</font></td>
+<td width="92%" align="left" valign="top" bgcolor="#f5f5f5">
+<font color="#555555"><i>...В некоторых их видах форсунки размещаются на горизонтальной штанге, установленной в нижней части под баком с рабочей жидкостью (рис. 1, в) [2]...</i></font>
+</td></tr></tbody></table>
+</div>
+
+</td><td align="center" valign="top" width="5%">&nbsp;</td>
+</tr>
+
+<tr bgcolor="#f5f5f5"><td width="6%" align="right" valign="top" nowrap=""><font color="#000000">3.&nbsp;</font></td>
+<td width="89%" align="justify" valign="top" style="hyphens: auto"><font color="#000000">
+Oryctes. High Precision Agriculture Spraying. - 2022. - URL: https://www.aonic.com/my/oryctes/(дата обращения: 08.02.2023).</font>
+<span title="Показать ссылку в тексте публикации" class="win_expandable" id="context_expand_1057231228" style="color:#00008f; margin:0 5px 0 0;" onclick="show_context('1057231228')"> &nbsp;<font color="#F26C4F">▼</font>&nbsp;Контекст</span>
+<div id="context_1057231228" style="border:0; margin:0; padding:0; text-align:left; display:none;">
+<div style="height:3px;"></div>
+<table width="100%" border="0" cellspacing="1" cellpadding="3">
+<tbody><tr><td width="8%" align="right" valign="top" bgcolor="#f5f5f5"><font color="#000000">Контекст:</font></td>
+<td width="92%" align="left" valign="top" bgcolor="#f5f5f5">
+<font color="#555555"><i>...под баком с рабочей жидкостью (рис. 1, б) или устанавливается на нижнем конце вертикальной распылительной телескопической штанги, закрепленной на раме (рис. 1, г, форсунка показана на отдельной вставке) [3]...</i></font>
+</td></tr></tbody></table>
+</div>
+
+</td><td align="center" valign="top" width="5%">&nbsp;</td>
+</tr>
+
+<tr bgcolor="#f5f5f5"><td width="6%" align="right" valign="top" nowrap=""><font color="#000000">4.&nbsp;</font></td>
+<td width="89%" align="justify" valign="top" style="hyphens: auto"><font color="#000000">
+Restas, A. Drone Application for Spraying Disinfection Liquid Fighting against the COVID-19Pandemic - Examining Drone Related Parameters In uencing Effectiveness / A. Restas, I. Szalkai, G. Ovari // Drones. - 2021. - No. 5. - P. 58 - 75.</font>&nbsp; <font color="#F26C4F">EDN:</font>&nbsp;<a href="https://elibrary.ru/uyghhw" target="_blank">UYGHHW</a>
+
+<span title="Показать ссылку в тексте публикации" class="win_expandable" id="context_expand_1057231229" style="color:#00008f; margin:0 5px 0 0;" onclick="show_context('1057231229')"> &nbsp;<font color="#F26C4F">▼</font>&nbsp;Контекст</span>
+<div id="context_1057231229" style="border:0; margin:0; padding:0; text-align:left; display:none;">
+<div style="height:3px;"></div>
+<table width="100%" border="0" cellspacing="1" cellpadding="3">
+<tbody><tr><td width="8%" align="right" valign="top" bgcolor="#f5f5f5"><font color="#000000">Контекст:</font></td>
+<td width="92%" align="left" valign="top" bgcolor="#f5f5f5">
+<font color="#555555"><i>...С, численно равной массе рабочей жидкости, осажденной на единицу площади обрабатываемой (опрыскиваемой) поверхности: , (4) где m - масса рабочей жидкости, осажденной на обрабатываемую поверхность растения, кг; S - площадь обрабатываемой поверхности, м2 [4]...<div style="height:3px"></div>...Анализ формулы (5) позволяет сделать определенные заключения относительно выбора возможных скоростных режимов полета мультикоптера, осуществляющего сплошное опрыскивание [4]...<div style="height:3px"></div>...Между тем ее изменение может оказывать значительное влияние на степень покрытия С. Данное обстоятельство следует учитывать при обосновании выбора возможных высотных режимов полета мультикоптера [4]...</i></font>
+</td></tr></tbody></table>
+</div>
+
+</td><td align="center" valign="top" width="5%"><div style="height:5px;"></div><a href="/item.asp?id=46925639" class="help1" target="_blank"><img src="/images/go_url.png" height="15" width="15" border="0"></a></td>
+</tr>
+
+<tr bgcolor="#f5f5f5"><td width="6%" align="right" valign="top" nowrap=""><font color="#000000">5.&nbsp;</font></td>
+<td width="89%" align="justify" valign="top" style="hyphens: auto"><font color="#000000">
+Berner, B. Use of Drones in Crop Protection / B. Berner, J. Chojnaski // Proc. IX Int. Sci. Symp. Farm Machinery and Processes Management in Sustainable Agriculture. Poland, Lublin, 2017. - P. 46 - 51.</font>
+<span title="Показать ссылку в тексте публикации" class="win_expandable" id="context_expand_1057231230" style="color:#00008f; margin:0 5px 0 0;" onclick="show_context('1057231230')"> &nbsp;<font color="#F26C4F">▼</font>&nbsp;Контекст</span>
+<div id="context_1057231230" style="border:0; margin:0; padding:0; text-align:left; display:none;">
+<div style="height:3px;"></div>
+<table width="100%" border="0" cellspacing="1" cellpadding="3">
+<tbody><tr><td width="8%" align="right" valign="top" bgcolor="#f5f5f5"><font color="#000000">Контекст:</font></td>
+<td width="92%" align="left" valign="top" bgcolor="#f5f5f5">
+<font color="#555555"><i>...Величина такого воздействия определяется скоростью потоков и зависит от особенностей конструкции мультикоптеров [5 - 7]...<div style="height:3px"></div>...снижать скорость вращения пропеллеров, что в свою очередь ведет к ослаблению воздействия идущих от них воздушных потоков на струи распыла и, как следствие, повышает опасность сноса осаждаемых капель ветром [5, 6]...</i></font>
+</td></tr></tbody></table>
+</div>
+
+</td><td align="center" valign="top" width="5%">&nbsp;</td>
+</tr>
+
+</tbody><tbody id="list_refs"></tbody>
+
+<script type="text/javascript">
+function show_refs() {
+  $('#show_reflist').html("<tr><td colspan=3 align=center>Загружается (всего ссылок: 17) ...</td></tr>");
+  $.get("/get_item_refs.asp?id=54020904&rand=" + Math.random(), function(data) {
+    $('#list_refs').html(data);
+    $('#show_reflist').html('');
+		MathJax.Hub.Queue(["Typeset",MathJax.Hub]);
+  })
+}
+</script>
+
+<tbody><tr><td colspan="3"><div style="height:6px;"></div></td></tr>
+</tbody><tbody id="show_reflist">
+<tr><td align="right" valign="middle"><span class="win_expandable" style="color:#F26C4F; margin:0 5px 0 0;" onclick="show_refs()">▼</span></td><td align="left" valign="middle"><a href="javascript:show_refs()" rel="nofollow">Показать весь список литературы (всего ссылок: 17)</a></td><td></td></tr>
+</tbody>
+
+
+
+</table>
+
+<div style="height:10px;"></div>
+
+<div style="height:10px;"></div>
+<table width="550" border="0" cellspacing="0" cellpadding="3">
+<tbody><tr><td colspan="2" align="left">ОБСУЖДЕНИЕ:</td></tr>
+<tr><td width="30"></td><td width="508" align="left" valign="middle">
+
+</td></tr></tbody></table>
+
+<table width="100%" cellspacing="3" cellpadding="0" border="0">
+<tbody><tr><td width="10%" align="right" valign="top"><a href="javascript:new_comments()" rel="nofollow"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0" vspace="3"></a></td><td width="90%" align="left" valign="middle"><a href="javascript:new_comments()" rel="nofollow">Добавить новый комментарий к этой публикации</a>
+</td></tr></tbody></table>
+
+
+</div>
+</td>
+<td align="right" valign="top">
+
+<div id="panel_default" style="position: relative; width: 200px; height:0; margin: 0; border: 1px; padding: 0"></div>
+<div id="panel" style="position: relative; width: 200px; margin: 0; border: 0; padding: 0">
+
+<div style="width: 190px;" class="right-panel">
+
+<table width="190" cellspacing="0" cellpadding="3" border="0">
+
+<input type="hidden" name="itembox_name" value="">
+<input type="hidden" name="id" value="54020904">
+<input type="hidden" name="did" value="54020904">
+<input type="hidden" name="sid" value="732617797">
+<input type="hidden" name="noteid" value="54020904">
+<input type="hidden" name="disspage" value="">
+<input type="hidden" name="counterid" value="">
+<input type="hidden" name="commentid" value="">
+<input type="hidden" name="reply" value="">
+<input type="hidden" name="linkid" value="">
+<input type="hidden" name="paysum" value="">
+<input type="hidden" name="payitemid" value="">
+<input type="hidden" name="authorid" value="">
+<input type="hidden" name="tid54020904" value="54020904">
+<input type="hidden" name="filenum" value="1">
+<input type="hidden" name="fileid" value="54020904">
+<input type="hidden" name="urlnum" value="1">
+<input type="hidden" name="items_all" value="">
+
+<tbody><tr><td colspan="2" align="center" valign="top"><font color="#F26C4F"><b>ИНСТРУМЕНТЫ</b></font><div style="height:10px;"></div></td></tr>
+
+
+
+<tr><td width="15%" align="center" valign="top">
+<a href="/contents.asp?id=54020887&amp;selid=54020904"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0"></a>
+
+</td>
+
+<td width="85%" align="left" valign="middle">
+<a href="/contents.asp?id=54020887&amp;selid=54020904">Содержание выпуска</a>
+
+</td></tr>
+
+	<tr><td colspan="2"><div style="height:10px;"></div></td></tr>
+	
+	<tr><td width="15%" align="center" valign="top"></td>
+	<td width="85%" align="left" valign="middle">Загрузить:
+	</td></tr>
+	
+	<tr><td width="15%" align="center" valign="top"><a href="javascript:file_article(54020904, 1)" rel="nofollow" title=""><img src="/images/download_green.png" width="16" hspace="2" border="0"></a></td>
+	<td width="85%" align="left" valign="middle"><a href="javascript:file_article(54020904, 1)" rel="nofollow" class="help" title="">Полный текст</a> (PDF)
+	</td></tr>
+	
+<tr><td width="15%" align="center" valign="top">
+<a href="javascript:email_article()" rel="nofollow"><img src="/images/mailto.png" width="16" hspace="2" border="0"></a></td>
+<td width="85%" align="left" valign="middle"><a href="javascript:email_article()" rel="nofollow">Отправить публикацию по электронной почте</a>
+</td></tr>
+<tr><td colspan="2" align="center"><div class="formfr"><input type="text" id="email" name="email" value="maksimov.i289@gmail.com" style="width:172px; text-align: center;" class="inputt"></div></td></tr>
+
+<tr><td colspan="2"><div style="height:10px;"></div></td></tr>
+
+<tr><td width="15%" align="center" valign="top"></td>
+<td width="85%" align="left" valign="middle">Связанные документы:
+</td></tr>
+
+<tr><td width="15%" align="center" valign="top"><a href="javascript:url_article(54020904, 1)" rel="nofollow" title=""><img src="/images/go_url.png" width="16" hspace="2" border="0"></a></td>
+<td width="85%" align="left" valign="middle">Полный текст, на сайте <br><span style="word-wrap:break-word; word-break: break-all; overflow:hidden"><a href="javascript:url_article(54020904, 1)" rel="nofollow" class="help">vestnik.tstu.ru</a>
+</span></td></tr>
+
+
+<tr><td colspan="2"><div style="height:10px;"></div></td></tr>
+
+
+<tr><td width="15%" align="center" valign="top">
+<a href="/cit_items.asp?id=54020904" rel="nofollow"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0"></a></td>
+<td width="85%" align="left" valign="middle"><a href="/cit_items.asp?id=54020904" rel="nofollow">Список публикаций, цитирующих данную</a>
+</td></tr>
+
+<tr><td width="15%" align="center" valign="top">
+<a href="https://scholar.google.com/scholar?q=&quot;Совершенствование конструкций и оптимизация режимов эксплуатации мультикоптеров-опрыскивателей&quot;&amp;hl=ru&amp;as_sdt=0%2C5&amp;as_ylo=2023&amp;as_yhi=2023" target="_blank" rel="nofollow"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0"></a></td>
+<td width="85%" align="left" valign="middle"><a href="https://scholar.google.com/scholar?q=&quot;Совершенствование конструкций и оптимизация режимов эксплуатации мультикоптеров-опрыскивателей&quot;&amp;hl=ru&amp;as_sdt=0%2C5&amp;as_ylo=2023&amp;as_yhi=2023" target="_blank" rel="nofollow">Список статей в Google Академия, цитирующих данную</a>
+</td></tr>
+
+<tr><td width="15%" align="center" valign="top">
+<a href="javascript:for_reference()" rel="nofollow"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0"></a></td>
+<td width="85%" align="left" valign="middle"><a href="javascript:for_reference()" rel="nofollow">Ссылка для цитирования</a>
+</td></tr>
+<tr><td colspan="2"><div style="height:10px;"></div></td></tr>
+
+<tr><td width="15%" align="center" valign="top">
+<a href="javascript:itembox_add()" rel="nofollow"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0"></a></td>
+<td width="85%" align="left" valign="middle"><a href="javascript:itembox_add()" rel="nofollow">Добавить публикацию в подборку</a></td></tr>
+
+
+
+<tr><td colspan="2" align="center"><div class="formfr"><select name="itemboxid" id="itemboxid" style="width:180px" class="input">
+
+<option value="0" selected="">Новая подборка
+</option></select></div>&nbsp;</td></tr>
+
+
+
+
+<tr><td colspan="2"><div style="height:10px;"></div></td></tr>
+<tr><td width="15%" align="center" valign="top">
+<a href="javascript:edit_notes()" rel="nofollow"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0" class="help"></a></td>
+<td width="85%" align="left" valign="middle"><a href="javascript:edit_notes()" rel="nofollow">Редактировать Вашу заметку к публикации</a>
+</td></tr>
+
+<tr><td width="15%" align="center" valign="top">
+<a href="javascript:new_comments()" rel="nofollow"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0"></a></td>
+<td width="85%" align="left" valign="middle"><a href="javascript:new_comments()" rel="nofollow">Обсудить эту публикацию с другими читателями</a>
+</td></tr>
+
+
+
+
+
+
+<tr><td width="15%" align="center" valign="top">
+<a href="/similar_items.asp?itemid=54020904" rel="nofollow"><img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0"></a></td>
+<td width="85%" align="left" valign="middle"><a href="/similar_items.asp?itemid=54020904" rel="nofollow">Найти близкие по тематике публикации</a>
+</td></tr>
+
+
+
+<tr><td colspan="2"><div style="height:10px;"></div></td></tr>
+<tr><td width="15%" align="center" valign="top">
+<img src="/images/but_orange.gif" width="15" height="15" hspace="3" border="0"></td>
+<td width="85%" align="left" valign="middle"><font color="#00008f">Дата размещения:</font><br><font color="#000000">23.06.2023</font>
+</td></tr>
+
+
+
+</tbody></table>
+</div>
+
+</div>
+
+</td></tr></tbody></table>
+</td></tr></tbody></table>
+
+<script language="JavaScript">
+
+$(function() {
+$(".help").tooltip({
+	position: "top right",
+	offset: [-15, -180],
+	effect: "fade", 
+	fadeInSpeed: 400, 
+	fadeOutSpeed: 400, 
+	delay: 400,  
+	predelay: 400,
+	opacity: 1.0
+});
+});
+$(function() {
+$(".help1").tooltip({
+	position: "top right",
+	offset: [-15, -300],
+	effect: "fade", 
+	fadeInSpeed: 400, 
+	fadeOutSpeed: 400, 
+	delay: 400,  
+	predelay: 400,
+	opacity: 1.0
+});
+});
+$(function() {
+$(".help2").tooltip({
+	position: "top right",
+	offset: [100, -30],
+	effect: "fade", 
+	fadeInSpeed: 400, 
+	fadeOutSpeed: 400, 
+	delay: 400,  
+	predelay: 400,
+	opacity: 1.0
+});
+});
+</script>
+
+
+<br><br>
+<table width="970" height="40" border="0" cellpadding="0" cellspacing="0" id="footer" style="width: 970px;">
+<tbody><tr align="center" valign="middle" class="menug">
+<td width="15%" valign="bottom">
+
+</td>
+<td width="70%"><font color="#00008f"><span style="position: relative; top: 3px; right: 15px; color: #F26C4F;">*</span><a href="/copyright.asp">© 2000-2026 ООО НАУЧНАЯ ЭЛЕКТРОННАЯ БИБЛИОТЕКА. Все права защищены</a></font><span style="position: relative; top: 3px; left: 15px; color: #F26C4F;">*</span></td>
+<td width="15%" valign="bottom">
+
+</td>
+</tr></tbody></table><div id="arrow">Вверх</div>
+
+<!-- Yandex.Metrika -->
+<div style="display:none;"><script type="text/javascript">
+(function(w, c) {
+    (w[c] = w[c] || []).push(function() {
+        try {
+            w.yaCounter171463 = new Ya.Metrika(171463);
+        } catch(e) {}
+    });
+})(window, 'yandex_metrika_callbacks');
+</script></div>
+<script src="//mc.yandex.ru/metrika/watch.js" type="text/javascript" defer="defer"></script>
+<noscript><div style="position:absolute"><img src="//mc.yandex.ru/watch/171463" alt="" /></div></noscript>
+<!-- /Yandex.Metrika -->
+
+
+
+
+<br><br><br>
+</td></tr></tbody></table>
+
+
+<div id="fancybox-tmp"></div><div id="fancybox-loading"><div></div></div><div id="fancybox-overlay"></div><div id="fancybox-wrap" style="cursor: move;"><div id="fancybox-outer"><div class="fancybox-bg" id="fancybox-bg-n"></div><div class="fancybox-bg" id="fancybox-bg-ne"></div><div class="fancybox-bg" id="fancybox-bg-e"></div><div class="fancybox-bg" id="fancybox-bg-se"></div><div class="fancybox-bg" id="fancybox-bg-s"></div><div class="fancybox-bg" id="fancybox-bg-sw"></div><div class="fancybox-bg" id="fancybox-bg-w"></div><div class="fancybox-bg" id="fancybox-bg-nw"></div><div id="fancybox-content"></div><a id="fancybox-close"></a><div id="fancybox-title"></div><a href="javascript:;" id="fancybox-left"><span class="fancy-ico" id="fancybox-left-ico"></span></a><a href="javascript:;" id="fancybox-right"><span class="fancy-ico" id="fancybox-right-ico"></span></a></div></div></body></html>
