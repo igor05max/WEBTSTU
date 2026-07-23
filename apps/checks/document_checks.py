@@ -29,7 +29,6 @@ SEVERITIES = ("info", "warning", "error", "critical")
 WORD_RE = re.compile(r"[0-9A-Za-zА-Яа-яЁё][0-9A-Za-zА-Яа-яЁё'’-]*")
 MIXED_SCRIPT_RE = re.compile(r"[A-Za-zА-Яа-яЁё]{3,}")
 EQUATION_LABEL_RE = re.compile(r"^\(?\s*(\d{1,3})\s*\)?$")
-DEFAULT_REQUIRED_SECTIONS = list(SECTION_ALIASES)
 DEFAULT_WORD_LIMITS = {
     "article": (2000, 12000),
     "monograph": (10000, 200000),
@@ -126,11 +125,9 @@ def _journal_policy(submission):
 
 
 def _required_sections(submission):
-    policy = _journal_policy(submission)
-    configured = policy.get("required_sections")
-    if isinstance(configured, list) and configured:
-        return [normalize_space(str(item)) for item in configured if normalize_space(str(item))]
-    return DEFAULT_REQUIRED_SECTIONS
+    # Required sections are checked by the selected formatting template.  This
+    # legacy quality check deliberately does not impose a generic IMRAD layout.
+    return []
 
 
 def _word_limits(submission):
@@ -276,28 +273,6 @@ def build_document_quality_report(submission, version, *, snapshot=None):
     organizations = _metadata_value(submission, snapshot, "organizations")
     contact_emails = _metadata_value(submission, snapshot, "contact_emails")
     keywords = _metadata_value(submission, snapshot, "keywords")
-    required_metadata = (
-        ("title", "Название", normalize_space(submission.title)),
-        ("authors", "Авторы", document_authors or submission.get_authors_display()),
-        ("organizations", "Организации", organizations),
-        ("email", "E-mail", contact_emails),
-        ("abstract", "Аннотация", normalize_space(submission.abstract) or metadata.get("abstract", "")),
-        ("keywords", "Ключевые слова", keywords),
-    )
-    for code, label, value in required_metadata:
-        if value:
-            continue
-        issues.append(
-            _issue(
-                f"missing_metadata_{code}",
-                f"Не указано: {label}",
-                "error",
-                f"Обязательное поле «{label}» не найдено ни в форме, ни в документе.",
-                location="Метаданные",
-                suggestion="Заполните поле перед отправкой следующей версии.",
-            )
-        )
-
     metadata_emails = [value for value in re.split(r"[,;\s]+", contact_emails) if value]
     unique_emails = list(dict.fromkeys(value.casefold() for value in metadata_emails))
     if len(unique_emails) > 1:
@@ -320,7 +295,12 @@ def build_document_quality_report(submission, version, *, snapshot=None):
     references = []
     if reference_index is not None:
         references = [item["text"] for item in paragraphs[reference_index + 1 :] if len(item["text"]) > 20]
-    if not references:
+    reference_policy = _journal_policy(submission)
+    references_required = bool(
+        reference_policy.get("references_required")
+        or (reference_policy.get("minimum_references") or 0) > 0
+    )
+    if references_required and not references:
         issues.append(
             _issue(
                 "missing_references",
@@ -334,11 +314,6 @@ def build_document_quality_report(submission, version, *, snapshot=None):
 
     word_count = len(WORD_RE.findall(text))
     minimum_words, maximum_words = _word_limits(submission)
-    if word_count and word_count < minimum_words:
-        issues.append(_issue("article_too_short", "Объём меньше нормы", "warning", f"Распознано {word_count} слов при минимуме {minimum_words} для типа «{submission.article_type.name}».", location="Объём материала", suggestion="Проверьте требования типа материала и журнала."))
-    if word_count > maximum_words:
-        issues.append(_issue("article_too_long", "Объём больше нормы", "warning", f"Распознано {word_count} слов при максимуме {maximum_words} для типа «{submission.article_type.name}».", location="Объём материала", suggestion="Сократите материал или скорректируйте политику типа материала."))
-
     found_sections = []
     missing_sections = []
     for required in _required_sections(submission):
@@ -444,8 +419,9 @@ def build_document_quality_report(submission, version, *, snapshot=None):
     }
     summary = _summarize(issues)
     message = (
-        f"Проверено метаданных и структуры: {summary['error'] + summary['critical']} ошибок, "
-        f"{summary['warning']} предупреждений. Замечания носят рекомендательный характер."
+        f"Проверена целостность документа: {summary['error'] + summary['critical']} ошибок, "
+        f"{summary['warning']} предупреждений. Обязательные поля и структура проверяются "
+        "только по выбранному шаблону."
     )
     payload = _build_payload("metadata_complete", message, issues, metrics=metrics, extracted_metadata=metadata)
     return _is_success(issues), payload

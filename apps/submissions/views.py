@@ -36,6 +36,7 @@ from apps.submissions.forms import (
 from apps.submissions.formatting_correction import (
     FormattingCorrectionError,
     build_corrected_docx,
+    build_document_template_plan,
 )
 from apps.submissions.document_preview import (
     DocumentPreviewError,
@@ -79,6 +80,7 @@ from apps.workflow.services import (
     reject_submission_appeal,
     submit_submission_appeal,
 )
+from document_template_engine import normalize_template_rules
 
 
 logger = logging.getLogger(__name__)
@@ -489,7 +491,7 @@ def _build_check_entries(submission, check_runs):
 
 
 def _build_formatting_rule_rows(snapshot):
-    rules = (snapshot or {}).get("effective") or {}
+    rules = normalize_template_rules((snapshot or {}).get("effective") or {})
     page = rules.get("page") or {}
     margins = page.get("margins_cm") or {}
     body = rules.get("body") or {}
@@ -527,6 +529,19 @@ def _build_formatting_rule_rows(snapshot):
     add("Выравнивание", body.get("alignment"))
     required_sections = structure.get("required_sections") or []
     add("Обязательные разделы", ", ".join(str(value) for value in required_sections))
+    blocks = (rules.get("document") or {}).get("blocks") or []
+    required_blocks = [
+        block.get("label")
+        for block in blocks
+        if block.get("required") and block.get("role") != "body"
+    ]
+    optional_blocks = [
+        block.get("label")
+        for block in blocks
+        if not block.get("required")
+    ]
+    add("Обязательные блоки", ", ".join(str(value) for value in required_blocks))
+    add("Необязательные блоки", ", ".join(str(value) for value in optional_blocks))
     if limits.get("min_words") is not None:
         add("Минимальный объём", f"{limits['min_words']} слов")
     if limits.get("max_words") is not None:
@@ -1059,9 +1074,21 @@ def submission_detail(request, pk):
         can_edit
         and submission.current_version_id
         and Path(submission.current_version.file.name).suffix.casefold() == ".docx"
-        and formatting_check_entry
-        and formatting_check_entry["details"].get("can_generate_corrected_document")
+        and submission.formatting_template_id
+        and (submission.formatting_rules_snapshot or {}).get("effective")
     )
+    document_template_plan = None
+    document_template_plan_error = ""
+    if (
+        submission.current_version_id
+        and Path(submission.current_version.file.name).suffix.casefold() == ".docx"
+        and submission.formatting_template_id
+        and (submission.formatting_rules_snapshot or {}).get("effective")
+    ):
+        try:
+            document_template_plan = build_document_template_plan(submission)
+        except FormattingCorrectionError as exc:
+            document_template_plan_error = str(exc)
     formatting_rules_form = None
     can_edit_formatting_rules = can_edit and submission.status in _DELETABLE_DRAFT_STATUSES
     if can_edit_formatting_rules:
@@ -1162,6 +1189,8 @@ def submission_detail(request, pk):
             "can_edit_formatting_rules": can_edit_formatting_rules,
             "formatting_check_entry": formatting_check_entry,
             "can_generate_corrected_document": can_generate_corrected_document,
+            "document_template_plan": document_template_plan,
+            "document_template_plan_error": document_template_plan_error,
             "can_review_route": can_review_route,
             "can_view_route_details": can_view_route_details,
             "can_submit": can_edit
@@ -1376,9 +1405,9 @@ def corrected_document_download_view(request, pk):
         content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
     response["Content-Disposition"] = (
-        f'attachment; filename="submission-{submission.id}-corrected.docx"'
+        f'attachment; filename="submission-{submission.id}-template-built.docx"'
     )
-    response["X-Formatting-Changes"] = str(len(changes))
+    response["X-Template-Engine-Changes"] = str(len(changes))
     return response
 
 

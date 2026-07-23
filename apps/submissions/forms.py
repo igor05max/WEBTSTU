@@ -23,6 +23,7 @@ from apps.submissions.route_suggestions import (
     get_selectable_route_templates_queryset,
 )
 from apps.workflow.models import RouteTemplate
+from document_template_engine import BLOCK_CATALOG, normalize_template_rules
 
 
 def _is_article_type(article_type):
@@ -333,6 +334,21 @@ class SubmissionCreateForm(forms.ModelForm):
 
 
 class FormattingRulesForm(forms.Form):
+    _BLOCK_CHOICES = [
+        (role, BLOCK_CATALOG[role]["label"])
+        for role in (
+            "udc",
+            "title",
+            "authors",
+            "supervisor",
+            "institution",
+            "city_country",
+            "abstract",
+            "keywords",
+            "references",
+        )
+    ]
+
     font_family = forms.CharField(label="Основной шрифт", required=False)
     font_size_pt = forms.DecimalField(
         label="Размер шрифта, пт",
@@ -366,6 +382,16 @@ class FormattingRulesForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"rows": 4, "placeholder": "По одному разделу на строке"}),
     )
+    required_document_blocks = forms.MultipleChoiceField(
+        label="Обязательные блоки документа",
+        required=False,
+        choices=_BLOCK_CHOICES,
+        widget=forms.CheckboxSelectMultiple,
+    )
+    title_uppercase = forms.BooleanField(
+        label="Название прописными буквами",
+        required=False,
+    )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -377,12 +403,17 @@ class FormattingRulesForm(forms.Form):
 
     @classmethod
     def from_snapshot(cls, snapshot, *args, **kwargs):
-        effective = (snapshot or {}).get("effective") or {}
+        effective = normalize_template_rules((snapshot or {}).get("effective") or {})
         body = effective.get("body") or {}
         page = effective.get("page") or {}
         margins = page.get("margins_cm") or {}
         limits = effective.get("limits") or {}
         structure = effective.get("structure") or {}
+        blocks = (effective.get("document") or {}).get("blocks") or []
+        title_block = next(
+            (block for block in blocks if block.get("role") == "title"),
+            {},
+        )
         kwargs.setdefault(
             "initial",
             {
@@ -397,12 +428,22 @@ class FormattingRulesForm(forms.Form):
                 "min_words": limits.get("min_words"),
                 "max_words": limits.get("max_words"),
                 "required_sections": "\n".join(structure.get("required_sections") or []),
+                "required_document_blocks": [
+                    block.get("role")
+                    for block in blocks
+                    if block.get("required") and block.get("role") != "body"
+                ],
+                "title_uppercase": bool(
+                    (title_block.get("constraints") or {}).get("uppercase")
+                ),
             },
         )
         return cls(*args, **kwargs)
 
     def apply_to_snapshot(self, snapshot):
-        previous_effective = (snapshot or {}).get("effective") or {}
+        previous_effective = normalize_template_rules(
+            (snapshot or {}).get("effective") or {}
+        )
         updated = {
             **(snapshot or {}),
             "effective": {
@@ -439,6 +480,33 @@ class FormattingRulesForm(forms.Form):
                 if value.strip()
             ],
         }
+        selected_blocks = set(self.cleaned_data.get("required_document_blocks") or [])
+        existing_blocks = {
+            block.get("role"): {**block}
+            for block in ((effective.get("document") or {}).get("blocks") or [])
+            if block.get("role")
+        }
+        for role, label in self._BLOCK_CHOICES:
+            if role not in existing_blocks and role in selected_blocks:
+                existing_blocks[role] = {
+                    "role": role,
+                    "label": label,
+                    "required": True,
+                }
+            elif role in existing_blocks:
+                existing_blocks[role]["required"] = role in selected_blocks
+        title_block = existing_blocks.get("title")
+        if title_block is not None:
+            title_block["constraints"] = {
+                **(title_block.get("constraints") or {}),
+                "uppercase": bool(self.cleaned_data.get("title_uppercase")),
+            }
+        effective["document"] = {
+            **(effective.get("document") or {}),
+            "blocks": list(existing_blocks.values()),
+        }
+        effective = normalize_template_rules(effective)
+        updated["effective"] = effective
         sources = [
             source
             for source in (updated.get("sources") or [])
@@ -472,6 +540,11 @@ class FormattingRulesForm(forms.Form):
                 previous_effective.get("structure") or {}
             ).get("required_sections")
             or [],
+            "document.required_blocks": sorted(
+                block.get("role")
+                for block in ((previous_effective.get("document") or {}).get("blocks") or [])
+                if block.get("required")
+            ),
         }
         selected_values = {
             "body.font_family": effective["body"]["font_family"],
@@ -485,6 +558,11 @@ class FormattingRulesForm(forms.Form):
             "limits.min_words": effective["limits"]["min_words"],
             "limits.max_words": effective["limits"]["max_words"],
             "structure.required_sections": effective["structure"]["required_sections"],
+            "document.required_blocks": sorted(
+                block.get("role")
+                for block in ((effective.get("document") or {}).get("blocks") or [])
+                if block.get("required")
+            ),
         }
         conflicts = [
             conflict

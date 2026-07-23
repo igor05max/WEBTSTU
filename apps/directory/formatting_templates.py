@@ -1,6 +1,4 @@
 import io
-import json
-import re
 from collections import Counter
 from pathlib import Path
 
@@ -11,6 +9,7 @@ from apps.checks.gemini_client import (
     extract_response_text,
     generate_content,
     get_configured_model,
+    get_provider,
     is_ai_configured,
 )
 from apps.directory.models import (
@@ -21,6 +20,10 @@ from apps.submissions.document_analysis import (
     TEXT_EXTENSIONS,
     analyze_document_bytes,
     read_file_bytes,
+)
+from document_template_engine import (
+    interpret_template_text,
+    normalize_template_rules,
 )
 
 
@@ -42,36 +45,6 @@ DEFAULT_RULES = {
     "monograph": {"limits": {"min_words": 10000, "max_words": 200000}},
     "theses": {"limits": {"min_words": 500, "max_words": 5000}},
 }
-
-AI_RULE_SCHEMA = {
-    "page": {
-        "size": "",
-        "orientation": "",
-        "margins_cm": {"top": None, "right": None, "bottom": None, "left": None},
-    },
-    "body": {
-        "font_family": "",
-        "font_size_pt": None,
-        "line_spacing": None,
-        "first_line_indent_cm": None,
-        "alignment": "",
-    },
-    "structure": {"required_sections": [], "section_order": []},
-    "limits": {
-        "min_pages": None,
-        "max_pages": None,
-        "min_words": None,
-        "max_words": None,
-    },
-    "metadata": {"required_fields": []},
-    "references": {"style": "", "minimum_count": None},
-    "figures": {"captions_required": None},
-    "tables": {"captions_required": None},
-    "languages": [],
-    "filename_rule": "",
-    "notes": [],
-}
-
 
 def _round_cm(length):
     if length is None:
@@ -171,22 +144,6 @@ def _extract_template_content(template):
     return text[:120_000], deterministic_rules, snapshot.get("parse_error") or ""
 
 
-def _parse_json_object(value):
-    cleaned = str(value or "").strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.I)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start < 0 or end < start:
-        return {}
-    try:
-        payload = json.loads(cleaned[start : end + 1])
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def _merge_dict(base, override):
     result = dict(base or {})
     for key, value in (override or {}).items():
@@ -200,29 +157,33 @@ def _merge_dict(base, override):
 def _extract_rules_with_ai(template, text):
     if not text.strip() or not is_ai_configured():
         return {}
-    prompt = (
-        "Ты извлекаешь только явно указанные или надёжно выводимые правила оформления научного материала. "
-        "Не придумывай требований. Верни один JSON-объект без Markdown по указанной схеме. "
-        "Если правило не найдено, оставь пустую строку, null или пустой список.\n\n"
-        f"Тип материала: {template.article_type.name}\n"
-        f"Источник: {template.target_name}\n"
-        f"Схема JSON: {json.dumps(AI_RULE_SCHEMA, ensure_ascii=False)}\n\n"
-        f"Текст шаблона или требований:\n{text}"
+    if get_provider() != "openai_compatible":
+        raise ValueError(
+            "Для интерпретации шаблонов требуется локальная OpenAI-совместимая модель."
+        )
+
+    def complete_json(prompt):
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": 6144,
+                "responseMimeType": "application/json",
+            },
+        }
+        response, _model = generate_content(
+            payload,
+            model=get_configured_model(),
+            timeout=120,
+        )
+        return extract_response_text(response)
+
+    return interpret_template_text(
+        document_type=template.article_type.name,
+        target_name=template.target_name,
+        text=text,
+        complete_json=complete_json,
     )
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.1,
-            "maxOutputTokens": 4096,
-            "responseMimeType": "application/json",
-        },
-    }
-    response, _model = generate_content(
-        payload,
-        model=get_configured_model(),
-        timeout=120,
-    )
-    return _parse_json_object(extract_response_text(response))
 
 
 def build_rules_snapshot(*, article_type, template=None, journal=None):
@@ -264,7 +225,11 @@ def build_rules_snapshot(*, article_type, template=None, journal=None):
                 "template_id": template.id,
             }
         )
-    return {"effective": effective, "sources": sources, "conflicts": conflicts}
+    return {
+        "effective": normalize_template_rules(effective),
+        "sources": sources,
+        "conflicts": conflicts,
+    }
 
 
 @transaction.atomic
@@ -316,7 +281,8 @@ def process_formatting_template(template):
             ai_rules = _extract_rules_with_ai(template, text)
         except (GeminiAPIError, ValueError) as exc:
             ai_warning = str(exc)
-        extracted_rules = _merge_dict(ai_rules, deterministic_rules)
+        raw_rules = _merge_dict(ai_rules, deterministic_rules)
+        extracted_rules = normalize_template_rules(raw_rules) if raw_rules else {}
         template.source_text = text
         template.extracted_rules = extracted_rules
         template.rule_conflicts = []

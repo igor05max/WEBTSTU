@@ -120,7 +120,7 @@ class DocumentAnalysisTests(TestCase):
     SUBMISSION_ROUTE_SUGGESTION_ENABLED=False,
 )
 class AdvisoryChecksTests(TestCase):
-    def test_failed_quality_check_does_not_block_submission(self):
+    def test_quality_check_does_not_invent_missing_metadata_or_sections(self):
         user = get_user_model().objects.create_user(username="quality_author", password="1234")
         journal = Journal.objects.create(name="Журнал проверки")
         article_type = ArticleType.objects.create(code="article", name="Статья")
@@ -141,14 +141,14 @@ class AdvisoryChecksTests(TestCase):
         formatting_run = submission.check_runs.get(
             check_definition__code="formatting_compliance"
         )
-        self.assertEqual(metadata_run.status, CheckRunStatus.FAILED)
+        self.assertEqual(metadata_run.status, CheckRunStatus.PASSED)
         self.assertEqual(content_run.status, CheckRunStatus.NOT_PERFORMED)
         self.assertEqual(subject_area_run.status, CheckRunStatus.NOT_PERFORMED)
         self.assertEqual(formatting_run.status, CheckRunStatus.NOT_PERFORMED)
         self.assertEqual(content_run.result_payload["execution_status"], "not_performed")
         self.assertEqual(submission.status, SubmissionStatus.SUBMITTED)
         self.assertIn("summary", metadata_run.result_payload)
-        self.assertTrue(metadata_run.result_payload["issues"])
+        self.assertEqual(metadata_run.result_payload["issues"], [])
 
         self.client.force_login(user)
         response = self.client.get(reverse("submissions:detail", args=[submission.pk]))

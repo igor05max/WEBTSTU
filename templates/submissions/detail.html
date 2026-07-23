@@ -202,18 +202,74 @@
             </div>
         {% endif %}
 
-        {% if can_generate_corrected_document %}
-            <div class="submission-formatting-correction">
-                <div>
-                    <strong>Можно создать исправленную копию DOCX</strong>
-                    <p>
-                        Система изменит только поля, шрифт, интервалы и абзацные параметры.
-                        Научный смысл, факты, выводы и ссылки не дописываются.
-                    </p>
+        {% if document_template_plan %}
+            <div class="submission-template-builder">
+                <div class="submission-template-builder-head">
+                    <div>
+                        <span class="submission-formatting-label">Отдельный модуль</span>
+                        <strong>Конструктор документа по шаблону</strong>
+                        <p>
+                            Локальная модель разбирает требования, а отдельный движок собирает DOCX
+                            по ролям: титульный блок, основной текст и литература оформляются независимо.
+                        </p>
+                    </div>
+                    <span class="status-pill success">Готов к сборке</span>
                 </div>
-                <a class="button" href="{% url 'submissions:corrected_document_download' submission.pk %}">
-                    Скачать исправленный DOCX
-                </a>
+
+                <div class="submission-template-builder-grid">
+                    <div>
+                        <span class="submission-formatting-label">Распознанные блоки</span>
+                        <div class="submission-template-blocks">
+                            {% for block in document_template_plan.blocks %}
+                                <span class="submission-template-block is-{{ block.status }}">
+                                    {{ block.label }}
+                                    {% if block.found %}
+                                        <small>найден</small>
+                                    {% elif block.required %}
+                                        <small>нужно заполнить</small>
+                                    {% else %}
+                                        <small>необязателен</small>
+                                    {% endif %}
+                                </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div>
+                        <span class="submission-formatting-label">Что сделает сборщик</span>
+                        <ul class="submission-template-operations">
+                            {% for operation in document_template_plan.operations %}
+                                <li>{{ operation }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                {% if document_template_plan.missing_blocks %}
+                    <div class="submission-template-warning">
+                        <strong>Не всё можно заполнить автоматически</strong>
+                        <p>
+                            Отсутствующие обязательные поля будут отмечены в отчёте.
+                            Система не выдумывает научное содержание и не меняет смысл текста.
+                        </p>
+                    </div>
+                {% endif %}
+
+                <div class="submission-template-builder-actions">
+                    <p>
+                        Исходная версия останется без изменений. Создаётся отдельная копия,
+                        которую автор сможет проверить и затем загрузить как новую версию.
+                    </p>
+                    {% if can_generate_corrected_document %}
+                        <a class="button" href="{% url 'submissions:corrected_document_download' submission.pk %}">
+                            Создать DOCX по шаблону
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        {% elif document_template_plan_error %}
+            <div class="submission-template-warning">
+                <strong>Конструктор пока недоступен</strong>
+                <p>{{ document_template_plan_error }}</p>
             </div>
         {% endif %}
 
