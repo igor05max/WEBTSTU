@@ -102,7 +102,16 @@ class ReusableTemplateEngineTests(SimpleTestCase):
                       {
                         "role": "title",
                         "required": true,
-                        "style": {"bold": false, "italic": false}
+                        "style": {
+                          "first_line_indent_cm": null,
+                          "bold": false,
+                          "italic": false
+                        }
+                      },
+                      {
+                        "role": "authors",
+                        "required": true,
+                        "style": {"line_spacing": 2}
                       },
                       {
                         "role": "references",
@@ -114,7 +123,8 @@ class ReusableTemplateEngineTests(SimpleTestCase):
                         }
                       }
                     ]
-                  }
+                  },
+                  "body": {"line_spacing": 1}
                 }
             """,
         )
@@ -125,6 +135,8 @@ class ReusableTemplateEngineTests(SimpleTestCase):
         }
         self.assertNotIn("bold", blocks["title"]["style"])
         self.assertNotIn("italic", blocks["title"]["style"])
+        self.assertEqual(blocks["title"]["style"]["first_line_indent_cm"], 0)
+        self.assertEqual(blocks["authors"]["style"]["line_spacing"], 1)
         self.assertNotIn("alignment", blocks["references"]["style"])
         self.assertNotIn("first_line_indent_cm", blocks["references"]["style"])
 

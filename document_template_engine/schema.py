@@ -287,7 +287,17 @@ def normalize_template_rules(rules: Any) -> dict[str, Any]:
             ):
                 if body_rules.get(key) not in (None, ""):
                     style[key] = body_rules[key]
-        style.update(block.get("style") if isinstance(block.get("style"), dict) else {})
+        style.update(
+            {
+                key: value
+                for key, value in (
+                    block.get("style")
+                    if isinstance(block.get("style"), dict)
+                    else {}
+                ).items()
+                if value not in (None, "")
+            }
+        )
         block["label"] = str(block.get("label") or definition["label"])
         block["aliases"] = list(
             dict.fromkeys(

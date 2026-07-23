@@ -124,6 +124,7 @@ def interpret_template_text(
     )
     normalized = normalize_template_rules(parse_json_object(complete_json(prompt)))
     source = str(text or "").casefold().replace("ё", "е")
+    body_line_spacing = (normalized.get("body") or {}).get("line_spacing")
     for block in (normalized.get("document") or {}).get("blocks") or []:
         style = block.get("style")
         if not isinstance(style, dict):
@@ -134,6 +135,10 @@ def interpret_template_text(
         for key in ("bold", "italic"):
             if style.get(key) is False:
                 style.pop(key, None)
+        # "Ниже, через один интервал" describes vertical placement between
+        # blocks, not a double line spacing inside the authors paragraph.
+        if body_line_spacing not in (None, ""):
+            style["line_spacing"] = body_line_spacing
         if block.get("role") == "references":
             references_context = ""
             match = re.search(
