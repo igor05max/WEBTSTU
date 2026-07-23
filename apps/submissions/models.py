@@ -52,7 +52,17 @@ class Submission(models.Model):
         "directory.Journal",
         on_delete=models.PROTECT,
         related_name="submissions",
+        null=True,
+        blank=True,
         verbose_name="Журнал",
+    )
+    publication_topic = models.ForeignKey(
+        "directory.PublicationTopic",
+        on_delete=models.PROTECT,
+        related_name="submissions",
+        null=True,
+        blank=True,
+        verbose_name="Тема или событие",
     )
     article_type = models.ForeignKey(
         "directory.ArticleType",
@@ -80,6 +90,23 @@ class Submission(models.Model):
             "Базовый маршрут обычно определяется типом материала автоматически. "
             "Область экспертизы влияет на состав согласующих внутри его шагов."
         ),
+    )
+    formatting_template = models.ForeignKey(
+        "directory.FormattingTemplate",
+        on_delete=models.PROTECT,
+        related_name="submissions",
+        null=True,
+        blank=True,
+        verbose_name="Шаблон оформления",
+    )
+    formatting_rules_snapshot = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Правила оформления на момент отправки",
+    )
+    formatting_check_requested = models.BooleanField(
+        default=True,
+        verbose_name="Проверять оформление по шаблону",
     )
     status = models.CharField(
         max_length=32,
@@ -111,6 +138,18 @@ class Submission(models.Model):
 
     def get_authors_display(self):
         return ", ".join(str(author) for author in self.authors.all())
+
+    @property
+    def destination_name(self):
+        if self.journal_id:
+            return self.journal.name
+        if self.publication_topic_id:
+            return self.publication_topic.name
+        return ""
+
+    @property
+    def destination_label(self):
+        return "Журнал" if self.journal_id else "Тема или событие"
 
     def __str__(self):
         return f"{self.title} ({self.get_status_display()})"

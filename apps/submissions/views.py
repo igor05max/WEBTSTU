@@ -1,11 +1,12 @@
 import logging
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import OperationalError
 from django.db.models import BooleanField, Case, Prefetch, Q, Value, When
-from django.http import FileResponse, Http404, HttpResponseForbidden, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -16,13 +17,25 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from apps.accounts.roles import has_chair_head_role
 from apps.accounts.models import User
 from apps.checks.models import CheckDefinition, CheckRunStatus
+from apps.checks.services import queue_submission_checks
 from apps.conclusions.models import ConclusionDocument
+from apps.directory.formatting_templates import (
+    build_rules_snapshot,
+    create_formatting_template,
+    process_formatting_template,
+)
+from apps.directory.publication_topics import resolve_or_create_publication_topic
 from apps.submissions.forms import (
+    FormattingRulesForm,
     SubmissionAppealDecisionForm,
     SubmissionAppealForm,
     SubmissionCreateForm,
     SubmissionSubmitForm,
     SubmissionVersionUploadForm,
+)
+from apps.submissions.formatting_correction import (
+    FormattingCorrectionError,
+    build_corrected_docx,
 )
 from apps.submissions.document_preview import (
     DocumentPreviewError,
@@ -90,7 +103,16 @@ def _can_access_chair_submissions(user):
 def _get_personal_submissions_queryset(user):
     return (
         Submission.objects.filter(authors=user)
-        .select_related("author", "journal", "article_type", "direction", "route_template", "current_version")
+        .select_related(
+            "author",
+            "journal",
+            "publication_topic",
+            "article_type",
+            "formatting_template",
+            "direction",
+            "route_template",
+            "current_version",
+        )
         .prefetch_related("authors")
         .distinct()
     )
@@ -104,7 +126,16 @@ def _get_chair_submissions_queryset(user):
             author__chair_org_unit_id=user.chair_org_unit_id,
             submitted_at__isnull=False,
         )
-        .select_related("author", "journal", "article_type", "direction", "route_template", "current_version")
+        .select_related(
+            "author",
+            "journal",
+            "publication_topic",
+            "article_type",
+            "formatting_template",
+            "direction",
+            "route_template",
+            "current_version",
+        )
         .prefetch_related("authors")
         .distinct()
     )
@@ -457,6 +488,52 @@ def _build_check_entries(submission, check_runs):
     return entries
 
 
+def _build_formatting_rule_rows(snapshot):
+    rules = (snapshot or {}).get("effective") or {}
+    page = rules.get("page") or {}
+    margins = page.get("margins_cm") or {}
+    body = rules.get("body") or {}
+    structure = rules.get("structure") or {}
+    limits = rules.get("limits") or {}
+    rows = []
+
+    def add(label, value):
+        if value not in (None, "", [], {}):
+            rows.append({"label": label, "value": value})
+
+    add("Размер страницы", page.get("size"))
+    orientation = {"portrait": "книжная", "landscape": "альбомная"}.get(
+        page.get("orientation"),
+        page.get("orientation"),
+    )
+    add("Ориентация", orientation)
+    margin_values = [
+        margins.get("top"),
+        margins.get("right"),
+        margins.get("bottom"),
+        margins.get("left"),
+    ]
+    if any(value is not None for value in margin_values):
+        add(
+            "Поля (верх / право / низ / лево)",
+            " / ".join("—" if value is None else f"{value} см" for value in margin_values),
+        )
+    add("Основной шрифт", body.get("font_family"))
+    if body.get("font_size_pt") is not None:
+        add("Размер шрифта", f"{body['font_size_pt']} пт")
+    add("Межстрочный интервал", body.get("line_spacing"))
+    if body.get("first_line_indent_cm") is not None:
+        add("Абзацный отступ", f"{body['first_line_indent_cm']} см")
+    add("Выравнивание", body.get("alignment"))
+    required_sections = structure.get("required_sections") or []
+    add("Обязательные разделы", ", ".join(str(value) for value in required_sections))
+    if limits.get("min_words") is not None:
+        add("Минимальный объём", f"{limits['min_words']} слов")
+    if limits.get("max_words") is not None:
+        add("Максимальный объём", f"{limits['max_words']} слов")
+    return rows
+
+
 def _can_view_submission(user, submission):
     if user.is_superuser or submission.authors.filter(pk=user.id).exists():
         return True
@@ -571,7 +648,7 @@ def submission_list(request):
     else:
         owner = "me"
         base_queryset = _get_personal_submissions_queryset(request.user)
-        list_title = "Мои статьи"
+        list_title = "Мои материалы"
         list_description = "Все ваши материалы и их текущий статус в маршруте согласования."
 
     draft_statuses = [
@@ -618,6 +695,7 @@ def submission_list(request):
             search_filter |= (
                 Q(title__icontains=search_value)
                 | Q(journal__name__icontains=search_value)
+                | Q(publication_topic__name__icontains=search_value)
                 | Q(article_type__name__icontains=search_value)
                 | Q(authors__first_name__icontains=search_value)
                 | Q(authors__last_name__icontains=search_value)
@@ -672,7 +750,8 @@ def submission_list(request):
         .distinct()
     )
     journal_options = list(
-        base_queryset.values("journal_id", "journal__name")
+        base_queryset.filter(journal__isnull=False)
+        .values("journal_id", "journal__name")
         .order_by("journal__name", "journal_id")
         .distinct()
     )
@@ -740,19 +819,60 @@ def submission_create(request):
     if request.method == "POST":
         form = SubmissionCreateForm(request.POST, request.FILES, current_user=request.user)
         if form.is_valid():
+            article_type = form.cleaned_data["article_type"]
+            journal = form.cleaned_data["journal"]
+            publication_topic = form.cleaned_data["publication_topic"]
+            if journal is None and publication_topic is None:
+                publication_topic, _created = resolve_or_create_publication_topic(
+                    form.cleaned_data["publication_topic_query"],
+                    created_by=request.user,
+                )
+
+            formatting_template = form.cleaned_data["formatting_template"]
+            uploaded_template = form.cleaned_data["formatting_template_file"]
+            if uploaded_template is not None:
+                formatting_template = create_formatting_template(
+                    article_type=article_type,
+                    uploaded_by=request.user,
+                    file=uploaded_template,
+                    journal=journal,
+                    publication_topic=publication_topic,
+                )
+                process_formatting_template(formatting_template)
+
+            rules_snapshot = build_rules_snapshot(
+                article_type=article_type,
+                template=formatting_template,
+                journal=journal,
+            )
+            uploaded_material = form.cleaned_data["file"]
+            document_snapshot = analyze_document_bytes(
+                read_file_bytes(uploaded_material),
+                uploaded_material.name,
+            )
+            metadata = document_snapshot.get("metadata") or {}
+            title = (
+                form.cleaned_data["title"].strip()
+                or str(metadata.get("title") or "").strip()
+                or Path(uploaded_material.name).stem
+            )
             submission = create_submission_with_initial_version(
                 author=request.user,
-                title=form.cleaned_data["title"],
-                abstract=form.cleaned_data["abstract"],
-                journal=form.cleaned_data["journal"],
-                article_type=form.cleaned_data["article_type"],
-                file=form.cleaned_data["file"],
+                title=title,
+                abstract=form.cleaned_data["abstract"] or metadata.get("abstract", ""),
+                journal=journal,
+                publication_topic=publication_topic,
+                article_type=article_type,
+                formatting_template=formatting_template,
+                formatting_rules_snapshot=rules_snapshot,
+                formatting_check_requested=form.cleaned_data["formatting_check_requested"],
+                file=uploaded_material,
                 comment=form.cleaned_data["version_comment"],
                 co_authors=form.cleaned_data["co_authors"],
-                document_authors=form.cleaned_data["document_authors"],
-                organizations=form.cleaned_data["organizations"],
-                contact_emails=form.cleaned_data["contact_emails"],
-                keywords=form.cleaned_data["keywords"],
+                document_authors=form.cleaned_data["document_authors"] or metadata.get("document_authors", ""),
+                organizations=form.cleaned_data["organizations"] or metadata.get("organizations", ""),
+                contact_emails=form.cleaned_data["contact_emails"] or metadata.get("contact_emails", ""),
+                keywords=form.cleaned_data["keywords"] or metadata.get("keywords", ""),
             )
             submission.refresh_from_db()
             if submission.status == SubmissionStatus.AUTO_CHECKING:
@@ -815,7 +935,9 @@ def submission_detail(request, pk):
         Submission.objects.select_related(
             "author",
             "journal",
+            "publication_topic",
             "article_type",
+            "formatting_template",
             "direction",
             "route_template",
             "current_version",
@@ -929,6 +1051,23 @@ def submission_detail(request, pk):
     route_review_preview_payload = None
     selected_route_preview_template = None
     can_edit = submission.author_id == request.user.id or request.user.is_superuser
+    formatting_check_entry = next(
+        (entry for entry in check_entries if entry["code"] == "formatting_compliance"),
+        None,
+    )
+    can_generate_corrected_document = bool(
+        can_edit
+        and submission.current_version_id
+        and Path(submission.current_version.file.name).suffix.casefold() == ".docx"
+        and formatting_check_entry
+        and formatting_check_entry["details"].get("can_generate_corrected_document")
+    )
+    formatting_rules_form = None
+    can_edit_formatting_rules = can_edit and submission.status in _DELETABLE_DRAFT_STATUSES
+    if can_edit_formatting_rules:
+        formatting_rules_form = FormattingRulesForm.from_snapshot(
+            submission.formatting_rules_snapshot
+        )
     can_review_route = route_review_task is not None
     if can_edit and submission.status == SubmissionStatus.REVISION_REQUESTED:
         upload_form = SubmissionVersionUploadForm()
@@ -1013,6 +1152,16 @@ def submission_detail(request, pk):
             "status_tone": _get_submission_status_tone(submission.status),
             "progress_poll_interval_ms": settings.SUBMISSION_PROGRESS_POLL_INTERVAL_MS,
             "can_edit": can_edit,
+            "formatting_rules_form": formatting_rules_form,
+            "formatting_rules": (submission.formatting_rules_snapshot or {}).get("effective") or {},
+            "formatting_rule_rows": _build_formatting_rule_rows(
+                submission.formatting_rules_snapshot
+            ),
+            "formatting_rule_sources": (submission.formatting_rules_snapshot or {}).get("sources") or [],
+            "formatting_rule_conflicts": (submission.formatting_rules_snapshot or {}).get("conflicts") or [],
+            "can_edit_formatting_rules": can_edit_formatting_rules,
+            "formatting_check_entry": formatting_check_entry,
+            "can_generate_corrected_document": can_generate_corrected_document,
             "can_review_route": can_review_route,
             "can_view_route_details": can_view_route_details,
             "can_submit": can_edit
@@ -1165,6 +1314,72 @@ def submission_version_download(request, pk, version_pk):
         filename=get_display_filename(version.file.name),
         content_type="application/octet-stream",
     )
+
+
+@login_required
+@require_POST
+def update_formatting_rules_view(request, pk):
+    submission = get_object_or_404(
+        Submission.objects.select_related("author", "formatting_template"),
+        pk=pk,
+    )
+    if submission.author_id != request.user.id and not request.user.is_superuser:
+        return HttpResponseForbidden("Недостаточно прав.")
+    if submission.status not in _DELETABLE_DRAFT_STATUSES:
+        messages.error(request, "Правила можно уточнить только до запуска маршрута согласования.")
+        return redirect("submissions:detail", pk=submission.pk)
+
+    form = FormattingRulesForm.from_snapshot(
+        submission.formatting_rules_snapshot,
+        request.POST,
+    )
+    if not form.is_valid():
+        messages.error(request, "Не удалось сохранить правила. Проверьте введённые значения.")
+        return redirect("submissions:detail", pk=submission.pk)
+
+    submission.formatting_rules_snapshot = form.apply_to_snapshot(
+        submission.formatting_rules_snapshot
+    )
+    submission.formatting_check_requested = True
+    submission.save(
+        update_fields=[
+            "formatting_rules_snapshot",
+            "formatting_check_requested",
+            "updated_at",
+        ]
+    )
+    queue_submission_checks(submission)
+    messages.success(request, "Правила уточнены. Автопроверки запущены повторно.")
+    return redirect("submissions:detail", pk=submission.pk)
+
+
+@login_required
+def corrected_document_download_view(request, pk):
+    submission = get_object_or_404(
+        Submission.objects.select_related(
+            "author",
+            "current_version",
+            "formatting_template",
+        ),
+        pk=pk,
+    )
+    if submission.author_id != request.user.id and not request.user.is_superuser:
+        return HttpResponseForbidden("Исправленный файл доступен только автору.")
+    try:
+        corrected_bytes, changes = build_corrected_docx(submission)
+    except FormattingCorrectionError as exc:
+        messages.error(request, str(exc))
+        return redirect("submissions:detail", pk=submission.pk)
+
+    response = HttpResponse(
+        corrected_bytes,
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="submission-{submission.id}-corrected.docx"'
+    )
+    response["X-Formatting-Changes"] = str(len(changes))
+    return response
 
 
 @login_required

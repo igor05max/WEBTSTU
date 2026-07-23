@@ -1,122 +1,281 @@
 (function () {
     "use strict";
 
-    function initializeJournalSearch() {
-        var input = document.getElementById("id_journal_query");
-        var hidden = document.getElementById("id_journal");
-        if (!input || !hidden) {
+    function initializeDestinationAndTemplate() {
+        var articleType = document.getElementById("id_article_type");
+        var journalInput = document.getElementById("id_journal_query");
+        var journalHidden = document.getElementById("id_journal");
+        var topicInput = document.getElementById("id_publication_topic_query");
+        var topicHidden = document.getElementById("id_publication_topic");
+        var templateHidden = document.getElementById("id_formatting_template");
+        var templateFile = document.getElementById("id_formatting_template_file");
+        var templateSection = document.querySelector("[data-template-section]");
+        var journalField = document.querySelector("[data-destination-field='journal']");
+        var topicField = document.querySelector("[data-destination-field='topic']");
+        var templateEmpty = document.querySelector("[data-template-empty]");
+        var templateEmptyText = document.querySelector("[data-template-empty-text]");
+        var templateSelected = document.querySelector("[data-template-selected]");
+        var templateName = document.querySelector("[data-template-name]");
+        var templateMeta = document.querySelector("[data-template-meta]");
+        var templateDownload = document.querySelector("[data-template-download]");
+        var rulesPanel = document.querySelector("[data-template-rules]");
+        var rulesList = document.querySelector("[data-template-rules-list]");
+        if (!articleType || !journalInput || !journalHidden || !topicInput || !topicHidden || !templateHidden) {
             return;
         }
 
-        var searchUrl = input.getAttribute("data-journal-search-url");
-        if (!searchUrl) {
-            return;
+        function selectedTypeCode() {
+            var selected = articleType.options[articleType.selectedIndex];
+            return selected ? selected.getAttribute("data-code") || "" : "";
         }
 
-        var list = document.createElement("div");
-        list.className = "journal-suggest";
-        list.hidden = true;
-        input.insertAdjacentElement("afterend", list);
-
-        var requestNumber = 0;
-        var debounceTimer = null;
-
-        function hideResults() {
-            list.hidden = true;
-            list.replaceChildren();
+        function selectedDestinationKind() {
+            var selected = articleType.options[articleType.selectedIndex];
+            return selected ? selected.getAttribute("data-destination-kind") || "" : "";
         }
 
-        function renderResults(results) {
-            list.replaceChildren();
-
-            if (!results.length) {
-                var empty = document.createElement("div");
-                empty.className = "journal-suggest-empty";
-                empty.textContent = "Журнал не найден";
-                list.appendChild(empty);
-                list.hidden = false;
-                return;
-            }
-
-            results.forEach(function (item) {
-                var option = document.createElement("button");
-                option.type = "button";
-                option.className = "journal-suggest-option";
-                option.dataset.id = item.id || "";
-                option.dataset.label = item.label || item.name || "";
-
-                var name = document.createElement("strong");
-                name.textContent = item.name || item.label || "";
-                option.appendChild(name);
-
-                var meta = document.createElement("small");
-                if (item.issn) {
-                    var issn = document.createElement("span");
-                    issn.textContent = "ISSN " + item.issn;
-                    meta.appendChild(issn);
+        function ruleRows(rules, prefix, rows) {
+            Object.keys(rules || {}).forEach(function (key) {
+                var value = rules[key];
+                var path = prefix ? prefix + "." + key : key;
+                if (value && typeof value === "object" && !Array.isArray(value)) {
+                    ruleRows(value, path, rows);
+                } else if (value !== null && value !== "" && (!Array.isArray(value) || value.length)) {
+                    rows.push({name: path, value: Array.isArray(value) ? value.join(", ") : String(value)});
                 }
-                if (item.level) {
-                    var level = document.createElement("span");
-                    level.textContent = "Уровень " + item.level;
-                    meta.appendChild(level);
-                }
-                option.appendChild(meta);
-                list.appendChild(option);
             });
-
-            list.hidden = false;
         }
 
-        function runSearch() {
-            var query = input.value.trim();
-            hidden.value = "";
-            if (query.length < 2) {
-                hideResults();
+        function renderTemplate(template) {
+            if (!template) {
+                templateHidden.value = "";
+                templateEmpty.hidden = false;
+                templateSelected.hidden = true;
+                rulesPanel.hidden = true;
+                rulesList.replaceChildren();
+                if (selectedDestinationKind() === "journal") {
+                    templateEmptyText.textContent = "Для статьи без сохранённого шаблона нужно загрузить новый файл.";
+                } else {
+                    templateEmptyText.textContent = "Шаблона ещё нет. Можно продолжить без него или загрузить первый.";
+                }
                 return;
             }
 
-            requestNumber += 1;
-            var currentRequest = requestNumber;
-            fetch(searchUrl + "?q=" + encodeURIComponent(query), {
+            templateHidden.value = template.id || "";
+            templateEmpty.hidden = true;
+            templateSelected.hidden = false;
+            templateName.textContent = template.file_name || "Шаблон оформления";
+            templateMeta.textContent = "Версия " + (template.version || "—") + " · " +
+                (template.status_label || template.status || "") +
+                (template.uploaded_by ? " · загрузил " + template.uploaded_by : "");
+            templateDownload.href = template.download_url || "#";
+            rulesList.replaceChildren();
+            var rows = [];
+            ruleRows(template.rules || {}, "", rows);
+            rows.slice(0, 16).forEach(function (row) {
+                var item = document.createElement("div");
+                var name = document.createElement("span");
+                name.textContent = row.name;
+                var value = document.createElement("strong");
+                value.textContent = row.value;
+                item.appendChild(name);
+                item.appendChild(value);
+                rulesList.appendChild(item);
+            });
+            rulesPanel.hidden = !rows.length;
+        }
+
+        function fetchTemplateById() {
+            if (!templateHidden.value) {
+                return;
+            }
+            var pattern = templateHidden.getAttribute("data-template-detail-url");
+            if (!pattern) {
+                return;
+            }
+            fetch(pattern.replace("{id}", encodeURIComponent(templateHidden.value)), {
                 headers: {"X-Requested-With": "XMLHttpRequest"}
             })
                 .then(function (response) {
                     if (!response.ok) {
-                        throw new Error("journal-search-failed");
+                        throw new Error("template-load-failed");
                     }
                     return response.json();
                 })
                 .then(function (payload) {
-                    if (currentRequest === requestNumber) {
-                        renderResults(payload.results || []);
-                    }
+                    renderTemplate(payload.template || null);
                 })
                 .catch(function () {
-                    if (currentRequest === requestNumber) {
-                        hideResults();
-                    }
+                    renderTemplate(null);
                 });
         }
 
-        input.addEventListener("input", function () {
-            window.clearTimeout(debounceTimer);
-            debounceTimer = window.setTimeout(runSearch, 220);
-        });
+        function initializeSearch(input, hidden, url, emptyLabel) {
+            var list = document.createElement("div");
+            list.className = "journal-suggest";
+            list.hidden = true;
+            input.insertAdjacentElement("afterend", list);
+            var requestNumber = 0;
+            var debounceTimer = null;
 
-        input.addEventListener("blur", function () {
-            window.setTimeout(hideResults, 180);
-        });
-
-        list.addEventListener("pointerdown", function (event) {
-            var option = event.target.closest(".journal-suggest-option");
-            if (!option) {
-                return;
+            function hideResults() {
+                list.hidden = true;
+                list.replaceChildren();
             }
-            event.preventDefault();
-            hidden.value = option.dataset.id || "";
-            input.value = option.dataset.label || "";
-            hideResults();
+
+            function renderResults(results) {
+                list.replaceChildren();
+                if (!results.length) {
+                    var empty = document.createElement("div");
+                    empty.className = "journal-suggest-empty";
+                    empty.textContent = emptyLabel;
+                    list.appendChild(empty);
+                    list.hidden = false;
+                    return;
+                }
+                results.forEach(function (item) {
+                    var option = document.createElement("button");
+                    option.type = "button";
+                    option.className = "journal-suggest-option";
+                    option.dataset.id = item.id || "";
+                    option.dataset.label = item.label || item.name || "";
+                    option._templatePayload = item.template || null;
+
+                    var name = document.createElement("strong");
+                    name.textContent = item.name || item.label || "";
+                    option.appendChild(name);
+                    var meta = document.createElement("small");
+                    if (item.issn) {
+                        var issn = document.createElement("span");
+                        issn.textContent = "ISSN " + item.issn;
+                        meta.appendChild(issn);
+                    }
+                    if (item.level) {
+                        var level = document.createElement("span");
+                        level.textContent = "Уровень " + item.level;
+                        meta.appendChild(level);
+                    }
+                    var state = document.createElement("span");
+                    state.textContent = item.template ? "Шаблон v" + item.template.version : "Шаблона нет";
+                    meta.appendChild(state);
+                    option.appendChild(meta);
+                    list.appendChild(option);
+                });
+                list.hidden = false;
+            }
+
+            function runSearch() {
+                var query = input.value.trim();
+                hidden.value = "";
+                renderTemplate(null);
+                if (query.length < 2 || !articleType.value) {
+                    hideResults();
+                    return;
+                }
+                requestNumber += 1;
+                var currentRequest = requestNumber;
+                fetch(url + "?q=" + encodeURIComponent(query) + "&article_type=" + encodeURIComponent(articleType.value), {
+                    headers: {"X-Requested-With": "XMLHttpRequest"}
+                })
+                    .then(function (response) {
+                        if (!response.ok) {
+                            throw new Error("destination-search-failed");
+                        }
+                        return response.json();
+                    })
+                    .then(function (payload) {
+                        if (currentRequest === requestNumber) {
+                            renderResults(payload.results || []);
+                        }
+                    })
+                    .catch(function () {
+                        if (currentRequest === requestNumber) {
+                            hideResults();
+                        }
+                    });
+            }
+
+            input.addEventListener("input", function () {
+                window.clearTimeout(debounceTimer);
+                debounceTimer = window.setTimeout(runSearch, 220);
+            });
+            input.addEventListener("blur", function () {
+                window.setTimeout(hideResults, 180);
+            });
+            list.addEventListener("pointerdown", function (event) {
+                var option = event.target.closest(".journal-suggest-option");
+                if (!option) {
+                    return;
+                }
+                event.preventDefault();
+                hidden.value = option.dataset.id || "";
+                input.value = option.dataset.label || "";
+                renderTemplate(option._templatePayload || null);
+                hideResults();
+            });
+        }
+
+        function updateDestinationVisibility(resetValues) {
+            var code = selectedTypeCode();
+            var destinationKind = selectedDestinationKind();
+            journalField.hidden = destinationKind !== "journal";
+            topicField.hidden = !code || destinationKind !== "topic";
+            templateSection.hidden = !code;
+            if (resetValues) {
+                journalHidden.value = "";
+                topicHidden.value = "";
+                templateHidden.value = "";
+                if (destinationKind === "journal") {
+                    topicInput.value = "";
+                } else {
+                    journalInput.value = "";
+                }
+                renderTemplate(null);
+            }
+        }
+
+        initializeSearch(
+            journalInput,
+            journalHidden,
+            journalInput.getAttribute("data-journal-search-url"),
+            "Журнал не найден"
+        );
+        initializeSearch(
+            topicInput,
+            topicHidden,
+            topicInput.getAttribute("data-topic-search-url"),
+            "Совпадений нет — тема или событие будет создано"
+        );
+
+        articleType.addEventListener("change", function () {
+            updateDestinationVisibility(true);
         });
+        if (templateFile) {
+            templateFile.addEventListener("change", function () {
+                var file = templateFile.files && templateFile.files[0];
+                if (!file) {
+                    if (templateHidden.value) {
+                        fetchTemplateById();
+                    }
+                    return;
+                }
+                templateEmpty.hidden = true;
+                templateSelected.hidden = false;
+                templateName.textContent = file.name;
+                templateMeta.textContent = templateHidden.value
+                    ? "Новый шаблон заменит предложенный и станет последней версией."
+                    : "Новый шаблон будет сохранён для следующих пользователей.";
+                templateDownload.removeAttribute("href");
+                rulesPanel.hidden = true;
+            });
+        }
+
+        updateDestinationVisibility(false);
+        if (templateHidden.value) {
+            fetchTemplateById();
+        } else {
+            renderTemplate(null);
+        }
     }
 
     function initializeFileZone() {
@@ -440,7 +599,7 @@
     }
 
     document.addEventListener("DOMContentLoaded", function () {
-        initializeJournalSearch();
+        initializeDestinationAndTemplate();
         initializeFileZone();
         initializeCoauthors();
         initializeMetadataExtraction();

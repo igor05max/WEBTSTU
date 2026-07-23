@@ -675,6 +675,221 @@
     line-height: 1.55;
 }
 
+.workspace-page-main .submission-formatting-card {
+    margin-top: 18px;
+    padding: 22px;
+}
+
+.workspace-page-main .submission-formatting-summary {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+    gap: 16px;
+}
+
+.workspace-page-main .submission-formatting-template,
+.workspace-page-main .submission-formatting-priority {
+    padding: 17px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border: 1px solid #e2e8f2;
+    border-radius: 13px;
+    background: #f8faff;
+}
+
+.workspace-page-main .submission-formatting-label {
+    color: #7d899b;
+    font-size: 0.63rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.workspace-page-main .submission-formatting-template > strong {
+    overflow-wrap: anywhere;
+    color: #27354d;
+    font-size: 0.82rem;
+}
+
+.workspace-page-main .submission-formatting-template > span,
+.workspace-page-main .submission-formatting-template > small,
+.workspace-page-main .submission-formatting-priority > p {
+    color: #69758a;
+    font-size: 0.68rem;
+    line-height: 1.55;
+}
+
+.workspace-page-main .submission-formatting-priority ol {
+    margin: 2px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+    list-style: none;
+}
+
+.workspace-page-main .submission-formatting-priority li {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.workspace-page-main .submission-formatting-priority li > span {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    background: var(--dashboard-blue);
+    font-size: 0.62rem;
+    font-weight: 800;
+}
+
+.workspace-page-main .submission-formatting-priority li > strong {
+    color: #334159;
+    font-size: 0.7rem;
+}
+
+.workspace-page-main .submission-formatting-priority li > small {
+    color: #8a95a7;
+    font-size: 0.59rem;
+}
+
+.workspace-page-main .submission-formatting-rules {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid #e5e9f0;
+    border-radius: 12px;
+    background: #e5e9f0;
+}
+
+.workspace-page-main .submission-formatting-rules > div {
+    min-width: 0;
+    padding: 12px 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: #fff;
+}
+
+.workspace-page-main .submission-formatting-rules span {
+    color: #8390a3;
+    font-size: 0.59rem;
+    font-weight: 700;
+}
+
+.workspace-page-main .submission-formatting-rules strong {
+    overflow-wrap: anywhere;
+    color: #344159;
+    font-size: 0.68rem;
+    line-height: 1.45;
+}
+
+.workspace-page-main .submission-formatting-conflicts,
+.workspace-page-main .submission-formatting-correction {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 11px;
+}
+
+.workspace-page-main .submission-formatting-conflicts {
+    border: 1px solid #f3d49e;
+    color: #8e5a16;
+    background: #fff8ec;
+}
+
+.workspace-page-main .submission-formatting-conflicts strong {
+    font-size: 0.7rem;
+}
+
+.workspace-page-main .submission-formatting-conflicts p {
+    margin: 5px 0 0;
+    font-size: 0.65rem;
+    line-height: 1.5;
+}
+
+.workspace-page-main .submission-formatting-correction {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    border: 1px solid #b9ddc6;
+    background: #eef9f2;
+}
+
+.workspace-page-main .submission-formatting-correction strong {
+    color: #217843;
+    font-size: 0.72rem;
+}
+
+.workspace-page-main .submission-formatting-correction p {
+    margin: 4px 0 0;
+    color: #4f7460;
+    font-size: 0.65rem;
+    line-height: 1.5;
+}
+
+.workspace-page-main .submission-formatting-editor {
+    margin-top: 14px;
+    border: 1px solid #dde4ee;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.workspace-page-main .submission-formatting-editor > summary {
+    padding: 14px 16px;
+    cursor: pointer;
+    color: #344159;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.workspace-page-main .submission-formatting-editor form {
+    padding: 0 16px 16px;
+}
+
+.workspace-page-main .submission-formatting-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.workspace-page-main .submission-formatting-fields label {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    color: #68758a;
+    font-size: 0.63rem;
+    font-weight: 700;
+}
+
+.workspace-page-main .submission-formatting-fields input,
+.workspace-page-main .submission-formatting-fields textarea {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.workspace-page-main .submission-formatting-editor-actions {
+    margin-top: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.workspace-page-main .submission-formatting-editor-actions p {
+    margin: 0;
+    color: #788599;
+    font-size: 0.64rem;
+    line-height: 1.5;
+}
+
 @media (max-width: 720px) {
     .workspace-page-main .submission-check-issues {
         grid-template-columns: 1fr;
@@ -703,6 +918,18 @@
         align-items: flex-start;
         flex-direction: column;
         gap: 7px;
+    }
+
+    .workspace-page-main .submission-formatting-summary,
+    .workspace-page-main .submission-formatting-rules,
+    .workspace-page-main .submission-formatting-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .workspace-page-main .submission-formatting-correction,
+    .workspace-page-main .submission-formatting-editor-actions {
+        align-items: stretch;
+        flex-direction: column;
     }
 }
 

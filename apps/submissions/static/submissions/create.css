@@ -709,6 +709,111 @@
     stroke-linejoin: round;
 }
 
+.formatting-template-state {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 20px;
+    padding: 18px;
+    border: 1px solid #dfe5ee;
+    border-radius: 16px;
+    background: #f8fafc;
+}
+
+.formatting-template-empty strong,
+.formatting-template-selected strong,
+.formatting-template-rules > strong {
+    display: block;
+    color: #182235;
+    font-size: 0.88rem;
+}
+
+.formatting-template-empty p,
+.formatting-template-selected p {
+    margin: 5px 0 0;
+    color: #657187;
+    font-size: 0.74rem;
+    line-height: 1.55;
+}
+
+.formatting-template-selected {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.formatting-template-selected[hidden],
+.formatting-template-rules[hidden],
+[data-template-section][hidden],
+[data-destination-field][hidden] {
+    display: none !important;
+}
+
+.formatting-template-rules {
+    padding-top: 14px;
+    border-top: 1px solid #e2e7ef;
+}
+
+.formatting-template-rules [data-template-rules-list] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+    margin-top: 10px;
+}
+
+.formatting-template-rules [data-template-rules-list] > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: #fff;
+    font-size: 0.68rem;
+}
+
+.formatting-template-rules [data-template-rules-list] span {
+    color: #7a8598;
+}
+
+.formatting-template-rules [data-template-rules-list] strong {
+    color: #28354a;
+    text-align: right;
+}
+
+.formatting-check-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-radius: 13px;
+    background: #edf5ff;
+    cursor: pointer;
+}
+
+.formatting-check-toggle input {
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+}
+
+.formatting-check-toggle span,
+.formatting-check-toggle strong,
+.formatting-check-toggle small {
+    display: block;
+}
+
+.formatting-check-toggle strong {
+    color: #1d3557;
+    font-size: 0.8rem;
+}
+
+.formatting-check-toggle small {
+    margin-top: 3px;
+    color: #60728a;
+    font-size: 0.68rem;
+}
+
 @media (max-width: 920px) {
     .submission-create-header {
         align-items: flex-start;
@@ -758,6 +863,15 @@
 
     .submission-form-actions {
         bottom: 10px;
+    }
+
+    .formatting-template-selected {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .formatting-template-rules [data-template-rules-list] {
+        grid-template-columns: 1fr;
     }
 }
 

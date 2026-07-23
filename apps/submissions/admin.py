@@ -24,7 +24,9 @@ class SubmissionAdmin(admin.ModelAdmin):
         "author",
         "authors_display",
         "journal",
+        "publication_topic",
         "article_type",
+        "formatting_template",
         "direction",
         "route_template",
         "status",
@@ -41,7 +43,16 @@ class SubmissionAdmin(admin.ModelAdmin):
         "authors__first_name",
         "authors__last_name",
     )
-    autocomplete_fields = ("author", "journal", "article_type", "direction", "route_template", "current_version")
+    autocomplete_fields = (
+        "author",
+        "journal",
+        "publication_topic",
+        "article_type",
+        "formatting_template",
+        "direction",
+        "route_template",
+        "current_version",
+    )
     filter_horizontal = ("authors",)
     readonly_fields = ("created_at", "updated_at", "submitted_at", "current_workflow_run_link")
     fields = (
@@ -54,7 +65,11 @@ class SubmissionAdmin(admin.ModelAdmin):
         "author",
         "authors",
         "journal",
+        "publication_topic",
         "article_type",
+        "formatting_template",
+        "formatting_rules_snapshot",
+        "formatting_check_requested",
         "direction",
         "route_template",
         "status",

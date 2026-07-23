@@ -5,7 +5,7 @@
 
 {% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
 
-{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/detail.css' %}?v=20260719a">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/detail.css' %}?v=20260723a">{% endblock %}
 
 {% block content %}
     {% if route_review_preview_payload %}
@@ -62,8 +62,8 @@
                 </div>
             {% endif %}
             <div class="submission-meta-card">
-                <div class="submission-meta-label">Журнал</div>
-                <div class="submission-meta-value">{{ submission.journal.name }}</div>
+                <div class="submission-meta-label">{{ submission.destination_label }}</div>
+                <div class="submission-meta-value">{{ submission.destination_name|default:"Не указано" }}</div>
             </div>
             <div class="submission-meta-card">
                 <div class="submission-meta-label">Создана</div>
@@ -117,6 +117,130 @@
             </div>
         {% endif %}
 
+    </section>
+
+    <section class="surface submission-formatting-card" id="submission-formatting">
+        <div class="section-head">
+            <div>
+                <h3>Шаблон и правила оформления</h3>
+                <p>
+                    Проверка оформления рекомендательная: замечания видны автору и проверяющим,
+                    но не останавливают маршрут.
+                </p>
+            </div>
+            {% if submission.formatting_check_requested %}
+                <span class="status-pill primary">Проверка включена</span>
+            {% else %}
+                <span class="status-pill warning">Проверка пропущена</span>
+            {% endif %}
+        </div>
+
+        <div class="submission-formatting-summary">
+            <div class="submission-formatting-template">
+                <span class="submission-formatting-label">Шаблон</span>
+                {% if submission.formatting_template %}
+                    <strong>{{ submission.formatting_template.file_basename }}</strong>
+                    <span>
+                        Версия {{ submission.formatting_template.version_number }} ·
+                        {{ submission.formatting_template.get_analysis_status_display }}
+                    </span>
+                    {% if submission.formatting_template.analysis_message %}
+                        <small>{{ submission.formatting_template.analysis_message }}</small>
+                    {% endif %}
+                    <a class="submission-inline-link" href="{% url 'directory:formatting_template_download' submission.formatting_template.pk %}">
+                        Скачать исходный шаблон
+                    </a>
+                {% else %}
+                    <strong>Шаблон не приложен</strong>
+                    <span>
+                        {% if submission.journal_id %}
+                            Для новой статьи шаблон можно загрузить при создании следующей версии материала.
+                        {% else %}
+                            Тема сохранена в каталоге, а шаблон к ней сможет добавить следующий автор.
+                        {% endif %}
+                    </span>
+                {% endif %}
+            </div>
+
+            <div class="submission-formatting-priority">
+                <span class="submission-formatting-label">Приоритет правил</span>
+                {% if formatting_rule_sources %}
+                    <ol>
+                        {% for source in formatting_rule_sources %}
+                            <li>
+                                <span>{{ forloop.counter }}</span>
+                                <strong>{{ source.label }}</strong>
+                                <small>приоритет {{ source.priority }}</small>
+                            </li>
+                        {% endfor %}
+                    </ol>
+                {% else %}
+                    <p>Источники правил пока не определены.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if formatting_rule_rows %}
+            <div class="submission-formatting-rules">
+                {% for rule in formatting_rule_rows %}
+                    <div>
+                        <span>{{ rule.label }}</span>
+                        <strong>{{ rule.value }}</strong>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty">Автоматически проверяемые правила пока не извлечены.</div>
+        {% endif %}
+
+        {% if formatting_rule_conflicts %}
+            <div class="submission-formatting-conflicts">
+                <strong>Найдены пересечения требований</strong>
+                {% for conflict in formatting_rule_conflicts %}
+                    <p>{{ conflict.message }} Выбрано значение: {{ conflict.selected_value }}.</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {% if can_generate_corrected_document %}
+            <div class="submission-formatting-correction">
+                <div>
+                    <strong>Можно создать исправленную копию DOCX</strong>
+                    <p>
+                        Система изменит только поля, шрифт, интервалы и абзацные параметры.
+                        Научный смысл, факты, выводы и ссылки не дописываются.
+                    </p>
+                </div>
+                <a class="button" href="{% url 'submissions:corrected_document_download' submission.pk %}">
+                    Скачать исправленный DOCX
+                </a>
+            </div>
+        {% endif %}
+
+        {% if can_edit_formatting_rules and formatting_rules_form %}
+            <details class="submission-formatting-editor">
+                <summary>Уточнить правила для этой работы</summary>
+                <form method="post" action="{% url 'submissions:update_formatting_rules' submission.pk %}">
+                    {% csrf_token %}
+                    {{ formatting_rules_form.non_field_errors }}
+                    <div class="submission-formatting-fields">
+                        {% for field in formatting_rules_form %}
+                            <label>
+                                <span>{{ field.label }}</span>
+                                {{ field.errors }}
+                                {{ field }}
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="submission-formatting-editor-actions">
+                        <p>
+                            Ручное уточнение имеет самый высокий приоритет и повторно запускает проверки.
+                        </p>
+                        <button class="button" type="submit">Сохранить и перепроверить</button>
+                    </div>
+                </form>
+            </details>
+        {% endif %}
     </section>
 
     <section class="surface submission-route-card" id="submission-route" aria-labelledby="submission-route-title">
@@ -356,10 +480,10 @@
                                     <div class="submission-check-issues">
                                         {% for issue in entry.issues %}
                                             <article class="submission-check-issue is-{{ issue.severity }}">
-                                                <div class="submission-check-issue-head">
-                                                    <strong>{{ issue.title }}</strong>
-                                                    <span>{{ issue.severity }}</span>
-                                                </div>
+                                                 <div class="submission-check-issue-head">
+                                                     <strong>{{ issue.title }}</strong>
+                                                     <span>{{ issue.severity }}{% if issue.fixable %} · можно исправить{% endif %}</span>
+                                                 </div>
                                                 <p>{{ issue.message }}</p>
                                                 {% if issue.location %}<small>{{ issue.location }}</small>{% endif %}
                                                 {% if issue.context %}

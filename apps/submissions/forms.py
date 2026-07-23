@@ -5,8 +5,17 @@ from django.conf import settings
 from django.urls import reverse
 
 from apps.accounts.models import User
+from apps.directory.formatting_templates import (
+    TEMPLATE_EXTENSIONS,
+    get_latest_formatting_template,
+)
 from apps.directory.journal_search import resolve_journal_query
-from apps.directory.models import Direction, Journal
+from apps.directory.models import (
+    Direction,
+    FormattingTemplate,
+    Journal,
+    PublicationTopic,
+)
 from apps.submissions.models import Submission
 from apps.submissions.document_analysis import SUPPORTED_EXTENSIONS
 from apps.submissions.route_suggestions import (
@@ -14,6 +23,11 @@ from apps.submissions.route_suggestions import (
     get_selectable_route_templates_queryset,
 )
 from apps.workflow.models import RouteTemplate
+
+
+def _is_article_type(article_type):
+    code = str(getattr(article_type, "code", "") or "").casefold()
+    return code == "article" or code.endswith("-article") or code.startswith("article-")
 
 
 class DirectionAwareRouteTemplateSelect(forms.Select):
@@ -36,6 +50,18 @@ class UserChoiceSelectMultiple(forms.SelectMultiple):
         return option
 
 
+class ArticleTypeSelect(forms.Select):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        instance = getattr(value, "instance", None)
+        if instance is not None:
+            option["attrs"]["data-code"] = instance.code
+            option["attrs"]["data-destination-kind"] = (
+                "journal" if _is_article_type(instance) else "topic"
+            )
+        return option
+
+
 class RouteTemplateChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
         if obj.direction_id is None:
@@ -51,6 +77,7 @@ class SubmissionCreateForm(forms.ModelForm):
     )
     journal_query = forms.CharField(
         label="Журнал",
+        required=False,
         help_text="Введите название журнала или ISSN из белого списка.",
         widget=forms.TextInput(
             attrs={
@@ -58,6 +85,38 @@ class SubmissionCreateForm(forms.ModelForm):
                 "placeholder": "Например: 2053-1583 или 2D MATERIALS",
             }
         ),
+    )
+    publication_topic = forms.ModelChoiceField(
+        queryset=PublicationTopic.objects.none(),
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    publication_topic_query = forms.CharField(
+        label="Тема или событие",
+        required=False,
+        help_text="Начните вводить название конференции, темы или другого события.",
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "off",
+                "placeholder": "Например: Информационные технологии 2027",
+            }
+        ),
+    )
+    formatting_template = forms.ModelChoiceField(
+        queryset=FormattingTemplate.objects.none(),
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    formatting_template_file = forms.FileField(
+        label="Шаблон оформления",
+        required=False,
+        help_text="Можно загрузить DOCX, DOC, PDF, текстовый файл или изображение.",
+    )
+    formatting_check_requested = forms.BooleanField(
+        label="Проверить оформление по шаблону",
+        required=False,
+        initial=True,
+        help_text="Проверка необязательна и не блокирует отправку.",
     )
     file = forms.FileField(label="Файл материала")
     co_authors = forms.ModelMultipleChoiceField(
@@ -84,12 +143,38 @@ class SubmissionCreateForm(forms.ModelForm):
         if current_user is not None and getattr(current_user, "id", None):
             queryset = queryset.exclude(pk=current_user.id)
         self.fields["co_authors"].queryset = queryset
-        self.fields["article_type"].empty_label = "Выберите тип материала"
+        article_type_field = self.fields["article_type"]
+        article_type_field.empty_label = "Выберите тип материала"
+        article_type_widget = ArticleTypeSelect(
+            attrs={
+                **article_type_field.widget.attrs,
+                "data-field-role": "article-type",
+            }
+        )
+        article_type_widget.choices = article_type_field.choices
+        article_type_field.widget = article_type_widget
         self.fields["journal"].queryset = Journal.objects.filter(is_active=True)
+        self.fields["publication_topic"].queryset = PublicationTopic.objects.filter(
+            is_active=True,
+            merged_into__isnull=True,
+        )
+        self.fields["formatting_template"].queryset = FormattingTemplate.objects.all()
         self.fields["journal_query"].widget.attrs["data-journal-search-url"] = reverse("directory:journal_search")
+        self.fields["publication_topic_query"].widget.attrs["data-topic-search-url"] = reverse(
+            "directory:publication_topic_search"
+        )
+        self.fields["formatting_template"].widget.attrs["data-template-detail-url"] = reverse(
+            "directory:formatting_template_detail",
+            args=[0],
+        ).replace("/0/", "/{id}/")
+        self.fields["formatting_template_file"].widget.attrs["accept"] = ",".join(
+            sorted(TEMPLATE_EXTENSIONS)
+        )
         self.fields["file"].widget.attrs["data-metadata-extract-url"] = reverse(
             "submissions:extract_metadata"
         )
+        self.fields["title"].required = False
+        self.fields["abstract"].required = False
 
     def clean_file(self):
         uploaded_file = self.cleaned_data.get("file")
@@ -106,25 +191,96 @@ class SubmissionCreateForm(forms.ModelForm):
             )
         return uploaded_file
 
+    def clean_formatting_template_file(self):
+        uploaded_file = self.cleaned_data.get("formatting_template_file")
+        if uploaded_file is None:
+            return uploaded_file
+        suffix = Path(uploaded_file.name).suffix.casefold()
+        if suffix not in TEMPLATE_EXTENSIONS:
+            allowed = ", ".join(sorted(value.lstrip(".").upper() for value in TEMPLATE_EXTENSIONS))
+            raise forms.ValidationError(f"Формат шаблона не поддерживается. Разрешены: {allowed}.")
+        maximum_size = int(getattr(settings, "SUBMISSION_FILE_MAX_SIZE", 50 * 1024 * 1024))
+        if uploaded_file.size > maximum_size:
+            raise forms.ValidationError(
+                f"Размер шаблона превышает {round(maximum_size / 1024 / 1024)} МБ."
+            )
+        return uploaded_file
+
     def clean(self):
         cleaned_data = super().clean()
+        article_type = cleaned_data.get("article_type")
+        if article_type is None:
+            return cleaned_data
+
         journal = cleaned_data.get("journal")
         journal_query = (cleaned_data.get("journal_query") or "").strip()
+        publication_topic = cleaned_data.get("publication_topic")
+        topic_query = (cleaned_data.get("publication_topic_query") or "").strip()
+        selected_template = cleaned_data.get("formatting_template")
+        uploaded_template = cleaned_data.get("formatting_template_file")
 
-        if journal is not None:
+        if _is_article_type(article_type):
+            cleaned_data["publication_topic"] = None
+            cleaned_data["publication_topic_query"] = ""
+            if journal is None:
+                journal = resolve_journal_query(journal_query)
+            if journal is None:
+                self.add_error(
+                    "journal_query",
+                    "Журнал не найден. Введите точный ISSN или выберите журнал из подсказок.",
+                )
+                return cleaned_data
+            cleaned_data["journal"] = journal
             cleaned_data["journal_query"] = journal.name
-            return cleaned_data
-
-        journal = resolve_journal_query(journal_query)
-        if journal is None:
-            self.add_error(
-                "journal_query",
-                "Журнал не найден. Введите точный ISSN или выберите журнал из подсказок.",
+            latest_template = get_latest_formatting_template(
+                article_type=article_type,
+                journal=journal,
             )
+            if selected_template is None:
+                selected_template = latest_template
+                cleaned_data["formatting_template"] = selected_template
+            if uploaded_template is None and selected_template is None:
+                self.add_error(
+                    "formatting_template_file",
+                    "Для этого журнала ещё нет шаблона. Загрузите его перед отправкой статьи.",
+                )
+                return cleaned_data
+            if selected_template is not None and (
+                selected_template.journal_id != journal.id
+                or selected_template.article_type_id != article_type.id
+            ):
+                self.add_error("formatting_template", "Выбранный шаблон не относится к этому журналу.")
             return cleaned_data
 
-        cleaned_data["journal"] = journal
-        cleaned_data["journal_query"] = journal.name
+        cleaned_data["journal"] = None
+        cleaned_data["journal_query"] = ""
+        if publication_topic is not None:
+            topic_query = publication_topic.name
+        if not topic_query:
+            self.add_error("publication_topic_query", "Укажите тему или название события.")
+            return cleaned_data
+        cleaned_data["publication_topic_query"] = topic_query
+        if publication_topic is not None:
+            latest_template = get_latest_formatting_template(
+                article_type=article_type,
+                publication_topic=publication_topic,
+            )
+            if selected_template is None:
+                selected_template = latest_template
+                cleaned_data["formatting_template"] = selected_template
+            if selected_template is not None and (
+                selected_template.publication_topic_id != publication_topic.id
+                or selected_template.article_type_id != article_type.id
+            ):
+                self.add_error(
+                    "formatting_template",
+                    "Выбранный шаблон не относится к этой теме или событию.",
+                )
+        elif selected_template is not None:
+            self.add_error(
+                "formatting_template",
+                "Сначала выберите существующую тему или загрузите новый шаблон.",
+            )
         return cleaned_data
 
     class Meta:
@@ -138,7 +294,11 @@ class SubmissionCreateForm(forms.ModelForm):
             "keywords",
             "journal_query",
             "journal",
+            "publication_topic_query",
+            "publication_topic",
             "article_type",
+            "formatting_template",
+            "formatting_check_requested",
         )
         widgets = {
             "title": forms.TextInput(attrs={"placeholder": "Введите название материала"}),
@@ -170,6 +330,185 @@ class SubmissionCreateForm(forms.ModelForm):
                 }
             ),
         }
+
+
+class FormattingRulesForm(forms.Form):
+    font_family = forms.CharField(label="Основной шрифт", required=False)
+    font_size_pt = forms.DecimalField(
+        label="Размер шрифта, пт",
+        required=False,
+        min_value=6,
+        max_value=36,
+        decimal_places=1,
+    )
+    line_spacing = forms.DecimalField(
+        label="Межстрочный интервал",
+        required=False,
+        min_value=0.8,
+        max_value=4,
+        decimal_places=2,
+    )
+    first_line_indent_cm = forms.DecimalField(
+        label="Абзацный отступ, см",
+        required=False,
+        min_value=0,
+        max_value=5,
+        decimal_places=2,
+    )
+    margin_top_cm = forms.DecimalField(label="Верхнее поле, см", required=False, min_value=0, max_value=10)
+    margin_right_cm = forms.DecimalField(label="Правое поле, см", required=False, min_value=0, max_value=10)
+    margin_bottom_cm = forms.DecimalField(label="Нижнее поле, см", required=False, min_value=0, max_value=10)
+    margin_left_cm = forms.DecimalField(label="Левое поле, см", required=False, min_value=0, max_value=10)
+    min_words = forms.IntegerField(label="Минимум слов", required=False, min_value=0)
+    max_words = forms.IntegerField(label="Максимум слов", required=False, min_value=1)
+    required_sections = forms.CharField(
+        label="Обязательные разделы",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "По одному разделу на строке"}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        minimum = cleaned_data.get("min_words")
+        maximum = cleaned_data.get("max_words")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            self.add_error("max_words", "Максимум слов не может быть меньше минимума.")
+        return cleaned_data
+
+    @classmethod
+    def from_snapshot(cls, snapshot, *args, **kwargs):
+        effective = (snapshot or {}).get("effective") or {}
+        body = effective.get("body") or {}
+        page = effective.get("page") or {}
+        margins = page.get("margins_cm") or {}
+        limits = effective.get("limits") or {}
+        structure = effective.get("structure") or {}
+        kwargs.setdefault(
+            "initial",
+            {
+                "font_family": body.get("font_family") or "",
+                "font_size_pt": body.get("font_size_pt"),
+                "line_spacing": body.get("line_spacing"),
+                "first_line_indent_cm": body.get("first_line_indent_cm"),
+                "margin_top_cm": margins.get("top"),
+                "margin_right_cm": margins.get("right"),
+                "margin_bottom_cm": margins.get("bottom"),
+                "margin_left_cm": margins.get("left"),
+                "min_words": limits.get("min_words"),
+                "max_words": limits.get("max_words"),
+                "required_sections": "\n".join(structure.get("required_sections") or []),
+            },
+        )
+        return cls(*args, **kwargs)
+
+    def apply_to_snapshot(self, snapshot):
+        previous_effective = (snapshot or {}).get("effective") or {}
+        updated = {
+            **(snapshot or {}),
+            "effective": {
+                **previous_effective,
+            },
+        }
+        effective = updated["effective"]
+        effective["body"] = {
+            **(effective.get("body") or {}),
+            "font_family": self.cleaned_data.get("font_family") or "",
+            "font_size_pt": float(self.cleaned_data["font_size_pt"]) if self.cleaned_data.get("font_size_pt") is not None else None,
+            "line_spacing": float(self.cleaned_data["line_spacing"]) if self.cleaned_data.get("line_spacing") is not None else None,
+            "first_line_indent_cm": float(self.cleaned_data["first_line_indent_cm"]) if self.cleaned_data.get("first_line_indent_cm") is not None else None,
+        }
+        effective["page"] = {
+            **(effective.get("page") or {}),
+            "margins_cm": {
+                "top": float(self.cleaned_data["margin_top_cm"]) if self.cleaned_data.get("margin_top_cm") is not None else None,
+                "right": float(self.cleaned_data["margin_right_cm"]) if self.cleaned_data.get("margin_right_cm") is not None else None,
+                "bottom": float(self.cleaned_data["margin_bottom_cm"]) if self.cleaned_data.get("margin_bottom_cm") is not None else None,
+                "left": float(self.cleaned_data["margin_left_cm"]) if self.cleaned_data.get("margin_left_cm") is not None else None,
+            },
+        }
+        effective["limits"] = {
+            **(effective.get("limits") or {}),
+            "min_words": self.cleaned_data.get("min_words"),
+            "max_words": self.cleaned_data.get("max_words"),
+        }
+        effective["structure"] = {
+            **(effective.get("structure") or {}),
+            "required_sections": [
+                value.strip()
+                for value in (self.cleaned_data.get("required_sections") or "").splitlines()
+                if value.strip()
+            ],
+        }
+        sources = [
+            source
+            for source in (updated.get("sources") or [])
+            if source.get("kind") != "manual"
+        ]
+        sources.append({"kind": "manual", "label": "Уточнено автором для этой работы", "priority": 40})
+        updated["sources"] = sources
+
+        previous_values = {
+            "body.font_family": (previous_effective.get("body") or {}).get("font_family"),
+            "body.font_size_pt": (previous_effective.get("body") or {}).get("font_size_pt"),
+            "body.line_spacing": (previous_effective.get("body") or {}).get("line_spacing"),
+            "body.first_line_indent_cm": (previous_effective.get("body") or {}).get(
+                "first_line_indent_cm"
+            ),
+            "page.margins_cm.top": (
+                (previous_effective.get("page") or {}).get("margins_cm") or {}
+            ).get("top"),
+            "page.margins_cm.right": (
+                (previous_effective.get("page") or {}).get("margins_cm") or {}
+            ).get("right"),
+            "page.margins_cm.bottom": (
+                (previous_effective.get("page") or {}).get("margins_cm") or {}
+            ).get("bottom"),
+            "page.margins_cm.left": (
+                (previous_effective.get("page") or {}).get("margins_cm") or {}
+            ).get("left"),
+            "limits.min_words": (previous_effective.get("limits") or {}).get("min_words"),
+            "limits.max_words": (previous_effective.get("limits") or {}).get("max_words"),
+            "structure.required_sections": (
+                previous_effective.get("structure") or {}
+            ).get("required_sections")
+            or [],
+        }
+        selected_values = {
+            "body.font_family": effective["body"]["font_family"],
+            "body.font_size_pt": effective["body"]["font_size_pt"],
+            "body.line_spacing": effective["body"]["line_spacing"],
+            "body.first_line_indent_cm": effective["body"]["first_line_indent_cm"],
+            "page.margins_cm.top": effective["page"]["margins_cm"]["top"],
+            "page.margins_cm.right": effective["page"]["margins_cm"]["right"],
+            "page.margins_cm.bottom": effective["page"]["margins_cm"]["bottom"],
+            "page.margins_cm.left": effective["page"]["margins_cm"]["left"],
+            "limits.min_words": effective["limits"]["min_words"],
+            "limits.max_words": effective["limits"]["max_words"],
+            "structure.required_sections": effective["structure"]["required_sections"],
+        }
+        conflicts = [
+            conflict
+            for conflict in (updated.get("conflicts") or [])
+            if conflict.get("source") != "manual_override"
+        ]
+        for field_name, selected_value in selected_values.items():
+            previous_value = previous_values.get(field_name)
+            if previous_value == selected_value:
+                continue
+            conflicts.append(
+                {
+                    "field": field_name,
+                    "lower_value": previous_value,
+                    "selected_value": selected_value,
+                    "source": "manual_override",
+                    "message": (
+                        "Ручное уточнение автора имеет приоритет над ранее "
+                        "извлечённым требованием."
+                    ),
+                }
+            )
+        updated["conflicts"] = conflicts
+        return updated
 
 
 class SubmissionVersionUploadForm(forms.Form):

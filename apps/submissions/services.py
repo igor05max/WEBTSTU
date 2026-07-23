@@ -58,6 +58,10 @@ def create_submission_with_initial_version(
     journal,
     article_type,
     file,
+    publication_topic=None,
+    formatting_template=None,
+    formatting_rules_snapshot=None,
+    formatting_check_requested=True,
     comment="",
     co_authors=None,
     document_authors="",
@@ -66,7 +70,7 @@ def create_submission_with_initial_version(
     keywords="",
 ):
     submission = Submission.objects.create(
-        title=title,
+        title=title or "Без названия",
         abstract=abstract,
         document_authors=document_authors or "",
         organizations=organizations or "",
@@ -74,7 +78,11 @@ def create_submission_with_initial_version(
         keywords=keywords or "",
         author=author,
         journal=journal,
+        publication_topic=publication_topic,
         article_type=article_type,
+        formatting_template=formatting_template,
+        formatting_rules_snapshot=formatting_rules_snapshot or {},
+        formatting_check_requested=bool(formatting_check_requested),
         status=SubmissionStatus.DRAFT,
     )
     author_ids = {author.id}
@@ -94,6 +102,9 @@ def create_submission_with_initial_version(
     )
     submission.current_version = version
     submission.save(update_fields=["current_version", "updated_at"])
+    if publication_topic is not None:
+        publication_topic.last_used_at = timezone.now()
+        publication_topic.save(update_fields=["last_used_at", "updated_at"])
     from apps.checks.services import queue_submission_checks
 
     queue_submission_checks(submission)

@@ -13,6 +13,7 @@ from apps.checks.document_checks import (
     build_file_safety_report,
     build_snapshot,
 )
+from apps.checks.formatting_compliance import build_formatting_compliance_report
 from apps.checks.recommendations import recommend_articles
 from apps.submissions.route_suggestions import ensure_submission_route_suggestion, get_selectable_directions_queryset
 from apps.submissions.models import Submission, SubmissionStatus
@@ -42,6 +43,14 @@ DEFAULT_CHECK_DEFINITIONS = (
         "order": 30,
         "is_blocking": False,
         "backend_code": "file_safety",
+    },
+    {
+        "code": "formatting_compliance",
+        "name": "Оформление по шаблону",
+        "description": "Сравнивает документ с выбранным шаблоном журнала, темы или события.",
+        "order": 25,
+        "is_blocking": False,
+        "backend_code": "formatting_compliance",
     },
     {
         "code": "subject_area_detection",
@@ -104,6 +113,9 @@ def _evaluate_check(check_definition, submission, version, *, snapshot=None):
 
     if check_definition.code == "file_uploaded":
         return build_file_safety_report(submission, version, snapshot=snapshot)
+
+    if check_definition.code == "formatting_compliance":
+        return build_formatting_compliance_report(submission, version)
 
     if check_definition.code == "metadata_complete":
         return build_document_quality_report(submission, version, snapshot=snapshot)

@@ -13,10 +13,18 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from apps.accounts.roles import CHAIR_HEAD_ROLE_NAME, ensure_chair_head_role_for_org_unit
+from apps.checks.formatting_compliance import build_formatting_compliance_report
 from apps.checks.models import CheckRunStatus
-from apps.directory.models import ArticleType, Direction, Journal, OrgUnit
+from apps.directory.models import (
+    ArticleType,
+    Direction,
+    FormattingTemplate,
+    Journal,
+    OrgUnit,
+)
 from apps.directory.journal_search import build_journal_search_index
 from apps.submissions.forms import SubmissionCreateForm, SubmissionSubmitForm
+from apps.submissions.formatting_correction import build_corrected_docx
 from apps.submissions.document_preview import _build_word_document_pdf_with_libreoffice
 from apps.submissions.models import Submission, SubmissionAppealStatus, SubmissionStatus, SubmissionVersion
 from apps.submissions.subject_area import detect_direction_for_submission
@@ -492,6 +500,8 @@ class SubmissionRouteSelectionTests(TestCase):
     SUBMISSION_SELECTABLE_ROUTE_TEMPLATE_IDS=(),
     SUBMISSION_ROUTE_SUGGESTION_ENABLED=False,
     SUBMISSION_CHECKS_ASYNC=False,
+    AI_PROVIDER="gemini",
+    GEMINI_API_KEY="",
 )
 class SubmissionCreateViewTests(TestCase):
     def setUp(self):
@@ -537,7 +547,13 @@ class SubmissionCreateViewTests(TestCase):
                 "journal_query": "20531583",
                 "article_type": self.article_type.id,
             },
-            files={"file": SimpleUploadedFile("article.txt", b"content")},
+            files={
+                "file": SimpleUploadedFile("article.txt", b"content"),
+                "formatting_template_file": SimpleUploadedFile(
+                    "requirements.txt",
+                    b"Formatting requirements",
+                ),
+            },
             current_user=self.user,
         )
 
@@ -557,7 +573,13 @@ class SubmissionCreateViewTests(TestCase):
                 "journal_query": "2D MATERIALS (2053-1583)",
                 "article_type": self.article_type.id,
             },
-            files={"file": SimpleUploadedFile("article.txt", b"content")},
+            files={
+                "file": SimpleUploadedFile("article.txt", b"content"),
+                "formatting_template_file": SimpleUploadedFile(
+                    "requirements.txt",
+                    b"Formatting requirements",
+                ),
+            },
             current_user=self.user,
         )
 
@@ -586,7 +608,7 @@ class SubmissionCreateViewTests(TestCase):
         submission.refresh_from_db()
 
         self.assertEqual(submission.status, SubmissionStatus.SUBMITTED)
-        self.assertEqual(submission.check_runs.count(), 5)
+        self.assertEqual(submission.check_runs.count(), 6)
         self.assertTrue(
             submission.check_runs.filter(
                 check_definition__code="article_recommendations",
@@ -636,7 +658,7 @@ class SubmissionCreateViewTests(TestCase):
         self.assertEqual(version.version_number, 2)
         self.assertEqual(submission.current_version_id, version.id)
         self.assertEqual(submission.status, SubmissionStatus.SUBMITTED)
-        self.assertEqual(submission.check_runs.filter(version=version).count(), 5)
+        self.assertEqual(submission.check_runs.filter(version=version).count(), 6)
 
     def test_upload_new_version_after_revision_request_auto_returns_to_review(self):
         reviewer_group = Group.objects.create(name="Проверяющий доработки")
@@ -1142,7 +1164,7 @@ class SubmissionAsyncCheckQueueTests(TestCase):
         )
 
         self.assertEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
-        self.assertEqual(len(current_version_runs), 5)
+        self.assertEqual(len(current_version_runs), 6)
         self.assertTrue(all(run.status == CheckRunStatus.PENDING for run in current_version_runs))
         mocked_launch.assert_called_once_with(submission.id, submission.current_version_id, False)
 
@@ -1662,6 +1684,146 @@ class SubmissionVersionPreviewTests(TestCase):
 
         self.assertEqual(preview_response.status_code, 404)
         self.assertEqual(content_response.status_code, 404)
+
+
+@override_settings(
+    SUBMISSION_ROUTE_SUGGESTION_ENABLED=False,
+    SUBMISSION_CHECKS_ASYNC=False,
+)
+class SubmissionFormattingTemplateTests(TestCase):
+    def setUp(self):
+        self.media_dir = TemporaryDirectory()
+        self.settings_override = override_settings(MEDIA_ROOT=self.media_dir.name)
+        self.settings_override.enable()
+        self.user = get_user_model().objects.create_user(
+            username="formatting_author",
+            password="1234",
+        )
+        self.journal = Journal.objects.create(name="Журнал с требованиями")
+        self.article_type = ArticleType.objects.create(code="article", name="Статья")
+        self.theses_type = ArticleType.objects.create(code="theses", name="Тезисы")
+
+    def tearDown(self):
+        self.settings_override.disable()
+        self.media_dir.cleanup()
+
+    @staticmethod
+    def _docx_bytes():
+        from docx import Document
+        from docx.shared import Cm, Pt
+
+        document = Document()
+        for section in document.sections:
+            section.top_margin = Cm(1)
+            section.right_margin = Cm(1)
+            section.bottom_margin = Cm(1)
+            section.left_margin = Cm(1)
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.line_spacing = 1
+        paragraph.paragraph_format.first_line_indent = Cm(0.5)
+        run = paragraph.add_run("Исходный научный текст без изменения содержания.")
+        run.font.name = "Arial"
+        run.font.size = Pt(10)
+        output = BytesIO()
+        document.save(output)
+        return output.getvalue()
+
+    def test_article_requires_template_when_journal_has_none(self):
+        form = SubmissionCreateForm(
+            data={
+                "journal_query": self.journal.name,
+                "article_type": self.article_type.pk,
+            },
+            files={"file": SimpleUploadedFile("article.txt", b"content")},
+            current_user=self.user,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("formatting_template_file", form.errors)
+
+    def test_theses_allow_new_topic_without_template_or_optional_metadata(self):
+        form = SubmissionCreateForm(
+            data={
+                "publication_topic_query": "Конференция молодых учёных 2027",
+                "article_type": self.theses_type.pk,
+            },
+            files={"file": SimpleUploadedFile("theses.txt", b"content")},
+            current_user=self.user,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(
+            form.cleaned_data["publication_topic_query"],
+            "Конференция молодых учёных 2027",
+        )
+        self.assertIsNone(form.cleaned_data["formatting_template"])
+
+    def test_report_finds_fixable_docx_violations_and_correction_preserves_text(self):
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("template.txt", b"requirements"),
+            uploaded_by=self.user,
+            extracted_rules={
+                "page": {
+                    "orientation": "portrait",
+                    "margins_cm": {"top": 2, "right": 2, "bottom": 2, "left": 2},
+                },
+                "body": {
+                    "font_family": "Times New Roman",
+                    "font_size_pt": 14,
+                    "line_spacing": 1.5,
+                    "first_line_indent_cm": 1.25,
+                    "alignment": "justify",
+                },
+            },
+        )
+        snapshot = {
+            "effective": template.extracted_rules,
+            "sources": [
+                {
+                    "kind": "uploaded_template",
+                    "label": "Журнал с требованиями, шаблон v1",
+                    "priority": 30,
+                }
+            ],
+            "conflicts": [],
+        }
+        submission = Submission.objects.create(
+            title="Проверка оформления",
+            author=self.user,
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            formatting_rules_snapshot=snapshot,
+            formatting_check_requested=True,
+        )
+        version = SubmissionVersion.objects.create(
+            submission=submission,
+            version_number=1,
+            file=SimpleUploadedFile("article.docx", self._docx_bytes()),
+            uploaded_by=self.user,
+        )
+        submission.current_version = version
+        submission.save(update_fields=["current_version", "updated_at"])
+
+        _passed, report = build_formatting_compliance_report(submission, version)
+        corrected_bytes, changes = build_corrected_docx(submission)
+
+        self.assertTrue(any(issue["fixable"] for issue in report["issues"]))
+        self.assertTrue(changes)
+
+        from docx import Document
+
+        corrected = Document(BytesIO(corrected_bytes))
+        self.assertEqual(
+            "\n".join(paragraph.text for paragraph in corrected.paragraphs).strip(),
+            "Исходный научный текст без изменения содержания.",
+        )
+        self.assertAlmostEqual(corrected.sections[0].top_margin.cm, 2, places=1)
+        corrected_run = corrected.paragraphs[0].runs[0]
+        self.assertEqual(corrected_run.font.name, "Times New Roman")
+        self.assertAlmostEqual(corrected_run.font.size.pt, 14, places=1)
 
 
 class WordConversionEnvironmentTests(SimpleTestCase):

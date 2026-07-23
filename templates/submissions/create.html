@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
-    <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20260719a">
+    <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20260723a">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
 </head>
 <body>
@@ -22,7 +22,7 @@
             <div>
                 <a class="submission-back-link" href="{% url 'submissions:list' %}">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>
-                    Мои статьи
+                    Мои материалы
                 </a>
                 <span class="submission-create-kicker">Новый материал</span>
                 <h1>Загрузить материал</h1>
@@ -39,6 +39,8 @@
         <form class="submission-create-form" method="post" enctype="multipart/form-data" novalidate>
             {% csrf_token %}
             {{ form.journal }}
+            {{ form.publication_topic }}
+            {{ form.formatting_template }}
 
             {% if form.non_field_errors %}
                 <div class="submission-form-alert" role="alert">{{ form.non_field_errors }}</div>
@@ -54,19 +56,25 @@
                 </div>
 
                 <div class="submission-fields-grid">
+                    <div class="submission-field submission-field-wide{% if form.article_type.errors %} has-error{% endif %}">
+                        <label for="{{ form.article_type.id_for_label }}">{{ form.article_type.label }} <span aria-hidden="true">*</span></label>
+                        {{ form.article_type }}
+                        {% if form.article_type.errors %}<div class="submission-field-errors">{{ form.article_type.errors }}</div>{% else %}<small>Сначала выберите тип: от него зависит журнал либо тема/событие.</small>{% endif %}
+                    </div>
+
                     <div class="submission-field{% if form.title.errors %} has-error{% endif %}">
-                        <label for="{{ form.title.id_for_label }}">{{ form.title.label }} <span aria-hidden="true">*</span></label>
+                        <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
                         {{ form.title }}
-                        {% if form.title.errors %}<div class="submission-field-errors">{{ form.title.errors }}</div>{% else %}<small>Укажите полное название материала.</small>{% endif %}
+                        {% if form.title.errors %}<div class="submission-field-errors">{{ form.title.errors }}</div>{% else %}<small>Необязательно: система попробует распознать название из файла.</small>{% endif %}
                     </div>
 
                     <div class="submission-field submission-field-abstract{% if form.abstract.errors %} has-error{% endif %}">
-                        <label for="{{ form.abstract.id_for_label }}">{{ form.abstract.label }} <span aria-hidden="true">*</span></label>
+                        <label for="{{ form.abstract.id_for_label }}">{{ form.abstract.label }}</label>
                         {{ form.abstract }}
-                        {% if form.abstract.errors %}<div class="submission-field-errors">{{ form.abstract.errors }}</div>{% else %}<small>Кратко опишите содержание и цель работы.</small>{% endif %}
+                        {% if form.abstract.errors %}<div class="submission-field-errors">{{ form.abstract.errors }}</div>{% else %}<small>Необязательно: аннотация также распознаётся из документа.</small>{% endif %}
                     </div>
 
-                    <div class="submission-field submission-field-wide submission-journal-field{% if form.journal_query.errors %} has-error{% endif %}">
+                    <div class="submission-field submission-field-wide submission-journal-field{% if form.journal_query.errors %} has-error{% endif %}" data-destination-field="journal" hidden>
                         <label for="{{ form.journal_query.id_for_label }}">{{ form.journal_query.label }} <span aria-hidden="true">*</span></label>
                         <div class="submission-input-with-icon">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
@@ -75,17 +83,64 @@
                         {% if form.journal_query.errors %}<div class="submission-field-errors">{{ form.journal_query.errors }}</div>{% else %}<small>{{ form.journal_query.help_text }}</small>{% endif %}
                     </div>
 
-                    <div class="submission-field submission-field-wide{% if form.article_type.errors %} has-error{% endif %}">
-                        <label for="{{ form.article_type.id_for_label }}">{{ form.article_type.label }} <span aria-hidden="true">*</span></label>
-                        {{ form.article_type }}
-                        {% if form.article_type.errors %}<div class="submission-field-errors">{{ form.article_type.errors }}</div>{% else %}<small>Тип материала влияет на доступные маршруты согласования.</small>{% endif %}
+                    <div class="submission-field submission-field-wide submission-topic-field{% if form.publication_topic_query.errors %} has-error{% endif %}" data-destination-field="topic" hidden>
+                        <label for="{{ form.publication_topic_query.id_for_label }}">{{ form.publication_topic_query.label }} <span aria-hidden="true">*</span></label>
+                        <div class="submission-input-with-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
+                            {{ form.publication_topic_query }}
+                        </div>
+                        {% if form.publication_topic_query.errors %}<div class="submission-field-errors">{{ form.publication_topic_query.errors }}</div>{% else %}<small>{{ form.publication_topic_query.help_text }} Если совпадений нет, запись создастся автоматически.</small>{% endif %}
                     </div>
                 </div>
             </section>
 
-            <section class="submission-form-card" aria-labelledby="material-file-title">
+            <section class="submission-form-card" aria-labelledby="formatting-template-title" data-template-section hidden>
                 <div class="submission-section-heading">
                     <span class="submission-section-number">02</span>
+                    <div>
+                        <h2 id="formatting-template-title">Шаблон и правила оформления</h2>
+                        <p>Система предложит последний шаблон. Его можно посмотреть или заменить новой версией.</p>
+                    </div>
+                </div>
+
+                <div class="formatting-template-state" data-template-state>
+                    <div class="formatting-template-empty" data-template-empty>
+                        <strong>Шаблон пока не выбран</strong>
+                        <p data-template-empty-text>Выберите журнал либо тему/событие.</p>
+                    </div>
+                    <div class="formatting-template-selected" data-template-selected hidden>
+                        <div>
+                            <span class="submission-mini-tag primary">Последняя версия</span>
+                            <strong data-template-name>Шаблон оформления</strong>
+                            <p data-template-meta></p>
+                        </div>
+                        <a class="button secondary" data-template-download href="#" target="_blank" rel="noreferrer">Посмотреть шаблон</a>
+                    </div>
+                    <div class="formatting-template-rules" data-template-rules hidden>
+                        <strong>Извлечённые правила</strong>
+                        <div data-template-rules-list></div>
+                        <small>После создания заявки правила можно уточнить вручную.</small>
+                    </div>
+                </div>
+
+                <div class="submission-field{% if form.formatting_template_file.errors %} has-error{% endif %}">
+                    <label for="{{ form.formatting_template_file.id_for_label }}">{{ form.formatting_template_file.label }}</label>
+                    {{ form.formatting_template_file }}
+                    {% if form.formatting_template_file.errors %}<div class="submission-field-errors">{{ form.formatting_template_file.errors }}</div>{% else %}<small>{{ form.formatting_template_file.help_text }} Новый файл станет последней версией, прежние версии сохранятся.</small>{% endif %}
+                </div>
+
+                <label class="formatting-check-toggle" for="{{ form.formatting_check_requested.id_for_label }}">
+                    {{ form.formatting_check_requested }}
+                    <span>
+                        <strong>{{ form.formatting_check_requested.label }}</strong>
+                        <small>{{ form.formatting_check_requested.help_text }}</small>
+                    </span>
+                </label>
+            </section>
+
+            <section class="submission-form-card" aria-labelledby="material-file-title">
+                <div class="submission-section-heading">
+                    <span class="submission-section-number">03</span>
                     <div>
                         <h2 id="material-file-title">Первая версия файла</h2>
                         <p>Загрузите документ, который будет передан на проверку.</p>
@@ -119,7 +174,7 @@
 
             <section class="submission-form-card" aria-labelledby="material-authors-title">
                 <div class="submission-section-heading">
-                    <span class="submission-section-number">03</span>
+                    <span class="submission-section-number">04</span>
                     <div>
                         <h2 id="material-authors-title">Авторы и комментарий</h2>
                         <p>Проверьте распознанные данные. Все поля можно исправить до отправки.</p>
@@ -185,6 +240,6 @@
 </div>
 
 <script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
-<script src="{% static 'submissions/create.js' %}?v=20260719a" defer></script>
+<script src="{% static 'submissions/create.js' %}?v=20260723a" defer></script>
 </body>
 </html>

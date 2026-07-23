@@ -37,6 +37,16 @@ urlpatterns = [
     ),
     path("<int:pk>/progress/", views.submission_progress_view, name="progress"),
     path("<int:pk>/checks-report/", views.submission_checks_report_view, name="checks_report"),
+    path(
+        "<int:pk>/formatting-rules/",
+        views.update_formatting_rules_view,
+        name="update_formatting_rules",
+    ),
+    path(
+        "<int:pk>/corrected-document/",
+        views.corrected_document_download_view,
+        name="corrected_document_download",
+    ),
     path("<int:pk>/upload-version/", views.upload_submission_version, name="upload_version"),
     path("<int:pk>/submit/", views.submit_submission_view, name="submit"),
     path("<int:pk>/update-route/", views.update_submission_route_view, name="update_route"),

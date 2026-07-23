@@ -28,7 +28,7 @@
                 <span class="submissions-create-icon">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
                 </span>
-                <span>Подать новую статью</span>
+                <span>Подать материал</span>
                 <svg class="submissions-create-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg>
             </a>
         </header>
@@ -42,7 +42,7 @@
         <section class="submissions-list-card" aria-labelledby="submissions-table-title">
             {% if can_view_chair_submissions %}
                 <nav class="submissions-owner-tabs" aria-label="Владелец материалов">
-                    <a class="{% if current_owner == 'me' %}is-active{% endif %}" href="{% url 'submissions:list' %}?owner=me">Мои статьи</a>
+                    <a class="{% if current_owner == 'me' %}is-active{% endif %}" href="{% url 'submissions:list' %}?owner=me">Мои материалы</a>
                     <a class="{% if current_owner == 'chair' %}is-active{% endif %}" href="{% url 'submissions:list' %}?owner=chair">Материалы кафедры</a>
                 </nav>
             {% endif %}
@@ -78,7 +78,7 @@
                     <label class="submissions-search">
                         <span class="sr-only">Поиск по материалам</span>
                         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
-                        <input type="search" name="q" value="{{ search_query }}" placeholder="Поиск по названию, журналу или автору">
+                        <input type="search" name="q" value="{{ search_query }}" placeholder="Название, журнал, тема, событие или автор">
                     </label>
                     <button class="submissions-filter-toggle{% if article_type_filter or journal_filter %} has-filters{% endif %}" type="button" data-list-filter-toggle aria-expanded="{% if has_active_filters %}true{% else %}false{% endif %}" aria-controls="submission-extra-filters">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
@@ -99,7 +99,7 @@
                         </select>
                     </label>
                     <label>
-                        <span>Журнал</span>
+                        <span>Журнал (для статей)</span>
                         <select name="journal">
                             <option value="">Все журналы</option>
                             {% for option in journal_options %}
@@ -118,7 +118,7 @@
                 <div class="submissions-table-wrap">
                     <div class="submissions-table-head" aria-hidden="true">
                         <span>Название</span>
-                        <span>Журнал</span>
+                        <span>Журнал / тема / событие</span>
                         <span>Статус</span>
                         <span>Обновлено</span>
                         <span></span>
@@ -132,8 +132,8 @@
                                     <span class="submissions-title">{{ submission.title }}</span>
                                     <small>{{ submission.article_type.name }}{% if current_owner == 'chair' %} · {{ submission.author }}{% endif %}</small>
                                 </div>
-                                <div class="submissions-journal-cell" data-label="Журнал">
-                                    <span>{{ submission.journal.name }}</span>
+                                <div class="submissions-journal-cell" data-label="{{ submission.destination_label }}">
+                                    <span>{{ submission.destination_name|default:"Не указано" }}</span>
                                     <small>{{ submission.direction.name|default:"Область пока не выбрана" }}</small>
                                 </div>
                                 <div class="submissions-status-cell" data-label="Статус">
@@ -171,7 +171,7 @@
 
                 <div class="submissions-list-footer">
                     <span>Показано материалов: <strong>{{ result_count }}</strong></span>
-                    <span>Нажмите на строку, чтобы открыть карточку статьи</span>
+                    <span>Нажмите на строку, чтобы открыть карточку материала</span>
                 </div>
             {% else %}
                 <div class="submissions-empty-state">

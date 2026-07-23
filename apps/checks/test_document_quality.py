@@ -138,9 +138,13 @@ class AdvisoryChecksTests(TestCase):
         metadata_run = submission.check_runs.get(check_definition__code="metadata_complete")
         content_run = submission.check_runs.get(check_definition__code="mock_content_screening")
         subject_area_run = submission.check_runs.get(check_definition__code="subject_area_detection")
+        formatting_run = submission.check_runs.get(
+            check_definition__code="formatting_compliance"
+        )
         self.assertEqual(metadata_run.status, CheckRunStatus.FAILED)
         self.assertEqual(content_run.status, CheckRunStatus.NOT_PERFORMED)
         self.assertEqual(subject_area_run.status, CheckRunStatus.NOT_PERFORMED)
+        self.assertEqual(formatting_run.status, CheckRunStatus.NOT_PERFORMED)
         self.assertEqual(content_run.result_payload["execution_status"], "not_performed")
         self.assertEqual(submission.status, SubmissionStatus.SUBMITTED)
         self.assertIn("summary", metadata_run.result_payload)
@@ -148,4 +152,4 @@ class AdvisoryChecksTests(TestCase):
 
         self.client.force_login(user)
         response = self.client.get(reverse("submissions:detail", args=[submission.pk]))
-        self.assertContains(response, "Не выполнена", count=2)
+        self.assertContains(response, "Не выполнена", count=3)
