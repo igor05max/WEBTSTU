@@ -529,19 +529,6 @@ def _build_formatting_rule_rows(snapshot):
     add("Выравнивание", body.get("alignment"))
     required_sections = structure.get("required_sections") or []
     add("Обязательные разделы", ", ".join(str(value) for value in required_sections))
-    blocks = (rules.get("document") or {}).get("blocks") or []
-    required_blocks = [
-        block.get("label")
-        for block in blocks
-        if block.get("required") and block.get("role") != "body"
-    ]
-    optional_blocks = [
-        block.get("label")
-        for block in blocks
-        if not block.get("required")
-    ]
-    add("Обязательные блоки", ", ".join(str(value) for value in required_blocks))
-    add("Необязательные блоки", ", ".join(str(value) for value in optional_blocks))
     if limits.get("min_words") is not None:
         add("Минимальный объём", f"{limits['min_words']} слов")
     if limits.get("max_words") is not None:
@@ -1184,7 +1171,6 @@ def submission_detail(request, pk):
             "formatting_rule_rows": _build_formatting_rule_rows(
                 submission.formatting_rules_snapshot
             ),
-            "formatting_rule_sources": (submission.formatting_rules_snapshot or {}).get("sources") or [],
             "formatting_rule_conflicts": (submission.formatting_rules_snapshot or {}).get("conflicts") or [],
             "can_edit_formatting_rules": can_edit_formatting_rules,
             "formatting_check_entry": formatting_check_entry,

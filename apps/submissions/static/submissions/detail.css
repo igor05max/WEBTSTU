@@ -683,12 +683,11 @@
 .workspace-page-main .submission-formatting-summary {
     margin-top: 18px;
     display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
 }
 
-.workspace-page-main .submission-formatting-template,
-.workspace-page-main .submission-formatting-priority {
+.workspace-page-main .submission-formatting-template {
     padding: 17px;
     display: flex;
     flex-direction: column;
@@ -713,48 +712,10 @@
 }
 
 .workspace-page-main .submission-formatting-template > span,
-.workspace-page-main .submission-formatting-template > small,
-.workspace-page-main .submission-formatting-priority > p {
+.workspace-page-main .submission-formatting-template > small {
     color: #69758a;
     font-size: 0.68rem;
     line-height: 1.55;
-}
-
-.workspace-page-main .submission-formatting-priority ol {
-    margin: 2px 0 0;
-    padding: 0;
-    display: grid;
-    gap: 8px;
-    list-style: none;
-}
-
-.workspace-page-main .submission-formatting-priority li {
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-}
-
-.workspace-page-main .submission-formatting-priority li > span {
-    width: 24px;
-    height: 24px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    color: #fff;
-    background: var(--dashboard-blue);
-    font-size: 0.62rem;
-    font-weight: 800;
-}
-
-.workspace-page-main .submission-formatting-priority li > strong {
-    color: #334159;
-    font-size: 0.7rem;
-}
-
-.workspace-page-main .submission-formatting-priority li > small {
-    color: #8a95a7;
-    font-size: 0.59rem;
 }
 
 .workspace-page-main .submission-formatting-rules {
@@ -850,12 +811,6 @@
     gap: 18px;
 }
 
-.workspace-page-main .submission-template-builder-head > div {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
 .workspace-page-main .submission-template-builder-head strong {
     color: #244a88;
     font-size: 0.86rem;
@@ -884,42 +839,103 @@
     background: rgba(255, 255, 255, 0.8);
 }
 
+.workspace-page-main .submission-template-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.workspace-page-main .submission-template-section-head small {
+    color: #8a96a8;
+    font-size: 0.58rem;
+    line-height: 1.4;
+    text-align: right;
+}
+
 .workspace-page-main .submission-template-blocks {
     margin-top: 9px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+    list-style: none;
 }
 
 .workspace-page-main .submission-template-block {
-    padding: 7px 9px;
-    display: inline-flex;
+    min-width: 0;
+    padding: 8px 10px;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
     align-items: center;
-    gap: 6px;
+    gap: 9px;
     border: 1px solid #d6dfed;
     border-radius: 9px;
     color: #42516a;
     background: #fff;
-    font-size: 0.64rem;
-    font-weight: 750;
 }
 
-.workspace-page-main .submission-template-block small {
+.workspace-page-main .submission-template-block-order {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #61718a;
+    background: #edf2f9;
+    font-size: 0.58rem;
+    font-weight: 850;
+}
+
+.workspace-page-main .submission-template-block-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.workspace-page-main .submission-template-block-copy strong {
+    overflow-wrap: anywhere;
+    color: #34435b;
+    font-size: 0.64rem;
+    line-height: 1.35;
+}
+
+.workspace-page-main .submission-template-block-copy small {
     color: #8491a5;
     font-size: 0.54rem;
     font-weight: 650;
 }
 
+.workspace-page-main .submission-template-block-status {
+    padding: 4px 7px;
+    border-radius: 999px;
+    color: #65748a;
+    background: #edf2f7;
+    font-size: 0.53rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
 .workspace-page-main .submission-template-block.is-found {
     border-color: #b7dec5;
-    color: #246d40;
     background: #f0faf3;
+}
+
+.workspace-page-main .submission-template-block.is-found .submission-template-block-order,
+.workspace-page-main .submission-template-block.is-found .submission-template-block-status {
+    color: #246d40;
+    background: #dff3e6;
 }
 
 .workspace-page-main .submission-template-block.is-missing {
     border-color: #efc7a4;
-    color: #945719;
     background: #fff7ed;
+}
+
+.workspace-page-main .submission-template-block.is-missing .submission-template-block-order,
+.workspace-page-main .submission-template-block.is-missing .submission-template-block-status {
+    color: #945719;
+    background: #ffead5;
 }
 
 .workspace-page-main .submission-template-operations {

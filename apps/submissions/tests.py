@@ -1825,6 +1825,84 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertEqual(corrected_run.font.name, "Times New Roman")
         self.assertAlmostEqual(corrected_run.font.size.pt, 14, places=1)
 
+    def test_detail_hides_rule_priorities_and_lists_document_blocks_in_order(self):
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("template.txt", b"requirements"),
+            uploaded_by=self.user,
+            extracted_rules={
+                "document": {
+                    "blocks": [
+                        {"role": "udc", "label": "Индекс УДК", "required": True},
+                        {"role": "title", "label": "Название", "required": True},
+                        {"role": "authors", "label": "Авторы", "required": True},
+                        {
+                            "role": "supervisor",
+                            "label": "Научный руководитель",
+                            "required": False,
+                        },
+                        {"role": "body", "label": "Основной текст", "required": True},
+                        {
+                            "role": "references",
+                            "label": "Список литературы",
+                            "required": False,
+                        },
+                    ]
+                }
+            },
+        )
+        submission = Submission.objects.create(
+            title="Проверка понятного списка блоков",
+            author=self.user,
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            formatting_rules_snapshot={
+                "effective": template.extracted_rules,
+                "sources": [
+                    {
+                        "kind": "uploaded_template",
+                        "label": "Технический источник правил",
+                        "priority": 30,
+                    }
+                ],
+                "conflicts": [],
+            },
+            formatting_check_requested=True,
+        )
+        submission.authors.add(self.user)
+        version = SubmissionVersion.objects.create(
+            submission=submission,
+            version_number=1,
+            file=SimpleUploadedFile("article.docx", self._docx_bytes()),
+            uploaded_by=self.user,
+        )
+        submission.current_version = version
+        submission.save(update_fields=["current_version", "updated_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("submissions:detail", args=[submission.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Приоритет правил")
+        self.assertNotContains(response, "Технический источник правил")
+        self.assertNotContains(response, "Отдельный модуль")
+        self.assertNotContains(response, "Конструктор документа по шаблону")
+        self.assertContains(response, "Структура документа")
+        self.assertContains(response, "В порядке их расположения в готовом файле")
+        rendered = response.content.decode()
+        ordered_labels = [
+            "Индекс УДК",
+            "Название",
+            "Авторы",
+            "Научный руководитель",
+            "Основной текст",
+            "Список литературы",
+        ]
+        positions = [rendered.index(label) for label in ordered_labels]
+        self.assertEqual(positions, sorted(positions))
+
 
 class WordConversionEnvironmentTests(SimpleTestCase):
     @override_settings(LIBREOFFICE_BINARY="/usr/bin/libreoffice")

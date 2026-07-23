@@ -161,23 +161,6 @@
                     </span>
                 {% endif %}
             </div>
-
-            <div class="submission-formatting-priority">
-                <span class="submission-formatting-label">Приоритет правил</span>
-                {% if formatting_rule_sources %}
-                    <ol>
-                        {% for source in formatting_rule_sources %}
-                            <li>
-                                <span>{{ forloop.counter }}</span>
-                                <strong>{{ source.label }}</strong>
-                                <small>приоритет {{ source.priority }}</small>
-                            </li>
-                        {% endfor %}
-                    </ol>
-                {% else %}
-                    <p>Источники правил пока не определены.</p>
-                {% endif %}
-            </div>
         </div>
 
         {% if formatting_rule_rows %}
@@ -205,37 +188,45 @@
         {% if document_template_plan %}
             <div class="submission-template-builder">
                 <div class="submission-template-builder-head">
-                    <div>
-                        <span class="submission-formatting-label">Отдельный модуль</span>
-                        <strong>Конструктор документа по шаблону</strong>
-                        <p>
-                            Локальная модель разбирает требования, а отдельный движок собирает DOCX
-                            по ролям: титульный блок, основной текст и литература оформляются независимо.
-                        </p>
-                    </div>
+                    <strong>Структура документа</strong>
                     <span class="status-pill success">Готов к сборке</span>
                 </div>
 
                 <div class="submission-template-builder-grid">
                     <div>
-                        <span class="submission-formatting-label">Распознанные блоки</span>
-                        <div class="submission-template-blocks">
-                            {% for block in document_template_plan.blocks %}
-                                <span class="submission-template-block is-{{ block.status }}">
-                                    {{ block.label }}
-                                    {% if block.found %}
-                                        <small>найден</small>
-                                    {% elif block.required %}
-                                        <small>нужно заполнить</small>
-                                    {% else %}
-                                        <small>необязателен</small>
-                                    {% endif %}
-                                </span>
-                            {% endfor %}
+                        <div class="submission-template-section-head">
+                            <span class="submission-formatting-label">Элементы документа</span>
+                            <small>В порядке их расположения в готовом файле</small>
                         </div>
+                        <ol class="submission-template-blocks">
+                            {% for block in document_template_plan.blocks %}
+                                <li class="submission-template-block is-{{ block.status }}">
+                                    <span class="submission-template-block-order">{{ forloop.counter }}</span>
+                                    <span class="submission-template-block-copy">
+                                        <strong>{{ block.label }}</strong>
+                                        <small>
+                                            {% if block.required %}
+                                                Обязательный элемент
+                                            {% else %}
+                                                Необязательный элемент
+                                            {% endif %}
+                                        </small>
+                                    </span>
+                                    <span class="submission-template-block-status">
+                                        {% if block.found %}
+                                            Найден
+                                        {% elif block.required %}
+                                            Нужно заполнить
+                                        {% else %}
+                                            Не указан
+                                        {% endif %}
+                                    </span>
+                                </li>
+                            {% endfor %}
+                        </ol>
                     </div>
                     <div>
-                        <span class="submission-formatting-label">Что сделает сборщик</span>
+                        <span class="submission-formatting-label">При создании DOCX</span>
                         <ul class="submission-template-operations">
                             {% for operation in document_template_plan.operations %}
                                 <li>{{ operation }}</li>
@@ -290,7 +281,7 @@
                     </div>
                     <div class="submission-formatting-editor-actions">
                         <p>
-                            Ручное уточнение имеет самый высокий приоритет и повторно запускает проверки.
+                            После сохранения система повторно проверит оформление документа.
                         </p>
                         <button class="button" type="submit">Сохранить и перепроверить</button>
                     </div>
