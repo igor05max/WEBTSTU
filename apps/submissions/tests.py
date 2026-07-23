@@ -1728,6 +1728,50 @@ class SubmissionFormattingTemplateTests(TestCase):
         document.save(output)
         return output.getvalue()
 
+    def _create_correctable_submission(self):
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("template.txt", b"requirements"),
+            uploaded_by=self.user,
+            extracted_rules={
+                "page": {
+                    "orientation": "portrait",
+                    "margins_cm": {"top": 2, "right": 2, "bottom": 2, "left": 2},
+                },
+                "body": {
+                    "font_family": "Times New Roman",
+                    "font_size_pt": 14,
+                    "line_spacing": 1,
+                    "first_line_indent_cm": 1,
+                    "alignment": "justify",
+                },
+            },
+        )
+        submission = Submission.objects.create(
+            title="Проверка исправленной версии",
+            author=self.user,
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            formatting_rules_snapshot={
+                "effective": template.extracted_rules,
+                "sources": [],
+                "conflicts": [],
+            },
+            formatting_check_requested=True,
+            status=SubmissionStatus.SUBMITTED,
+        )
+        version = SubmissionVersion.objects.create(
+            submission=submission,
+            version_number=1,
+            file=SimpleUploadedFile("article.docx", self._docx_bytes()),
+            uploaded_by=self.user,
+        )
+        submission.current_version = version
+        submission.save(update_fields=["current_version", "updated_at"])
+        return submission, version
+
     def test_article_requires_template_when_journal_has_none(self):
         form = SubmissionCreateForm(
             data={
@@ -1891,6 +1935,8 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertNotContains(response, "Конструктор документа по шаблону")
         self.assertContains(response, "Структура документа")
         self.assertContains(response, "В порядке их расположения в готовом файле")
+        self.assertContains(response, "Посмотреть и отправить отредактированную")
+        self.assertNotContains(response, "Создать DOCX по шаблону")
         rendered = response.content.decode()
         ordered_labels = [
             "Индекс УДК",
@@ -1902,6 +1948,112 @@ class SubmissionFormattingTemplateTests(TestCase):
         ]
         positions = [rendered.index(label) for label in ordered_labels]
         self.assertEqual(positions, sorted(positions))
+
+    def test_corrected_document_preview_does_not_create_a_version(self):
+        submission, source_version = self._create_correctable_submission()
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse(
+                "submissions:corrected_document_preview",
+                args=[submission.pk, source_version.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(submission.versions.count(), 1)
+        self.assertContains(response, "Проверьте документ перед отправкой")
+        self.assertContains(response, "Назад, не отправлять")
+        self.assertContains(response, "Отправить на проверку")
+        self.assertContains(
+            response,
+            reverse(
+                "submissions:corrected_document_preview_content",
+                args=[submission.pk, source_version.pk],
+            ),
+        )
+
+    @patch(
+        "apps.submissions.views.build_docx_bytes_pdf",
+        return_value=b"%PDF-1.4\n" + (b"0" * 120),
+    )
+    def test_corrected_document_preview_content_is_inline_pdf(self, _mocked_pdf):
+        submission, source_version = self._create_correctable_submission()
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse(
+                "submissions:corrected_document_preview_content",
+                args=[submission.pk, source_version.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("inline", response["Content-Disposition"])
+        self.assertEqual(response.content[:5], b"%PDF-")
+
+    @patch("apps.checks.services.queue_submission_checks")
+    def test_submit_corrected_document_creates_new_version_and_queues_checks(
+        self,
+        mocked_queue,
+    ):
+        submission, source_version = self._create_correctable_submission()
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse(
+                "submissions:submit_corrected_document_for_check",
+                args=[submission.pk, source_version.pk],
+            )
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("submissions:detail", args=[submission.pk]),
+        )
+        submission.refresh_from_db()
+        self.assertEqual(submission.versions.count(), 2)
+        self.assertEqual(submission.current_version.version_number, 2)
+        self.assertIn(
+            "создана системой по выбранному шаблону",
+            submission.current_version.comment.casefold(),
+        )
+        self.assertTrue(submission.current_version.file.name.endswith(".docx"))
+        mocked_queue.assert_called_once()
+
+    @patch("apps.checks.services.queue_submission_checks")
+    def test_submit_corrected_document_rejects_stale_preview(self, mocked_queue):
+        submission, source_version = self._create_correctable_submission()
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse(
+                "submissions:submit_corrected_document_for_check",
+                args=[submission.pk, source_version.pk + 999],
+            ),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "текущая версия материала уже изменилась")
+        self.assertEqual(submission.versions.count(), 1)
+        mocked_queue.assert_not_called()
+
+    @patch("apps.checks.services.queue_submission_checks")
+    def test_version_service_rejects_changed_source_version(self, mocked_queue):
+        submission, source_version = self._create_correctable_submission()
+
+        with self.assertRaisesRegex(ValueError, "Текущая версия материала уже изменилась"):
+            add_submission_version(
+                submission=submission,
+                uploaded_by=self.user,
+                file=SimpleUploadedFile("stale.docx", self._docx_bytes()),
+                expected_current_version_id=source_version.pk + 999,
+            )
+
+        self.assertEqual(submission.versions.count(), 1)
+        mocked_queue.assert_not_called()
 
 
 class WordConversionEnvironmentTests(SimpleTestCase):

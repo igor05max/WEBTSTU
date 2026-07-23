@@ -4,6 +4,8 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.core.files.base import ContentFile
 from django.db import OperationalError
 from django.db.models import BooleanField, Case, Prefetch, Q, Value, When
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
@@ -40,6 +42,7 @@ from apps.submissions.formatting_correction import (
 )
 from apps.submissions.document_preview import (
     DocumentPreviewError,
+    build_docx_bytes_pdf,
     build_legacy_doc_pdf,
     build_word_document_pdf,
     get_display_filename,
@@ -90,6 +93,14 @@ _DELETABLE_DRAFT_STATUSES = frozenset(
         SubmissionStatus.DRAFT,
         SubmissionStatus.AUTO_CHECKING,
         SubmissionStatus.SUBMITTED,
+    }
+)
+
+_CORRECTED_VERSION_CREATION_STATUSES = frozenset(
+    {
+        SubmissionStatus.DRAFT,
+        SubmissionStatus.SUBMITTED,
+        SubmissionStatus.REVISION_REQUESTED,
     }
 )
 
@@ -1059,6 +1070,7 @@ def submission_detail(request, pk):
     )
     can_generate_corrected_document = bool(
         can_edit
+        and submission.status in _CORRECTED_VERSION_CREATION_STATUSES
         and submission.current_version_id
         and Path(submission.current_version.file.name).suffix.casefold() == ".docx"
         and submission.formatting_template_id
@@ -1391,10 +1403,123 @@ def corrected_document_download_view(request, pk):
         content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
     response["Content-Disposition"] = (
-        f'attachment; filename="submission-{submission.id}-template-built.docx"'
+        f'attachment; filename="submission-{submission.id}-template-edited.docx"'
     )
     response["X-Template-Engine-Changes"] = str(len(changes))
     return response
+
+
+def _get_correctable_submission(request, pk):
+    submission = get_object_or_404(
+        Submission.objects.select_related(
+            "author",
+            "current_version",
+            "formatting_template",
+        ),
+        pk=pk,
+    )
+    if submission.author_id != request.user.id and not request.user.is_superuser:
+        raise PermissionDenied("Исправленный файл доступен только автору.")
+    return submission
+
+
+def _corrected_source_is_current(submission, version_pk):
+    return bool(
+        submission.current_version_id
+        and submission.current_version_id == version_pk
+    )
+
+
+@login_required
+def corrected_document_preview_view(request, pk, version_pk):
+    submission = _get_correctable_submission(request, pk)
+    if not _corrected_source_is_current(submission, version_pk):
+        messages.warning(
+            request,
+            "Текущая версия материала изменилась. Откройте исправленный документ заново.",
+        )
+        return redirect("submissions:detail", pk=submission.pk)
+    if submission.status not in _CORRECTED_VERSION_CREATION_STATUSES:
+        messages.warning(
+            request,
+            "Сейчас нельзя создать новую версию. Дождитесь завершения текущей проверки.",
+        )
+        return redirect("submissions:detail", pk=submission.pk)
+
+    try:
+        _corrected_bytes, _changes = build_corrected_docx(submission)
+    except FormattingCorrectionError as exc:
+        messages.error(request, str(exc))
+        return redirect("submissions:detail", pk=submission.pk)
+
+    return render(
+        request,
+        "submissions/corrected_document_preview.html",
+        {
+            "submission": submission,
+            "source_version": submission.current_version,
+            "display_filename": f"submission-{submission.id}-template-edited.docx",
+        },
+    )
+
+
+@login_required
+@xframe_options_sameorigin
+def corrected_document_preview_content_view(request, pk, version_pk):
+    submission = _get_correctable_submission(request, pk)
+    if not _corrected_source_is_current(submission, version_pk):
+        raise Http404
+    try:
+        corrected_bytes, _changes = build_corrected_docx(submission)
+        preview_bytes = build_docx_bytes_pdf(corrected_bytes)
+    except (FormattingCorrectionError, DocumentPreviewError, OSError) as exc:
+        raise Http404 from exc
+
+    response = HttpResponse(preview_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'inline; filename="submission-{submission.id}-template-edited.pdf"'
+    )
+    patch_cache_control(response, private=True, no_store=True)
+    return response
+
+
+@login_required
+@require_POST
+def submit_corrected_document_for_check_view(request, pk, version_pk):
+    submission = _get_correctable_submission(request, pk)
+    if not _corrected_source_is_current(submission, version_pk):
+        messages.warning(
+            request,
+            "Исправленный документ не отправлен: текущая версия материала уже изменилась.",
+        )
+        return redirect("submissions:detail", pk=submission.pk)
+    if submission.status not in _CORRECTED_VERSION_CREATION_STATUSES:
+        messages.error(
+            request,
+            "Исправленный документ нельзя отправить, пока выполняется другая проверка.",
+        )
+        return redirect("submissions:detail", pk=submission.pk)
+
+    try:
+        corrected_bytes, _changes = build_corrected_docx(submission)
+        version = add_submission_version(
+            submission=submission,
+            uploaded_by=request.user,
+            file=ContentFile(
+                corrected_bytes,
+                name=f"submission-{submission.id}-template-edited.docx",
+            ),
+            comment="Версия создана системой по выбранному шаблону оформления.",
+            expected_current_version_id=version_pk,
+        )
+    except (FormattingCorrectionError, PermissionError, ValueError) as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(
+            request,
+            f"Исправленная версия v{version.version_number} создана и отправлена на проверку.",
+        )
+    return redirect("submissions:detail", pk=submission.pk)
 
 
 @login_required

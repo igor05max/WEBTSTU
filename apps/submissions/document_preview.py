@@ -249,6 +249,27 @@ def build_legacy_doc_pdf(version):
     return build_word_document_pdf(version)
 
 
+def build_docx_bytes_pdf(document_bytes):
+    if not isinstance(document_bytes, bytes) or not document_bytes:
+        raise DocumentPreviewError("Не удалось подготовить исправленный DOCX для просмотра.")
+    if len(document_bytes) > DOCX_MAX_UNCOMPRESSED_BYTES:
+        raise DocumentPreviewError("Исправленный DOCX слишком большой для просмотра.")
+
+    with tempfile.TemporaryDirectory(prefix="corrected-document-preview-") as temporary_directory:
+        temporary_directory = Path(temporary_directory)
+        source_path = temporary_directory / "corrected-document.docx"
+        output_path = temporary_directory / "corrected-document.pdf"
+        source_path.write_bytes(document_bytes)
+        convert_word_path_to_pdf(
+            source_path,
+            output_path,
+            format_name="DOCX",
+        )
+        if not _is_valid_pdf(output_path):
+            raise DocumentPreviewError("Не удалось подготовить исправленный DOCX для просмотра.")
+        return output_path.read_bytes()
+
+
 def _read_style_names(archive):
     try:
         styles_xml = archive.read("word/styles.xml")

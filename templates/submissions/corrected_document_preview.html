@@ -1,0 +1,71 @@
+{% extends "workspace_base.html" %}
+{% load static workspace_navigation %}
+
+{% block title %}Исправленная версия — {{ submission.title }}{% endblock %}
+
+{% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/version-preview.css' %}?v=20260723b">{% endblock %}
+
+{% block content %}
+    <header class="document-preview-header corrected-document-header">
+        <div>
+            <a class="document-preview-back" href="{% url 'submissions:detail' submission.pk %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                Назад, не отправлять
+            </a>
+            <div class="document-preview-kicker">Исправленная версия</div>
+            <h1>Проверьте документ перед отправкой</h1>
+            <p>
+                Пока вы не нажали «Отправить на проверку», текущая версия v{{ source_version.version_number }}
+                остаётся без изменений.
+            </p>
+        </div>
+    </header>
+
+    <section class="surface corrected-document-decision" aria-label="Действия с исправленным документом">
+        <div class="corrected-document-decision-copy">
+            <strong>Всё выглядит правильно?</strong>
+            <span>
+                Система создаст новую версию и запустит автоматические проверки.
+                В маршрут согласования документ автоматически не отправляется.
+            </span>
+        </div>
+        <div class="corrected-document-actions">
+            <a class="corrected-document-action secondary" href="{% url 'submissions:detail' submission.pk %}">
+                Назад, не отправлять
+            </a>
+            <a class="corrected-document-action secondary" href="{% url 'submissions:corrected_document_download' submission.pk %}">
+                Скачать DOCX
+            </a>
+            <form method="post" action="{% url 'submissions:submit_corrected_document_for_check' submission.pk source_version.pk %}">
+                {% csrf_token %}
+                <button class="corrected-document-action primary" type="submit">
+                    Отправить на проверку
+                </button>
+            </form>
+        </div>
+    </section>
+
+    <section class="surface document-preview-shell corrected-document-preview-shell" aria-labelledby="corrected-document-name">
+        <div class="document-preview-toolbar">
+            <div class="document-preview-file">
+                <span class="document-preview-file-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M7 2h7l5 5v15H7z"/><path d="M14 2v6h5"/></svg>
+                </span>
+                <div>
+                    <h2 id="corrected-document-name">{{ display_filename }}</h2>
+                    <span>Создано из версии v{{ source_version.version_number }} по выбранному шаблону</span>
+                </div>
+            </div>
+            <span class="document-preview-format">DOCX</span>
+        </div>
+
+        <div class="document-preview-pdf">
+            <iframe
+                title="Предпросмотр исправленного документа"
+                src="{% url 'submissions:corrected_document_preview_content' submission.pk source_version.pk %}#toolbar=1&amp;navpanes=0"
+            ></iframe>
+        </div>
+    </section>
+{% endblock %}

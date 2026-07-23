@@ -89,6 +89,85 @@
     stroke-linejoin: round;
 }
 
+.workspace-page-main .corrected-document-decision {
+    margin-bottom: 18px;
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 22px;
+    border-color: #cbd9ef;
+    background: linear-gradient(135deg, #f8fbff, #f0f6ff);
+}
+
+.corrected-document-decision-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.corrected-document-decision-copy strong {
+    color: #273750;
+    font-size: 0.86rem;
+}
+
+.corrected-document-decision-copy span {
+    max-width: 700px;
+    color: #69788e;
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+
+.corrected-document-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+}
+
+.corrected-document-actions form {
+    margin: 0;
+}
+
+.corrected-document-action {
+    min-height: 42px;
+    padding: 0 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.corrected-document-action.secondary {
+    border-color: #d2dceb;
+    color: #53647d;
+    background: #fff;
+}
+
+.corrected-document-action.secondary:hover {
+    border-color: #aac0e5;
+    color: #245ce6;
+}
+
+.corrected-document-action.primary {
+    color: #fff;
+    background: linear-gradient(135deg, #2f67ef, #244bcc);
+    box-shadow: 0 10px 20px rgba(38, 84, 213, 0.18);
+}
+
+.corrected-document-action.primary:hover {
+    transform: translateY(-1px);
+}
+
 .workspace-page-main .document-preview-shell {
     min-height: calc(100vh - 210px);
     padding: 0;
@@ -304,6 +383,18 @@
 
     .document-preview-download {
         align-self: flex-start;
+    }
+
+    .workspace-page-main .corrected-document-decision,
+    .corrected-document-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .corrected-document-actions,
+    .corrected-document-actions form,
+    .corrected-document-action {
+        width: 100%;
     }
 
     .document-preview-paper {

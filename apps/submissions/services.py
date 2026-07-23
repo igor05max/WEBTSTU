@@ -8,11 +8,26 @@ from apps.workflow.models import RouteTemplate, WorkflowRunStatus
 
 
 @transaction.atomic
-def add_submission_version(submission, uploaded_by, file, comment=""):
-    submission.refresh_from_db()
+def add_submission_version(
+    submission,
+    uploaded_by,
+    file,
+    comment="",
+    *,
+    expected_current_version_id=None,
+):
+    submission = Submission.objects.select_for_update().get(pk=submission.pk)
 
     if uploaded_by != submission.author and not uploaded_by.is_superuser:
         raise PermissionError("Only the author can upload a new version.")
+
+    if (
+        expected_current_version_id is not None
+        and submission.current_version_id != expected_current_version_id
+    ):
+        raise ValueError(
+            "Текущая версия материала уже изменилась. Откройте исправленный документ заново."
+        )
 
     was_revision_requested = submission.status == SubmissionStatus.REVISION_REQUESTED
     allowed_statuses = {

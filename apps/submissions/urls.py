@@ -47,6 +47,21 @@ urlpatterns = [
         views.corrected_document_download_view,
         name="corrected_document_download",
     ),
+    path(
+        "<int:pk>/corrected-document/preview/<int:version_pk>/",
+        views.corrected_document_preview_view,
+        name="corrected_document_preview",
+    ),
+    path(
+        "<int:pk>/corrected-document/preview/<int:version_pk>/content/",
+        views.corrected_document_preview_content_view,
+        name="corrected_document_preview_content",
+    ),
+    path(
+        "<int:pk>/corrected-document/preview/<int:version_pk>/submit/",
+        views.submit_corrected_document_for_check_view,
+        name="submit_corrected_document_for_check",
+    ),
     path("<int:pk>/upload-version/", views.upload_submission_version, name="upload_version"),
     path("<int:pk>/submit/", views.submit_submission_view, name="submit"),
     path("<int:pk>/update-route/", views.update_submission_route_view, name="update_route"),

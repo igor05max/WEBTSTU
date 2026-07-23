@@ -247,12 +247,12 @@
 
                 <div class="submission-template-builder-actions">
                     <p>
-                        Исходная версия останется без изменений. Создаётся отдельная копия,
-                        которую автор сможет проверить и затем загрузить как новую версию.
+                        Исходная версия останется без изменений. Сначала откроется предпросмотр;
+                        новая версия появится только после подтверждения отправки на проверку.
                     </p>
                     {% if can_generate_corrected_document %}
-                        <a class="button" href="{% url 'submissions:corrected_document_download' submission.pk %}">
-                            Создать DOCX по шаблону
+                        <a class="button" href="{% url 'submissions:corrected_document_preview' submission.pk submission.current_version_id %}">
+                            Посмотреть и отправить отредактированную
                         </a>
                     {% endif %}
                 </div>
