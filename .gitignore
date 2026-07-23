@@ -20,6 +20,7 @@ backups/
 # Импортированные наборы данных и локальные корпуса
 2025_2026/
 downloads_2022/
+downloads_elibrary/
 journals_rcsi.json
 science.txt
 test_materials/
