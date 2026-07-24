@@ -405,7 +405,11 @@ def check_latex_against_template(
     issues: list[dict[str, Any]] = []
 
     present = {
-        "udc": bool("udc" in commands or re.search(r"\bУДК\b|\bUDC\b", plain_text, re.I)),
+        "udc": bool(
+            "udc" in commands
+            or re.search(r"\\SubmissionUDC\b", raw)
+            or re.search(r"\bУДК\b|\bUDC\b", plain_text, re.I)
+        ),
         "title": bool("title" in commands or re.search(r"\\SubmissionTitle\b", raw)),
         "authors": bool(
             "author" in commands

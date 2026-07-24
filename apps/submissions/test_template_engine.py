@@ -136,6 +136,7 @@ class ReusableTemplateEngineTests(SimpleTestCase):
             },
             "document": {
                 "blocks": [
+                    {"role": "udc", "required": True},
                     {"role": "title", "required": True},
                     {"role": "authors", "required": True},
                     {"role": "abstract", "required": True},
