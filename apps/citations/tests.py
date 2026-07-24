@@ -9,6 +9,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Cm
 
 from apps.citations.analysis import analyze_claims, text_snapshot
 from apps.citations.checks import build_citation_coverage_report
@@ -194,6 +196,60 @@ class CitationSystemTests(TestCase):
         )
         self.assertIn("Список литературы", text)
         self.assertIn("Иванов И. И.", text)
+
+    def test_added_reference_continues_word_automatic_numbering(self):
+        document = Document()
+        document.add_paragraph(
+            "YOLO используется для обнаружения людей [1]. MediaPipe определяет точки тела [2]. "
+            "VideoMAE анализирует последовательность кадров [3]. "
+            "Нейронные сети применяются для анализа движений человека."
+        )
+        document.add_paragraph("Список использованной литературы")
+        document.add_paragraph("Первый источник.", style="List Number")
+        document.add_paragraph("Второй источник.", style="List Number")
+        reference_prototype = document.add_paragraph("Третий источник.", style="List Number")
+        reference_prototype.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        reference_prototype.paragraph_format.left_indent = Cm(1)
+        reference_prototype.paragraph_format.first_line_indent = Cm(-1)
+        reference_prototype.paragraph_format.line_spacing = 1
+        source = BytesIO()
+        document.save(source)
+        claim = {
+            "id": "claim-1",
+            "text": "Нейронные сети применяются для анализа движений человека.",
+            "recommendations": [
+                {
+                    "article_id": "1001",
+                    "title": "Система компьютерного зрения",
+                    "citation": "Обухов А. Д. Система компьютерного зрения. 2023.",
+                }
+            ],
+        }
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="numbered.docx",
+            snapshot={"text": claim["text"]},
+            claims=[claim],
+            index_status={"ready": True},
+        )
+
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[{"claim_id": "claim-1", "article_id": "1001"}],
+        )
+        result = Document(output)
+        reference = result.paragraphs[-1]
+
+        self.assertEqual(reference.text, "Обухов А. Д. Система компьютерного зрения. 2023.")
+        self.assertEqual(reference.style.name, "List Number")
+        self.assertNotIn("[4]", reference.text)
+        self.assertIn("движений человека. [4]", result.paragraphs[0].text)
+        self.assertEqual(reference.alignment, WD_ALIGN_PARAGRAPH.LEFT)
+        self.assertAlmostEqual(reference.paragraph_format.left_indent.cm, 1, places=2)
+        self.assertAlmostEqual(reference.paragraph_format.first_line_indent.cm, -1, places=2)
+        self.assertEqual(reference.paragraph_format.line_spacing, 1)
 
     def test_apply_source_when_docx_has_no_heading_style(self):
         document = Document()

@@ -1,6 +1,7 @@
 import json
 import re
 import uuid
+from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from docx import Document
 
 TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
 CITATION_NUMBER_RE = re.compile(r"\[(\d+)\]")
+BRACKETED_REFERENCE_RE = re.compile(r"^\s*\[(\d+)\]\s*")
+DECIMAL_REFERENCE_RE = re.compile(r"^\s*(\d+)([.)])\s+")
 
 
 def _workspace_dir(user_id, token):
@@ -133,6 +136,98 @@ def _insert_marker_after_claim(paragraph, claim_text, marker):
     return False
 
 
+def _has_automatic_numbering(paragraph):
+    paragraph_properties = paragraph._p.pPr
+    if paragraph_properties is not None and paragraph_properties.numPr is not None:
+        return True
+    style = paragraph.style
+    style_properties = style.element.pPr if style is not None else None
+    return style_properties is not None and style_properties.numPr is not None
+
+
+def _copy_paragraph_format(source, target):
+    source_properties = source._p.pPr
+    if source_properties is None:
+        return
+    target_properties = target._p.pPr
+    if target_properties is not None:
+        target._p.remove(target_properties)
+    target._p.insert(0, deepcopy(source_properties))
+
+
+def _prefix_paragraph(paragraph, prefix):
+    if paragraph.runs:
+        paragraph.runs[0].text = prefix + paragraph.runs[0].text
+    else:
+        paragraph.add_run(prefix)
+
+
+def _bibliography_layout(document, heading):
+    if heading is None:
+        return {"prototype": None, "mode": "bracket", "delimiter": "]"}
+    paragraphs = document.paragraphs
+    heading_index = next(
+        (
+            index
+            for index, paragraph in enumerate(paragraphs)
+            if paragraph._p is heading._p
+        ),
+        len(paragraphs) - 1,
+    )
+    references = [
+        paragraph
+        for paragraph in paragraphs[heading_index + 1 :]
+        if paragraph.text.strip()
+    ]
+    if not references:
+        return {"prototype": None, "mode": "bracket", "delimiter": "]"}
+
+    prototype = references[-1]
+    if any(_has_automatic_numbering(paragraph) for paragraph in references):
+        numbered_prototype = next(
+            paragraph for paragraph in reversed(references) if _has_automatic_numbering(paragraph)
+        )
+        return {"prototype": numbered_prototype, "mode": "automatic", "delimiter": ""}
+
+    bracketed = [BRACKETED_REFERENCE_RE.match(paragraph.text) for paragraph in references]
+    if all(match is not None for match in bracketed):
+        return {"prototype": prototype, "mode": "bracket", "delimiter": "]"}
+
+    decimal = [DECIMAL_REFERENCE_RE.match(paragraph.text) for paragraph in references]
+    if all(match is not None for match in decimal):
+        return {
+            "prototype": prototype,
+            "mode": "decimal",
+            "delimiter": decimal[-1].group(2),
+        }
+
+    # Plain paragraphs after a bibliography heading have no visible mapping to
+    # in-text [n] references. Normalize the whole list once so the newly added
+    # source does not become the only visibly numbered item.
+    if all(match is None for match in bracketed) and all(match is None for match in decimal):
+        for number, paragraph in enumerate(references, start=1):
+            _prefix_paragraph(paragraph, f"[{number}] ")
+        return {"prototype": prototype, "mode": "bracket", "delimiter": "]"}
+
+    return {"prototype": prototype, "mode": "bracket", "delimiter": "]"}
+
+
+def _append_bibliography_entry(document, layout, number, citation):
+    prototype = layout.get("prototype")
+    paragraph = document.add_paragraph()
+    if prototype is not None:
+        _copy_paragraph_format(prototype, paragraph)
+
+    mode = layout.get("mode")
+    if mode == "automatic":
+        paragraph.add_run(citation)
+    elif mode == "decimal":
+        paragraph.add_run(f"{number}{layout.get('delimiter') or '.'} {citation}")
+    else:
+        paragraph.add_run(f"[{number}] {citation}")
+    return paragraph
+
+
 def apply_to_docx(*, user_id, token, selections):
     payload = load_workspace(user_id=user_id, token=token)
     if payload.get("suffix") != ".docx" or not payload.get("source_name"):
@@ -187,7 +282,11 @@ def apply_to_docx(*, user_id, token, selections):
             bibliography_heading = document.add_paragraph()
             bibliography_heading.add_run("Список литературы").bold = True
         else:
-            document.add_paragraph("Список литературы", style=heading_style)
+            bibliography_heading = document.add_paragraph(
+                "Список литературы",
+                style=heading_style,
+            )
+    bibliography_layout = _bibliography_layout(document, bibliography_heading)
 
     unique_results = {}
     for _claim, result, article_id in selected:
@@ -198,7 +297,12 @@ def apply_to_docx(*, user_id, token, selections):
     ):
         number = number_by_article[article_id]
         citation = str(result.get("citation") or result.get("title") or "").strip()
-        document.add_paragraph(f"[{number}] {citation}")
+        _append_bibliography_entry(
+            document,
+            bibliography_layout,
+            number,
+            citation,
+        )
 
     output = BytesIO()
     document.save(output)
