@@ -78,6 +78,19 @@
             </div>
         {% endif %}
 
+        {% if can_edit and submission.status == "draft" %}
+            <div class="submission-form-panel">
+                <div class="submission-section-title">Перед проверками — работа с источниками</div>
+                <p class="meta meta-form-note">
+                    Проверьте распознанные данные, получите рекомендации локальной RAG-системы
+                    и при необходимости добавьте выбранные публикации в отдельную копию документа.
+                </p>
+                <a class="button" href="{% url 'citations:workspace' %}?submission={{ submission.pk }}&amp;auto=1">
+                    Перейти к рекомендациям источников
+                </a>
+            </div>
+        {% endif %}
+
         {% if is_auto_checking %}
             <div id="submission-progress-note" class="submission-note">
                 <div class="submission-section-title">Автопроверки выполняются</div>
@@ -145,7 +158,7 @@
                         {{ submission.formatting_template.get_analysis_status_display }}
                     </span>
                     {% if submission.formatting_template.analysis_status == "pending" or submission.formatting_template.analysis_status == "processing" %}
-                        <small>Шаблон обрабатывается в фоне. После извлечения правил автоматически начнутся проверки материала.</small>
+                        <small>Шаблон обрабатывается в фоне. Проверки начнутся после этапа работы с источниками и вашего подтверждения.</small>
                     {% elif submission.formatting_template.analysis_message %}
                         <small>{{ submission.formatting_template.analysis_message }}</small>
                     {% endif %}
@@ -154,8 +167,8 @@
                             Скачать исходный
                         </a>
                         {% if formatting_rules and not formatting_template_is_processing %}
-                            <a class="button secondary" href="{% url 'submissions:latex_template_download' submission.pk %}">
-                                Скачать LaTeX (.tex)
+                            <a class="button secondary" href="{% url 'directory:formatting_template_latex_preview' submission.formatting_template.pk %}" target="_blank">
+                                Посмотреть LaTeX
                             </a>
                         {% endif %}
                     </div>

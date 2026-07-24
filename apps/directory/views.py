@@ -2,7 +2,7 @@ from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 
 from apps.directory.formatting_templates import get_latest_formatting_template
@@ -35,6 +35,10 @@ def _template_payload(template):
         "download_url": reverse("directory:formatting_template_download", args=[template.id]),
         "latex_download_url": reverse(
             "directory:formatting_template_latex_download",
+            args=[template.id],
+        ),
+        "latex_preview_url": reverse(
+            "directory:formatting_template_latex_preview",
             args=[template.id],
         ),
     }
@@ -120,3 +124,19 @@ def formatting_template_latex_download(request, pk):
         f'attachment; filename="formatting-template-{template.pk}-v{template.version_number}.tex"'
     )
     return response
+
+
+@login_required
+def formatting_template_latex_preview(request, pk):
+    template = get_object_or_404(FormattingTemplate, pk=pk)
+    latex_source = build_latex_template(template.extracted_rules or {})
+    if isinstance(latex_source, bytes):
+        latex_source = latex_source.decode("utf-8", errors="replace")
+    return render(
+        request,
+        "directory/formatting_template_latex_preview.html",
+        {
+            "formatting_template": template,
+            "latex_source": latex_source,
+        },
+    )

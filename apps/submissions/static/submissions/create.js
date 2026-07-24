@@ -34,16 +34,72 @@
             return selected ? selected.getAttribute("data-destination-kind") || "" : "";
         }
 
-        function ruleRows(rules, prefix, rows) {
-            Object.keys(rules || {}).forEach(function (key) {
-                var value = rules[key];
-                var path = prefix ? prefix + "." + key : key;
-                if (value && typeof value === "object" && !Array.isArray(value)) {
-                    ruleRows(value, path, rows);
-                } else if (value !== null && value !== "" && (!Array.isArray(value) || value.length)) {
-                    rows.push({name: path, value: Array.isArray(value) ? value.join(", ") : String(value)});
+        function readableValue(value, unit) {
+            if (typeof value === "boolean") {
+                return value ? "Да" : "Нет";
+            }
+            var aliases = {
+                portrait: "Книжная",
+                landscape: "Альбомная",
+                justify: "По ширине",
+                left: "По левому краю",
+                center: "По центру",
+                right: "По правому краю"
+            };
+            var rendered = aliases[String(value).toLowerCase()] || String(value);
+            return unit ? rendered + " " + unit : rendered;
+        }
+
+        function ruleRows(rules) {
+            var rows = [];
+            var page = rules.page || {};
+            var margins = page.margins_cm || {};
+            var body = rules.body || {};
+            var structure = rules.structure || {};
+            var documentRules = rules.document || {};
+            var descriptors = [
+                ["Формат страницы", page.size],
+                ["Ориентация", page.orientation],
+                ["Верхнее поле", margins.top, "см"],
+                ["Правое поле", margins.right, "см"],
+                ["Нижнее поле", margins.bottom, "см"],
+                ["Левое поле", margins.left, "см"],
+                ["Основной шрифт", body.font_family],
+                ["Размер шрифта", body.font_size_pt, "пт"],
+                ["Межстрочный интервал", body.line_spacing],
+                ["Абзацный отступ", body.first_line_indent_cm, "см"],
+                ["Выравнивание", body.alignment],
+                ["Минимальный объём", structure.min_words, "слов"],
+                ["Максимальный объём", structure.max_words, "слов"]
+            ];
+            descriptors.forEach(function (descriptor) {
+                var value = descriptor[1];
+                if (value !== null && value !== undefined && value !== "") {
+                    rows.push({
+                        name: descriptor[0],
+                        value: readableValue(value, descriptor[2])
+                    });
                 }
             });
+
+            var blocks = Array.isArray(documentRules.blocks) ? documentRules.blocks : [];
+            if (blocks.length) {
+                var required = [];
+                var optional = [];
+                blocks.forEach(function (block) {
+                    if (!block || typeof block !== "object") return;
+                    var label = block.label || block.source_label || block.role;
+                    if (!label) return;
+                    (block.required ? required : optional).push(label);
+                });
+                if (required.length) {
+                    rows.push({name: "Обязательные элементы", value: required.join(", ")});
+                }
+                if (optional.length) {
+                    rows.push({name: "Необязательные элементы", value: optional.join(", ")});
+                }
+            }
+            return rows;
         }
 
         function renderTemplate(template) {
@@ -74,12 +130,11 @@
                 (template.uploaded_by ? " · загрузил " + template.uploaded_by : "");
             templateDownload.href = template.download_url || "#";
             if (templateLatexDownload) {
-                templateLatexDownload.href = template.latex_download_url || "#";
-                templateLatexDownload.hidden = !template.latex_download_url;
+                templateLatexDownload.href = template.latex_preview_url || "#";
+                templateLatexDownload.hidden = !template.latex_preview_url;
             }
             rulesList.replaceChildren();
-            var rows = [];
-            ruleRows(template.rules || {}, "", rows);
+            var rows = ruleRows(template.rules || {});
             rows.slice(0, 16).forEach(function (row) {
                 var item = document.createElement("div");
                 var name = document.createElement("span");

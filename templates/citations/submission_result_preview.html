@@ -1,0 +1,53 @@
+{% extends "workspace_base.html" %}
+{% load static workspace_navigation %}
+
+{% block title %}Материал с источниками — {{ submission.title }}{% endblock %}
+{% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/version-preview.css' %}?v=20260724c">{% endblock %}
+
+{% block content %}
+<header class="document-preview-header corrected-document-header">
+    <div>
+        <a class="document-preview-back" href="{% url 'citations:workspace' %}?submission={{ submission.pk }}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            Назад к источникам
+        </a>
+        <div class="document-preview-kicker">Версия с источниками</div>
+        <h1>Проверьте документ перед запуском проверок</h1>
+        <p>Ссылки и список литературы добавлены в отдельную копию. Текущая версия материала пока не изменена.</p>
+    </div>
+</header>
+
+<section class="surface corrected-document-decision">
+    <div class="corrected-document-decision-copy">
+        <strong>Всё выглядит правильно?</strong>
+        <span>После подтверждения эта копия станет новой версией, и система начнёт автоматические проверки.</span>
+    </div>
+    <div class="corrected-document-actions">
+        <a class="corrected-document-action secondary" href="{% url 'citations:workspace' %}?submission={{ submission.pk }}">Назад</a>
+        <a class="corrected-document-action secondary" href="{% url 'citations:submission_result_download' workspace_token %}">Скачать DOCX</a>
+        <form method="post" action="{% url 'citations:use_submission_result' workspace_token %}">
+            {% csrf_token %}
+            <button class="corrected-document-action primary" type="submit">Использовать и начать проверки</button>
+        </form>
+    </div>
+</section>
+
+<section class="surface document-preview-shell corrected-document-preview-shell">
+    <div class="document-preview-toolbar">
+        <div class="document-preview-file">
+            <span class="document-preview-file-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M7 2h7l5 5v15H7z"/><path d="M14 2v6h5"/></svg>
+            </span>
+            <div>
+                <h2>{{ display_filename }}</h2>
+                <span>Предварительная версия с выбранными источниками</span>
+            </div>
+        </div>
+        <span class="document-preview-format">DOCX</span>
+    </div>
+    <div class="document-preview-pdf">
+        <iframe title="Предпросмотр материала с источниками" src="{% url 'citations:submission_result_content' workspace_token %}"></iframe>
+    </div>
+</section>
+{% endblock %}

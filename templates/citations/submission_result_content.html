@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Предпросмотр материала</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 28px;
+            background: #e9edf2;
+            color: #111827;
+            font: 16px/1.55 "Times New Roman", serif;
+        }
+        article {
+            box-sizing: border-box;
+            max-width: 840px;
+            min-height: 1120px;
+            margin: 0 auto;
+            padding: 72px 76px;
+            background: #fff;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, .12);
+        }
+        p {
+            margin: 0 0 12px;
+            text-align: justify;
+            text-indent: 1cm;
+            white-space: pre-wrap;
+        }
+        table {
+            width: 100%;
+            margin: 18px 0;
+            border-collapse: collapse;
+        }
+        td {
+            padding: 7px;
+            border: 1px solid #9ca3af;
+            vertical-align: top;
+        }
+    </style>
+</head>
+<body>
+<article>
+    {% for paragraph in paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+    {% for table in tables %}
+        <table>
+            {% for row in table %}
+                <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+            {% endfor %}
+        </table>
+    {% endfor %}
+</article>
+</body>
+</html>

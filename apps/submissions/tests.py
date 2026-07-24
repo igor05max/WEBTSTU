@@ -596,7 +596,7 @@ class SubmissionCreateViewTests(TestCase):
         self.assertNotContains(response, "Как дальше пойдёт заявка")
         self.assertContains(response, "Загрузить материал")
         self.assertContains(response, 'data-wizard-step="1"')
-        self.assertContains(response, "Дальше ждать здесь не придётся")
+        self.assertContains(response, "Следующий шаг — источники")
 
     @override_settings(SUBMISSION_CHECKS_ASYNC=True)
     @patch("apps.submissions.views.queue_submission_template_processing")
@@ -622,16 +622,17 @@ class SubmissionCreateViewTests(TestCase):
         template = submission.formatting_template
         self.assertRedirects(
             response,
-            reverse("submissions:detail", args=[submission.pk]),
+            f"{reverse('citations:workspace')}?submission={submission.pk}&auto=1",
             fetch_redirect_response=False,
         )
-        self.assertEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
+        self.assertEqual(submission.status, SubmissionStatus.DRAFT)
         self.assertEqual(template.analysis_status, "pending")
         self.assertEqual(submission.check_runs.count(), 0)
         queue_processing.assert_called_once()
         queued_submission, queued_template = queue_processing.call_args.args
         self.assertEqual(queued_submission.pk, submission.pk)
         self.assertEqual(queued_template.pk, template.pk)
+        self.assertFalse(queue_processing.call_args.kwargs["start_checks"])
 
     def test_create_submission_runs_checks_immediately(self):
         submission = create_submission_with_initial_version(
@@ -2009,7 +2010,7 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertContains(response, "Структура документа")
         self.assertContains(response, "В порядке их расположения в готовом файле")
         self.assertContains(response, "Посмотреть и отправить отредактированную")
-        self.assertContains(response, "Скачать LaTeX (.tex)")
+        self.assertContains(response, "Посмотреть LaTeX")
         self.assertNotContains(response, "Создать DOCX по шаблону")
         rendered = response.content.decode()
         ordered_labels = [

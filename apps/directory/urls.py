@@ -22,4 +22,9 @@ urlpatterns = [
         views.formatting_template_latex_download,
         name="formatting_template_latex_download",
     ),
+    path(
+        "formatting-templates/<int:pk>/latex/preview/",
+        views.formatting_template_latex_preview,
+        name="formatting_template_latex_preview",
+    ),
 ]

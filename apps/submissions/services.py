@@ -84,6 +84,7 @@ def create_submission_with_initial_version(
     contact_emails="",
     keywords="",
     defer_checks=False,
+    mark_as_checking=True,
 ):
     submission = Submission.objects.create(
         title=title or "Без названия",
@@ -121,10 +122,10 @@ def create_submission_with_initial_version(
     if publication_topic is not None:
         publication_topic.last_used_at = timezone.now()
         publication_topic.save(update_fields=["last_used_at", "updated_at"])
-    if defer_checks:
+    if defer_checks and mark_as_checking:
         submission.status = SubmissionStatus.AUTO_CHECKING
         submission.save(update_fields=["status", "updated_at"])
-    else:
+    elif not defer_checks:
         from apps.checks.services import queue_submission_checks
 
         queue_submission_checks(submission)

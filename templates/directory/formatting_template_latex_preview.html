@@ -1,0 +1,28 @@
+{% extends "workspace_base.html" %}
+{% load workspace_navigation %}
+
+{% block title %}LaTeX-шаблон{% endblock %}
+{% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+    <div>
+        <span class="eyebrow">Шаблон оформления</span>
+        <h1>LaTeX-шаблон</h1>
+        <p>{{ formatting_template.file_basename }} · версия {{ formatting_template.version_number }}</p>
+    </div>
+    <a class="button" href="{% url 'directory:formatting_template_latex_download' formatting_template.pk %}">
+        Скачать .tex
+    </a>
+</header>
+
+<section class="surface">
+    <div class="section-head">
+        <div>
+            <h2>Предпросмотр исходного кода</h2>
+            <p>Этот файл сформирован из распознанных параметров страницы, текста и структуры.</p>
+        </div>
+    </div>
+    <pre style="overflow:auto;max-height:70vh;padding:20px;border-radius:12px;background:#111827;color:#e5e7eb;white-space:pre-wrap"><code>{{ latex_source }}</code></pre>
+</section>
+{% endblock %}

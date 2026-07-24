@@ -36,6 +36,7 @@ urlpatterns = [
         name="version_download",
     ),
     path("<int:pk>/progress/", views.submission_progress_view, name="progress"),
+    path("<int:pk>/start-checks/", views.start_submission_checks_view, name="start_checks"),
     path("<int:pk>/checks-report/", views.submission_checks_report_view, name="checks_report"),
     path(
         "<int:pk>/formatting-rules/",

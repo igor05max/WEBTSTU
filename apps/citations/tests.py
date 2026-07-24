@@ -2,6 +2,7 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -14,6 +15,9 @@ from apps.citations.checks import build_citation_coverage_report
 from apps.citations.index import build_index, search_claim
 from apps.citations.rerank import _remove_weak_results
 from apps.citations.workspaces import apply_to_docx, create_workspace
+from apps.directory.models import ArticleType, Journal
+from apps.submissions.models import SubmissionStatus
+from apps.submissions.services import create_submission_with_initial_version
 
 
 class CitationSystemTests(TestCase):
@@ -190,3 +194,129 @@ class CitationSystemTests(TestCase):
         )
         self.assertIn("Список литературы", text)
         self.assertIn("Иванов И. И.", text)
+
+    def test_apply_source_when_docx_has_no_heading_style(self):
+        document = Document()
+        heading_style = document.styles["Heading 1"]
+        heading_style._element.getparent().remove(heading_style._element)
+        document.add_paragraph(
+            "Нейронные сети используются для анализа медицинских изображений."
+        )
+        source = BytesIO()
+        document.save(source)
+        claim = {
+            "id": "claim-without-heading-style",
+            "text": "Нейронные сети используются для анализа медицинских изображений.",
+            "recommendations": [
+                {
+                    "article_id": "1001",
+                    "title": "Нейронные сети для анализа изображений",
+                    "citation": "Иванов И. И. Нейронные сети для анализа изображений. 2024.",
+                }
+            ],
+        }
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="custom-styles.docx",
+            snapshot={"text": claim["text"]},
+            claims=[claim],
+            index_status={"ready": True},
+        )
+
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[
+                {
+                    "claim_id": claim["id"],
+                    "article_id": "1001",
+                }
+            ],
+        )
+        result = Document(output)
+        headings = [
+            paragraph.text
+            for paragraph in result.paragraphs
+            if paragraph.text == "Список литературы"
+        ]
+        self.assertEqual(headings, ["Список литературы"])
+
+    def test_submission_source_stage_prepares_preview_and_new_version(self):
+        document = Document()
+        document.add_heading("Анализ медицинских изображений", level=1)
+        document.add_paragraph("Иванов И. И.")
+        document.add_paragraph(
+            "Нейронные сети широко используются для классификации медицинских "
+            "изображений и позволяют повысить точность распознавания."
+        )
+        source = BytesIO()
+        document.save(source)
+        journal = Journal.objects.create(name="Журнал RAG")
+        article_type = ArticleType.objects.create(code="rag-article", name="Статья RAG")
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Анализ медицинских изображений",
+            abstract="Нейронные сети для классификации изображений.",
+            document_authors="Иванов И. И.",
+            keywords="нейронные сети; изображения",
+            journal=journal,
+            article_type=article_type,
+            file=SimpleUploadedFile("article.docx", source.getvalue()),
+            defer_checks=True,
+            mark_as_checking=False,
+        )
+        self.client.force_login(self.user)
+
+        page = self.client.get(
+            f"{reverse('citations:workspace')}?submission={submission.pk}"
+        )
+        self.assertContains(page, "Распознано из документа")
+        self.assertContains(page, "Иванов И. И.")
+
+        search = self.client.post(
+            reverse("citations:workspace"),
+            {"submission": submission.pk, "max_claims": 3},
+        )
+        self.assertEqual(search.status_code, 200)
+        result = search.context["result"]
+        self.assertEqual(result["submission_id"], submission.pk)
+        claim = next(
+            item for item in result["claims"] if item.get("recommendations")
+        )
+        article = claim["recommendations"][0]
+
+        prepared = self.client.post(
+            reverse("citations:prepare_submission_result"),
+            {
+                "workspace_token": result["token"],
+                "selections": (
+                    f'[{{"claim_id":"{claim["id"]}",'
+                    f'"article_id":"{article["article_id"]}"}}]'
+                ),
+            },
+        )
+        self.assertRedirects(
+            prepared,
+            reverse("citations:submission_result_preview", args=[result["token"]]),
+            fetch_redirect_response=False,
+        )
+        preview_content = self.client.get(
+            reverse("citations:submission_result_content", args=[result["token"]])
+        )
+        self.assertEqual(preview_content.status_code, 200)
+        self.assertContains(preview_content, "Тестовый журнал. 2024. № 1")
+
+        with patch("apps.checks.services.queue_submission_checks") as mocked_queue:
+            applied = self.client.post(
+                reverse("citations:use_submission_result", args=[result["token"]])
+            )
+        self.assertRedirects(
+            applied,
+            reverse("submissions:detail", args=[submission.pk]),
+            fetch_redirect_response=False,
+        )
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, SubmissionStatus.DRAFT)
+        self.assertEqual(submission.versions.count(), 2)
+        mocked_queue.assert_called_once()

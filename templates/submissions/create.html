@@ -26,7 +26,7 @@
                 </a>
                 <span class="submission-create-kicker">Новый материал</span>
                 <h1>Загрузить материал</h1>
-                <p>Четыре коротких шага. После создания сразу откроется страница материала, а обработка продолжится уже там.</p>
+                <p>Четыре коротких шага. После создания откроется работа с распознанными данными и научными источниками.</p>
             </div>
         </header>
 
@@ -90,7 +90,7 @@
                     <span class="submission-section-number">02</span>
                     <div>
                         <h2 id="material-file-title">Загрузите материал</h2>
-                        <p>Сейчас нужен только сам документ. Его содержимое система разберёт после перехода на страницу материала.</p>
+                        <p>Сейчас нужен только сам документ. На следующей странице система покажет распознанные название, авторов, аннотацию и другие сведения.</p>
                     </div>
                 </div>
 
@@ -178,7 +178,7 @@
                         </div>
                         <div class="formatting-template-actions">
                             <a class="button secondary" data-template-download href="#" target="_blank" rel="noreferrer">Посмотреть</a>
-                            <a class="button secondary" data-template-latex-download href="#" target="_blank" rel="noreferrer" hidden>LaTeX</a>
+                            <a class="button secondary" data-template-latex-download href="#" target="_blank" rel="noreferrer" hidden>Посмотреть LaTeX</a>
                         </div>
                     </div>
                     <details class="formatting-template-rules" data-template-rules hidden>
@@ -268,8 +268,8 @@
                 </details>
 
                 <div class="submission-create-result-note">
-                    <strong>Дальше ждать здесь не придётся</strong>
-                    <span>После создания откроется страница материала. Разбор нового шаблона и все проверки будут выполняться и обновляться уже на ней.</span>
+                    <strong>Следующий шаг — источники</strong>
+                    <span>После создания система покажет распознанные данные и предложит публикации из локальной базы. Проверки начнутся только после вашего подтверждения.</span>
                 </div>
 
                 <div class="submission-wizard-actions">
@@ -285,6 +285,6 @@
 </div>
 
 <script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
-<script src="{% static 'submissions/create.js' %}?v=20260724b" defer></script>
+<script src="{% static 'submissions/create.js' %}?v=20260724c" defer></script>
 </body>
 </html>

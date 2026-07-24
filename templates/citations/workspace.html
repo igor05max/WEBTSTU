@@ -5,15 +5,15 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260724a">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260724b">
 {% endblock %}
 
 {% block content %}
 <header class="citation-hero">
     <div>
-        <span class="citation-kicker">Research evidence retrieval</span>
-        <h1>Умный поиск источников</h1>
-        <p>Система находит утверждения без ссылок, понимает, что именно нужно подтвердить, и ищет доказательные фрагменты в локальном корпусе научных публикаций.</p>
+        <span class="citation-kicker">{% if selected_submission %}Шаг 5 · Источники{% else %}Research evidence retrieval{% endif %}</span>
+        <h1>{% if selected_submission %}Проверьте данные и источники{% else %}Умный поиск источников{% endif %}</h1>
+        <p>{% if selected_submission %}Система извлекла сведения из загруженного файла. Теперь локальная RAG-система предложит публикации, которыми можно подтвердить утверждения.{% else %}Система находит утверждения без ссылок, понимает, что именно нужно подтвердить, и ищет доказательные фрагменты в локальном корпусе научных публикаций.{% endif %}</p>
     </div>
     <div class="citation-index-badge{% if index_status.ready %} is-ready{% endif %}">
         <span></span>
@@ -25,6 +25,25 @@
     </div>
 </header>
 
+{% if selected_submission %}
+<section class="citation-search-card citation-metadata-card">
+    <div class="citation-card-heading">
+        <div>
+            <span>Распознано из документа</span>
+            <h2>{{ selected_submission.title }}</h2>
+        </div>
+        <a href="{% url 'submissions:version_preview' selected_submission.pk selected_submission.current_version_id %}" target="_blank">Посмотреть исходный файл ↗</a>
+    </div>
+    <dl class="citation-metadata-grid">
+        <div><dt>Авторы</dt><dd>{{ selected_submission.document_authors|default:"Не удалось распознать" }}</dd></div>
+        <div><dt>Организация</dt><dd>{{ selected_submission.organizations|default:"Не удалось распознать" }}</dd></div>
+        <div><dt>Аннотация</dt><dd>{{ selected_submission.abstract|default:"Не удалось распознать" }}</dd></div>
+        <div><dt>Ключевые слова</dt><dd>{{ selected_submission.keywords|default:"Не удалось распознать" }}</dd></div>
+        <div><dt>E-mail</dt><dd>{{ selected_submission.contact_emails|default:"Не удалось распознать" }}</dd></div>
+    </dl>
+</section>
+{% endif %}
+
 <section class="citation-search-card">
     <div class="citation-card-heading">
         <div>
@@ -33,11 +52,17 @@
         </div>
         <p>Выберите один вариант. DOCX после подбора можно скачать с уже добавленными ссылками.</p>
     </div>
-    <form method="post" enctype="multipart/form-data" class="citation-search-form">
+    <form method="post" enctype="multipart/form-data" class="citation-search-form"{% if auto_analyze %} data-auto-analyze{% endif %}>
         {% csrf_token %}
         {% if form.non_field_errors %}
             <div class="citation-form-error">{{ form.non_field_errors }}</div>
         {% endif %}
+        {% if selected_submission %}
+            <input type="hidden" name="submission" value="{{ selected_submission.pk }}">
+            <div class="citation-form-notice" data-auto-analysis-note>
+                {% if auto_analyze %}Подбираем источники по тексту материала…{% else %}Повторный поиск выполнится по текущей версии материала.{% endif %}
+            </div>
+        {% else %}
         <div class="citation-source-grid">
             <label class="citation-field">
                 <span>{{ form.submission.label }}</span>
@@ -57,6 +82,7 @@
             {{ form.text }}
             {% for error in form.text.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
         </label>
+        {% endif %}
         <div class="citation-form-footer">
             <label class="citation-claims-count">
                 <span>{{ form.max_claims.label }}</span>
@@ -179,12 +205,12 @@
             <ol class="citation-plan-list" data-plan-list></ol>
             <button class="citation-copy-button" type="button" data-copy-plan hidden>Скопировать список</button>
             {% if result.can_apply_docx %}
-            <form method="post" action="{% url 'citations:apply' %}" data-apply-form hidden>
+            <form method="post" action="{% if result.submission_id %}{% url 'citations:prepare_submission_result' %}{% else %}{% url 'citations:apply' %}{% endif %}" data-apply-form hidden>
                 {% csrf_token %}
                 <input type="hidden" name="workspace_token" value="{{ result.token }}">
                 <input type="hidden" name="selections" value="[]" data-selection-input>
-                <button class="citation-primary-action" type="submit">Скачать DOCX со ссылками</button>
-                <small>Маркеры [n] добавятся к утверждениям, источники — в список литературы.</small>
+                <button class="citation-primary-action" type="submit">{% if result.submission_id %}Добавить и посмотреть документ{% else %}Скачать DOCX со ссылками{% endif %}</button>
+                <small>Маркеры [n] добавятся к утверждениям, источники — в список литературы. Исходный файл останется без изменений.</small>
             </form>
             {% else %}
             <div class="citation-docx-hint">Автоматическая вставка в файл доступна при анализе DOCX. Для этого материала можно скопировать готовый план.</div>
@@ -193,8 +219,22 @@
     </div>
 </section>
 {% endif %}
+
+{% if selected_submission %}
+<section class="citation-search-card citation-next-step">
+    <div>
+        <span class="citation-kicker">Следующий этап</span>
+        <h2>Можно продолжить без добавления источников</h2>
+        <p>Рекомендации необязательны. При продолжении система начнёт проверки текущей версии материала.</p>
+    </div>
+    <form method="post" action="{% url 'submissions:start_checks' selected_submission.pk %}">
+        {% csrf_token %}
+        <button class="citation-primary-action" type="submit">Оставить как есть и начать проверки</button>
+    </form>
+</section>
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260724a" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20260724b" defer></script>
 {% endblock %}

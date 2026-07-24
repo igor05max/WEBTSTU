@@ -1,4 +1,9 @@
 (() => {
+    const autoForm = document.querySelector("[data-auto-analyze]");
+    if (autoForm) {
+        window.setTimeout(() => autoForm.requestSubmit(), 120);
+    }
+
     const plan = document.querySelector("[data-citation-plan]");
     if (!plan) return;
 

@@ -18,7 +18,17 @@ def _workspace_dir(user_id, token):
     return Path(settings.CITATION_WORKSPACE_ROOT) / str(int(user_id)) / token
 
 
-def create_workspace(*, user_id, file_bytes, file_name, snapshot, claims, index_status):
+def create_workspace(
+    *,
+    user_id,
+    file_bytes,
+    file_name,
+    snapshot,
+    claims,
+    index_status,
+    submission_id=None,
+    source_version_id=None,
+):
     token = uuid.uuid4().hex
     directory = _workspace_dir(user_id, token)
     directory.mkdir(parents=True, exist_ok=False)
@@ -34,6 +44,8 @@ def create_workspace(*, user_id, file_bytes, file_name, snapshot, claims, index_
         "claims": claims,
         "index_status": index_status,
         "text_length": len(snapshot.get("text") or ""),
+        "submission_id": submission_id,
+        "source_version_id": source_version_id,
     }
     (directory / "workspace.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
@@ -157,12 +169,25 @@ def apply_to_docx(*, user_id, token, selections):
             paragraph
             for paragraph in document.paragraphs
             if paragraph.text.strip().casefold()
-            in {"список литературы", "библиографический список", "references"}
+            in {
+                "список литературы",
+                "список использованной литературы",
+                "список использованных источников",
+                "библиографический список",
+                "литература",
+                "references",
+            }
         ),
         None,
     )
     if bibliography_heading is None:
-        document.add_heading("Список литературы", level=1)
+        try:
+            heading_style = document.styles["Heading 1"]
+        except KeyError:
+            bibliography_heading = document.add_paragraph()
+            bibliography_heading.add_run("Список литературы").bold = True
+        else:
+            document.add_paragraph("Список литературы", style=heading_style)
 
     unique_results = {}
     for _claim, result, article_id in selected:
@@ -180,3 +205,33 @@ def apply_to_docx(*, user_id, token, selections):
     output.seek(0)
     original_stem = Path(payload.get("file_name") or "article").stem
     return output, f"{original_stem}_with_citations.docx"
+
+
+def prepare_docx_result(*, user_id, token, selections):
+    output, file_name = apply_to_docx(
+        user_id=user_id,
+        token=token,
+        selections=selections,
+    )
+    payload = load_workspace(user_id=user_id, token=token)
+    result_name = "result.docx"
+    (payload["_directory"] / result_name).write_bytes(output.getvalue())
+    payload["result_name"] = result_name
+    payload["result_file_name"] = file_name
+    directory = payload.pop("_directory")
+    (directory / "workspace.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return payload
+
+
+def read_prepared_result(*, user_id, token):
+    payload = load_workspace(user_id=user_id, token=token)
+    result_name = str(payload.get("result_name") or "")
+    if not result_name:
+        raise FileNotFoundError("Сначала подготовьте документ с выбранными источниками.")
+    result_path = payload["_directory"] / result_name
+    if not result_path.exists():
+        raise FileNotFoundError("Подготовленный документ больше недоступен.")
+    return payload, result_path.read_bytes()

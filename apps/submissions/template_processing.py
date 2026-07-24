@@ -22,13 +22,18 @@ def prepare_submission_template_by_id(
     *,
     template_id,
     expected_version_id,
+    start_checks=True,
 ):
-    """Extract template rules, refresh the snapshot, then launch submission checks."""
+    """Extract template rules, refresh the snapshot and optionally launch checks."""
     close_old_connections()
     submission = None
     try:
         template = FormattingTemplate.objects.get(pk=template_id)
-        process_formatting_template(template)
+        if (
+            template.analysis_status not in {"ready", "partial"}
+            or not template.extracted_rules
+        ):
+            process_formatting_template(template)
         submission = Submission.objects.select_related(
             "article_type",
             "journal",
@@ -67,14 +72,21 @@ def prepare_submission_template_by_id(
     if submission.current_version_id != expected_version_id:
         return False
 
-    from apps.checks.services import queue_submission_checks
+    if start_checks:
+        from apps.checks.services import queue_submission_checks
 
-    queue_submission_checks(submission)
+        queue_submission_checks(submission)
     close_old_connections()
     return True
 
 
-def launch_submission_template_process(submission_id, template_id, version_id):
+def launch_submission_template_process(
+    submission_id,
+    template_id,
+    version_id,
+    *,
+    start_checks=True,
+):
     command = [
         sys.executable,
         str(settings.BASE_DIR / "manage.py"),
@@ -85,6 +97,8 @@ def launch_submission_template_process(submission_id, template_id, version_id):
         "--version-id",
         str(version_id),
     ]
+    if not start_checks:
+        command.append("--skip-checks")
     popen_kwargs = {
         "cwd": str(settings.BASE_DIR),
         "stdin": subprocess.DEVNULL,
@@ -98,7 +112,7 @@ def launch_submission_template_process(submission_id, template_id, version_id):
     subprocess.Popen(command, **popen_kwargs)
 
 
-def queue_submission_template_processing(submission, template):
+def queue_submission_template_processing(submission, template, *, start_checks=True):
     submission.refresh_from_db()
     version = submission.current_version
     if version is None:
@@ -109,6 +123,7 @@ def queue_submission_template_processing(submission, template):
             submission.id,
             template_id=template.id,
             expected_version_id=version.id,
+            start_checks=start_checks,
         )
         return
 
@@ -117,5 +132,6 @@ def queue_submission_template_processing(submission, template):
             submission.id,
             template.id,
             version.id,
+            start_checks=start_checks,
         )
     )

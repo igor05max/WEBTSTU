@@ -56,7 +56,10 @@ from apps.submissions.document_analysis import (
     read_file_bytes,
 )
 from apps.submissions.models import Submission, SubmissionAppeal, SubmissionStatus, SubmissionVersion
-from apps.submissions.template_processing import queue_submission_template_processing
+from apps.submissions.template_processing import (
+    prepare_submission_template_by_id,
+    queue_submission_template_processing,
+)
 from apps.submissions.route_suggestions import (
     ensure_submission_route_suggestion,
     get_selectable_directions_queryset,
@@ -887,27 +890,22 @@ def submission_create(request):
                 organizations=form.cleaned_data["organizations"] or metadata.get("organizations", ""),
                 contact_emails=form.cleaned_data["contact_emails"] or metadata.get("contact_emails", ""),
                 keywords=form.cleaned_data["keywords"] or metadata.get("keywords", ""),
-                defer_checks=template_requires_processing,
+                defer_checks=True,
+                mark_as_checking=False,
             )
             if template_requires_processing:
-                queue_submission_template_processing(submission, formatting_template)
-            submission.refresh_from_db()
-            if submission.status == SubmissionStatus.AUTO_CHECKING:
-                messages.success(
-                    request,
-                    "Материал создан. Шаблон и автопроверки обрабатываются на этой странице — ждать на форме загрузки больше не нужно.",
+                queue_submission_template_processing(
+                    submission,
+                    formatting_template,
+                    start_checks=False,
                 )
-            elif submission.status == SubmissionStatus.SUBMITTED:
-                messages.success(
-                    request,
-                    "Заявка загружена и прошла автопроверки. Теперь её можно отправить в согласование.",
-                )
-            else:
-                messages.success(
-                    request,
-                    "Заявка загружена. Автопроверки нашли рекомендации, но они не блокируют отправку.",
-                )
-            return redirect("submissions:detail", pk=submission.pk)
+            messages.success(
+                request,
+                "Материал создан, данные из файла распознаны. Теперь проверьте источники перед запуском автопроверок.",
+            )
+            return redirect(
+                f"{reverse('citations:workspace')}?submission={submission.pk}&auto=1"
+            )
     else:
         form = SubmissionCreateForm(current_user=request.user)
 
@@ -944,6 +942,35 @@ def extract_submission_metadata_view(request):
             },
         }
     )
+
+
+@login_required
+@require_POST
+def start_submission_checks_view(request, pk):
+    submission = get_object_or_404(
+        Submission.objects.select_related("author", "current_version", "formatting_template"),
+        pk=pk,
+    )
+    if submission.author_id != request.user.pk and not request.user.is_superuser:
+        return HttpResponseForbidden("Только автор может запустить проверки.")
+    if submission.status != SubmissionStatus.DRAFT:
+        messages.info(request, "Проверки для этого материала уже запущены.")
+        return redirect("submissions:detail", pk=submission.pk)
+    if submission.current_version is None:
+        messages.error(request, "У материала нет файла для проверки.")
+        return redirect("submissions:detail", pk=submission.pk)
+
+    if submission.formatting_template_id:
+        prepare_submission_template_by_id(
+            submission.pk,
+            template_id=submission.formatting_template_id,
+            expected_version_id=submission.current_version_id,
+            start_checks=False,
+        )
+        submission.refresh_from_db()
+    queue_submission_checks(submission)
+    messages.success(request, "Автоматические проверки текущей версии запущены.")
+    return redirect("submissions:detail", pk=submission.pk)
 
 
 @login_required

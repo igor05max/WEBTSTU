@@ -135,3 +135,11 @@ class PublicationTopicAndTemplateTests(TestCase):
         self.assertEqual(response["Content-Type"], "application/x-tex; charset=utf-8")
         self.assertIn(".tex", response["Content-Disposition"])
         self.assertEqual(template.extracted_rules["body"]["font_size_pt"], 14)
+
+        preview = self.client.get(
+            reverse("directory:formatting_template_latex_preview", args=[template.pk])
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertContains(preview, "Предпросмотр исходного кода")
+        self.assertContains(preview, "Скачать .tex")
+        self.assertContains(preview, r"\documentclass", html=False)
