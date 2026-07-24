@@ -39,10 +39,22 @@ def _fallback(claims):
     return claims
 
 
+def _remove_weak_results(claims):
+    minimum = int(getattr(settings, "CITATION_MIN_RECOMMENDATION_PERCENT", 20))
+    for claim in claims:
+        claim["recommendations"] = [
+            item
+            for item in (claim.get("recommendations") or [])
+            if int(item.get("score_percent") or 0) >= minimum
+            and item.get("verdict") != "not_supports"
+        ]
+    return claims
+
+
 def rerank_claims(claims):
     _fallback(claims)
     if not settings.CITATION_LLM_RERANK_ENABLED or not is_ai_configured():
-        return claims
+        return _remove_weak_results(claims)
 
     items = []
     lookup = {}
@@ -129,4 +141,4 @@ def rerank_claims(claims):
                 item["title"],
             )
         )
-    return claims
+    return _remove_weak_results(claims)

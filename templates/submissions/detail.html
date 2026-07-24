@@ -589,7 +589,57 @@
                 {% endif %}
             </div>
 
-            {% if recommended_articles %}
+            {% if citation_claims %}
+                <div class="timeline">
+                    {% for claim in citation_claims %}
+                        <div class="timeline-item">
+                            <div class="section-head compact">
+                                <div>
+                                    <div class="meta">
+                                        Абзац {{ claim.paragraph_index|add:"1" }} ·
+                                        {% if claim.type == "method" %}метод{% elif claim.type == "data" %}данные{% elif claim.type == "task" %}задача{% elif claim.type == "result" %}результат{% else %}тема{% endif %}
+                                    </div>
+                                    <h4>{{ claim.text }}</h4>
+                                </div>
+                                <span class="status-pill warning">Нужна ссылка</span>
+                            </div>
+                            <div class="text-block">{{ claim.reason }}</div>
+                            {% if claim.recommendations %}
+                                <div class="timeline stack-top-sm">
+                                    {% for article in claim.recommendations %}
+                                        {% if article.score_percent > 0 and article.verdict != "not_supports" %}
+                                            <div class="timeline-item">
+                                                <div class="section-head compact">
+                                                    <div>
+                                                        <strong>{{ article.title }}</strong>
+                                                        <div class="meta">
+                                                            {{ article.authors }}{% if article.year %} · {{ article.year }}{% endif %}
+                                                            {% if article.doi %} · DOI {{ article.doi }}{% endif %}
+                                                        </div>
+                                                    </div>
+                                                    <span class="status-pill primary">{{ article.score_percent }}%</span>
+                                                </div>
+                                                <div class="text-block">{{ article.reason }}</div>
+                                                {% if article.evidence %}
+                                                    <blockquote class="stack-top-sm">{{ article.evidence }}</blockquote>
+                                                {% endif %}
+                                                {% if article.url %}
+                                                    <a class="button secondary stack-top-sm" href="{{ article.url }}" target="_blank" rel="noreferrer">Открыть источник</a>
+                                                {% endif %}
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <div class="empty stack-top-sm">Надёжный источник с соответствием от 20% не найден.</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+                <div class="actions stack-top-sm">
+                    <a class="button secondary" href="{% url 'citations:workspace' %}?submission={{ submission.pk }}">Открыть поиск ссылок и добавить в DOCX</a>
+                </div>
+            {% elif recommended_articles %}
                 <div class="timeline">
                     {% for article in recommended_articles %}
                         <div class="timeline-item">

@@ -14,7 +14,7 @@ from apps.checks.document_checks import (
     build_snapshot,
 )
 from apps.checks.formatting_compliance import build_formatting_compliance_report
-from apps.checks.recommendations import recommend_articles
+from apps.citations.checks import build_citation_coverage_report
 from apps.submissions.route_suggestions import ensure_submission_route_suggestion, get_selectable_directions_queryset
 from apps.submissions.models import Submission, SubmissionStatus
 from apps.submissions.subject_area import detect_direction_for_submission
@@ -62,8 +62,8 @@ DEFAULT_CHECK_DEFINITIONS = (
     },
     {
         "code": "article_recommendations",
-        "name": "Рекомендуемые статьи",
-        "description": "Подбирает похожие статьи из локального корпуса по названию и аннотации заявки.",
+        "name": "Ссылки и научные источники",
+        "description": "Находит утверждения без ссылок, точные места цитирования и подтверждающие публикации.",
         "order": 40,
         "is_blocking": False,
         "backend_code": "article_recommendations",
@@ -98,11 +98,12 @@ def get_active_check_definitions():
 
 def _evaluate_check(check_definition, submission, version, *, snapshot=None):
     if check_definition.code == "article_recommendations":
-        payload = recommend_articles(
-            title=submission.title,
-            abstract=submission.abstract or "",
+        return build_citation_coverage_report(
+            submission,
+            version,
+            snapshot=snapshot,
+            min_percent=settings.CITATION_MIN_RECOMMENDATION_PERCENT,
         )
-        return True, payload
 
     if check_definition.code == "subject_area_detection":
         payload = detect_direction_for_submission(

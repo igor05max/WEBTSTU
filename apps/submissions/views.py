@@ -991,10 +991,22 @@ def submission_detail(request, pk):
         "article_recommendations",
     )
     recommended_articles = []
+    citation_claims = []
     recommendation_message = ""
     if recommendation_run is not None:
-        recommended_articles = recommendation_run.result_payload.get("recommendations", [])
-        recommendation_message = recommendation_run.result_payload.get("message", "")
+        recommendation_payload = recommendation_run.result_payload or {}
+        recommended_articles = [
+            item
+            for item in recommendation_payload.get("recommendations", [])
+            if int(item.get("score_percent") or 0) > 0
+            and item.get("verdict") != "not_supports"
+        ]
+        citation_claims = recommendation_payload.get("citation_claims", [])
+        if not citation_claims:
+            citation_claims = (
+                recommendation_payload.get("details", {}).get("citation_claims", [])
+            )
+        recommendation_message = recommendation_payload.get("message", "")
     appeal = _get_submission_appeal_or_none(submission)
     for run in workflow_runs:
         ordered_steps = list(run.steps.all())
@@ -1158,6 +1170,7 @@ def submission_detail(request, pk):
             "check_entries": check_entries,
             "recommendation_run": recommendation_run,
             "recommended_articles": recommended_articles,
+            "citation_claims": citation_claims,
             "recommendation_message": recommendation_message,
             "appeal": appeal,
             "upload_form": upload_form,

@@ -30,7 +30,15 @@ def _read_form_source(form):
 @login_required
 def workspace(request):
     result = None
-    form = CitationSearchForm(request.POST or None, request.FILES or None, user=request.user)
+    initial = {}
+    if request.method == "GET" and request.GET.get("submission"):
+        initial["submission"] = request.GET.get("submission")
+    form = CitationSearchForm(
+        request.POST or None,
+        request.FILES or None,
+        user=request.user,
+        initial=initial,
+    )
     if request.method == "POST" and form.is_valid():
         file_bytes, file_name, source_title = _read_form_source(form)
         if file_bytes is None:

@@ -1,6 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -9,7 +10,9 @@ from django.urls import reverse
 from docx import Document
 
 from apps.citations.analysis import analyze_claims, text_snapshot
+from apps.citations.checks import build_citation_coverage_report
 from apps.citations.index import build_index, search_claim
+from apps.citations.rerank import _remove_weak_results
 from apps.citations.workspaces import apply_to_docx, create_workspace
 
 
@@ -29,6 +32,7 @@ class CitationSystemTests(TestCase):
             CITATION_LLM_ANALYSIS_ENABLED=False,
             CITATION_LLM_RERANK_ENABLED=False,
             CITATION_EMBEDDING_MODEL="",
+            CITATION_CHECK_MIN_TEXT_LENGTH=80,
         )
         self.settings_override.enable()
         self._build_corpus()
@@ -99,6 +103,49 @@ class CitationSystemTests(TestCase):
         self.assertContains(response, "НЕЙРОННЫЕ СЕТИ ДЛЯ АНАЛИЗА ИЗОБРАЖЕНИЙ")
         self.assertContains(response, "10.1000/test.1")
         self.assertContains(response, "Почему рекомендуется")
+
+    def test_submission_check_contains_exact_citation_locations(self):
+        submission = SimpleNamespace(
+            title="Анализ медицинских изображений",
+            abstract="Классификация изображений нейронными сетями.",
+        )
+        snapshot = text_snapshot(
+            "Введение\nСвёрточные нейронные сети широко применяются для классификации "
+            "медицинских изображений и обеспечивают высокую точность распознавания."
+        )
+
+        passed, payload = build_citation_coverage_report(
+            submission,
+            None,
+            snapshot=snapshot,
+            max_claims=3,
+            results_per_claim=2,
+        )
+
+        self.assertTrue(passed)
+        self.assertEqual(payload["check_code"], "article_recommendations")
+        self.assertEqual(payload["metrics"]["claims_needing_citation"], 1)
+        self.assertEqual(payload["issues"][0]["location"], "Введение, абзац 2")
+        self.assertIn("Свёрточные нейронные сети", payload["issues"][0]["context_highlight"])
+        self.assertTrue(payload["citation_claims"][0]["recommendations"])
+
+    def test_zero_percent_and_rejected_sources_are_removed(self):
+        claims = [
+            {
+                "recommendations": [
+                    {"title": "Нулевой", "score_percent": 0, "verdict": "partial"},
+                    {"title": "Отклонённый", "score_percent": 87, "verdict": "not_supports"},
+                    {"title": "Подходящий", "score_percent": 72, "verdict": "supports"},
+                ]
+            }
+        ]
+
+        filtered = _remove_weak_results(claims)
+
+        self.assertEqual(
+            [item["title"] for item in filtered[0]["recommendations"]],
+            ["Подходящий"],
+        )
 
     def test_apply_selected_source_to_docx(self):
         document = Document()
