@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
-    <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20260724b">
+    <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20260724c">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
 </head>
 <body>
@@ -90,7 +90,7 @@
                     <span class="submission-section-number">02</span>
                     <div>
                         <h2 id="material-file-title">Загрузите материал</h2>
-                        <p>Сейчас нужен только сам документ. На следующей странице система покажет распознанные название, авторов, аннотацию и другие сведения.</p>
+                        <p>Сейчас нужен только сам документ. Пока вы продолжаете, система распознает название, авторов, аннотацию и другие сведения.</p>
                     </div>
                 </div>
 
@@ -204,11 +204,19 @@
                 <details class="submission-optional-details" data-optional-details>
                     <summary>
                         <span>
-                            <strong>Дополнительные сведения</strong>
-                            <small>Название, аннотация, авторы и комментарий — необязательно</small>
+                            <strong>Данные из материала</strong>
+                            <small>Система заполнит поля из файла — проверьте и при необходимости исправьте</small>
                         </span>
                     </summary>
                     <div class="submission-optional-content">
+                        <div class="submission-metadata-extraction" data-metadata-extraction hidden aria-live="polite">
+                            <span class="submission-metadata-spinner" aria-hidden="true"></span>
+                            <div>
+                                <strong data-metadata-status>Читаем документ…</strong>
+                                <p data-metadata-summary>Ищем название, авторов, организации, e-mail, аннотацию и ключевые слова.</p>
+                            </div>
+                        </div>
+
                         <div class="submission-fields-grid">
                             <div class="submission-field{% if form.title.errors %} has-error{% endif %}">
                                 <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
@@ -285,6 +293,6 @@
 </div>
 
 <script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
-<script src="{% static 'submissions/create.js' %}?v=20260724c" defer></script>
+<script src="{% static 'submissions/create.js' %}?v=20260724d" defer></script>
 </body>
 </html>

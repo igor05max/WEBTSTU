@@ -266,7 +266,7 @@
 }
 
 .submission-metadata-extraction {
-    margin-top: 12px;
+    margin: 0 0 20px;
     padding: 13px 15px;
     display: flex;
     align-items: flex-start;

@@ -703,6 +703,7 @@
     function initializeMetadataExtraction() {
         var fileInput = document.getElementById("id_file");
         var panel = document.querySelector("[data-metadata-extraction]");
+        var optionalDetails = document.querySelector("[data-optional-details]");
         if (!fileInput || !panel) {
             return;
         }
@@ -724,10 +725,8 @@
             if (!field) {
                 return;
             }
-            field.addEventListener("input", function (event) {
-                if (event.isTrusted) {
-                    field.dataset.autoExtracted = "false";
-                }
+            field.addEventListener("input", function () {
+                field.dataset.autoExtracted = "false";
             });
         });
 
@@ -746,15 +745,21 @@
             summary.textContent = text;
         }
 
+        function revealEditableFields() {
+            if (optionalDetails) {
+                optionalDetails.open = true;
+            }
+        }
+
         function applyValue(field, value) {
-            if (!field || !value) {
+            if (!field) {
                 return;
             }
             var mayReplace = !field.value.trim() || field.dataset.autoExtracted === "true";
             if (!mayReplace) {
                 return;
             }
-            field.value = value;
+            field.value = value || "";
             field.dataset.autoExtracted = "true";
             field.dispatchEvent(new Event("change", {bubbles: true}));
         }
@@ -819,11 +824,13 @@
                     Object.keys(fieldMap).forEach(function (key) {
                         applyValue(fieldMap[key], metadata[key] || "");
                     });
+                    revealEditableFields();
                     var matchedCount = applyMatchedUsers(payload.matched_users || []);
                     var authorCount = (metadata.authors || []).length;
                     var found = [];
                     if (metadata.title) { found.push("название"); }
                     if (authorCount) { found.push("авторов: " + authorCount); }
+                    if (metadata.organizations) { found.push("организацию"); }
                     if (metadata.abstract) { found.push("аннотацию"); }
                     if (metadata.keywords) { found.push("ключевые слова"); }
                     if (metadata.contact_emails) { found.push("e-mail"); }
@@ -835,17 +842,21 @@
                     if (parserWarning) {
                         text += " " + parserWarning;
                     }
-                    setPanel(found.length ? "success" : "warning", found.length ? "Метаданные добавлены — проверьте их" : "Нужна ручная проверка", text);
+                    setPanel(found.length ? "success" : "warning", found.length ? "Данные из файла добавлены — проверьте их" : "Нужна ручная проверка", text);
                 })
                 .catch(function (error) {
                     if (currentRequest !== requestNumber) {
                         return;
                     }
-                    setPanel("warning", "Не удалось прочитать метаданные", error.message === "metadata-extraction-failed" ? "Заполните поля вручную; файл всё равно можно отправить." : error.message);
+                    revealEditableFields();
+                    setPanel("warning", "Не удалось прочитать данные из файла", error.message === "metadata-extraction-failed" ? "Заполните поля вручную; файл всё равно можно отправить." : error.message);
                 });
         }
 
         fileInput.addEventListener("change", runExtraction);
+        if (fileInput.files && fileInput.files.length) {
+            runExtraction();
+        }
     }
 
     document.addEventListener("DOMContentLoaded", function () {
@@ -853,5 +864,6 @@
         initializeFileZone();
         initializeWizard();
         initializeCoauthors();
+        initializeMetadataExtraction();
     });
 })();

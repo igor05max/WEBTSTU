@@ -597,6 +597,9 @@ class SubmissionCreateViewTests(TestCase):
         self.assertContains(response, "Загрузить материал")
         self.assertContains(response, 'data-wizard-step="1"')
         self.assertContains(response, "Следующий шаг — источники")
+        self.assertContains(response, "Данные из материала")
+        self.assertContains(response, "data-metadata-extraction")
+        self.assertContains(response, reverse("submissions:extract_metadata"))
 
     @override_settings(SUBMISSION_CHECKS_ASYNC=True)
     @patch("apps.submissions.views.queue_submission_template_processing")
