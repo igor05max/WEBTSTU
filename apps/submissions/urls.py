@@ -43,6 +43,11 @@ urlpatterns = [
         name="update_formatting_rules",
     ),
     path(
+        "<int:pk>/latex-template/",
+        views.submission_latex_template_download_view,
+        name="latex_template_download",
+    ),
+    path(
         "<int:pk>/corrected-document/",
         views.corrected_document_download_view,
         name="corrected_document_download",

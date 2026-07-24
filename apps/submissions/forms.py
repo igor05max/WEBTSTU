@@ -111,7 +111,7 @@ class SubmissionCreateForm(forms.ModelForm):
     formatting_template_file = forms.FileField(
         label="Шаблон оформления",
         required=False,
-        help_text="Можно загрузить DOCX, DOC, PDF, текстовый файл или изображение.",
+        help_text="Можно загрузить DOCX, DOC, PDF, LaTeX (.tex), текстовый файл или изображение.",
     )
     formatting_check_requested = forms.BooleanField(
         label="Проверить оформление по шаблону",

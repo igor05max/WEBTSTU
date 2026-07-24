@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_POST
 from django.views.decorators.clickjacking import xframe_options_sameorigin
+from document_template_engine import build_latex_template
 
 from apps.accounts.roles import has_chair_head_role
 from apps.accounts.models import User
@@ -1378,6 +1379,33 @@ def update_formatting_rules_view(request, pk):
     queue_submission_checks(submission)
     messages.success(request, "Правила уточнены. Автопроверки запущены повторно.")
     return redirect("submissions:detail", pk=submission.pk)
+
+
+@login_required
+def submission_latex_template_download_view(request, pk):
+    submission = _get_viewable_submission_or_404(request.user, pk)
+    rules = (submission.formatting_rules_snapshot or {}).get("effective") or {}
+    if not rules:
+        messages.error(
+            request,
+            "LaTeX-шаблон пока нельзя сформировать: для работы не сохранены правила оформления.",
+        )
+        return redirect("submissions:detail", pk=submission.pk)
+    source = build_latex_template(
+        rules,
+        metadata={
+            "title": submission.title,
+            "authors": submission.document_authors or submission.get_authors_display(),
+            "institution": submission.organizations,
+            "abstract": submission.abstract,
+            "keywords": submission.keywords,
+        },
+    )
+    response = HttpResponse(source, content_type="application/x-tex; charset=utf-8")
+    response["Content-Disposition"] = (
+        f'attachment; filename="submission-{submission.pk}-template.tex"'
+    )
+    return response
 
 
 @login_required

@@ -12,8 +12,8 @@ REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 W = f"{{{WORD_NS}}}"
 R = f"{{{REL_NS}}}"
 
-SUPPORTED_EXTENSIONS = {".docx", ".doc", ".pdf", ".txt", ".md", ".rtf"}
-TEXT_EXTENSIONS = {".txt", ".md", ".rtf"}
+SUPPORTED_EXTENSIONS = {".docx", ".doc", ".pdf", ".tex", ".txt", ".md", ".rtf"}
+TEXT_EXTENSIONS = {".tex", ".txt", ".md", ".rtf"}
 DANGEROUS_EXTENSIONS = {
     ".bat",
     ".cmd",
@@ -291,7 +291,12 @@ def analyze_document_bytes(data, file_name):
         except (OSError, ValueError, zipfile.BadZipFile, ElementTree.ParseError) as exc:
             base["parse_error"] = str(exc) or "DOCX поврежден или имеет неверную структуру."
     elif suffix in TEXT_EXTENSIONS:
-        text = _decode_text(data)
+        if suffix == ".tex":
+            from document_template_engine import latex_to_plain_text
+
+            text = latex_to_plain_text(data)
+        else:
+            text = _decode_text(data)
         paragraphs = [normalize_space(item) for item in re.split(r"[\r\n]+", text)]
         base["paragraphs"] = [
             {"index": index, "text": value, "style": ""}

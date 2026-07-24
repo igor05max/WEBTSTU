@@ -147,9 +147,16 @@
                     {% if submission.formatting_template.analysis_message %}
                         <small>{{ submission.formatting_template.analysis_message }}</small>
                     {% endif %}
-                    <a class="submission-inline-link" href="{% url 'directory:formatting_template_download' submission.formatting_template.pk %}">
-                        Скачать исходный шаблон
-                    </a>
+                    <div class="submission-template-download-actions">
+                        <a class="button secondary" href="{% url 'directory:formatting_template_download' submission.formatting_template.pk %}">
+                            Скачать исходный
+                        </a>
+                        {% if formatting_rules %}
+                            <a class="button secondary" href="{% url 'submissions:latex_template_download' submission.pk %}">
+                                Скачать LaTeX (.tex)
+                            </a>
+                        {% endif %}
+                    </div>
                 {% else %}
                     <strong>Шаблон не приложен</strong>
                     <span>
@@ -159,6 +166,19 @@
                             Тема сохранена в каталоге, а шаблон к ней сможет добавить следующий автор.
                         {% endif %}
                     </span>
+                {% endif %}
+                {% if formatting_rules %}
+                    {% if not submission.formatting_template %}
+                        <div class="submission-template-download-actions">
+                            <a class="button secondary" href="{% url 'submissions:latex_template_download' submission.pk %}">
+                                Скачать LaTeX (.tex)
+                            </a>
+                        </div>
+                    {% endif %}
+                    <small>
+                        Он сформирован из тех же правил, по которым система проверяет поля,
+                        шрифт, интервалы, отступы и структуру работы.
+                    </small>
                 {% endif %}
             </div>
         </div>
@@ -226,7 +246,7 @@
                         </ol>
                     </div>
                     <div>
-                        <span class="submission-formatting-label">При создании DOCX</span>
+                        <span class="submission-formatting-label">При создании исправленной версии</span>
                         <ul class="submission-template-operations">
                             {% for operation in document_template_plan.operations %}
                                 <li>{{ operation }}</li>

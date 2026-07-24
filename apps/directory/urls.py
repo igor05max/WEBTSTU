@@ -17,4 +17,9 @@ urlpatterns = [
         views.formatting_template_download,
         name="formatting_template_download",
     ),
+    path(
+        "formatting-templates/<int:pk>/latex/",
+        views.formatting_template_latex_download,
+        name="formatting_template_latex_download",
+    ),
 ]

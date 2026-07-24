@@ -8,6 +8,7 @@ from django.urls import reverse
 from apps.directory.formatting_templates import (
     create_formatting_template,
     get_latest_formatting_template,
+    process_formatting_template,
 )
 from apps.directory.journal_search import build_journal_search_index
 from apps.directory.models import ArticleType, Journal, PublicationTopic
@@ -102,3 +103,35 @@ class PublicationTopicAndTemplateTests(TestCase):
         self.assertEqual(first.version_number, 1)
         self.assertEqual(second.version_number, 2)
         self.assertEqual(latest.pk, second.pk)
+
+    def test_latex_template_is_processed_and_can_be_downloaded(self):
+        topic, _created = resolve_or_create_publication_topic(
+            "LaTeX-конференция 2027",
+            created_by=self.user,
+        )
+        template = create_formatting_template(
+            article_type=self.article_type,
+            publication_topic=topic,
+            uploaded_by=self.user,
+            file=SimpleUploadedFile(
+                "conference.tex",
+                (
+                    r"\documentclass[14pt,a4paper]{article}"
+                    r"\usepackage[margin=2cm]{geometry}"
+                    r"\setlength{\parindent}{1cm}"
+                    r"\begin{document}Текст\end{document}"
+                ).encode("utf-8"),
+            ),
+        )
+        process_formatting_template(template)
+        template.refresh_from_db()
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("directory:formatting_template_latex_download", args=[template.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/x-tex; charset=utf-8")
+        self.assertIn(".tex", response["Content-Disposition"])
+        self.assertEqual(template.extracted_rules["body"]["font_size_pt"], 14)

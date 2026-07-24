@@ -1,7 +1,7 @@
 # Document Template Engine
 
 Независимый от Django модуль для анализа требований, проверки структуры и
-создания DOCX по шаблону научного материала.
+создания DOCX/LaTeX по шаблону научного материала.
 
 Основные гарантии:
 
@@ -12,10 +12,15 @@
 - отсутствующие блоки заполняются только данными, явно переданными приложением;
 - локальная AI-модель подключается через callback и нужна для интерпретации
   свободного текста требований, а сборка DOCX остаётся детерминированной.
+- LaTeX-исходники разбираются без компиляции и выполнения пользовательских
+  команд; найденные параметры страницы и текста переводятся в общую схему;
+- из общей схемы создаётся самостоятельный UTF-8 шаблон для XeLaTeX/LuaLaTeX.
 
 ```python
 from document_template_engine import (
     build_docx_from_template,
+    build_latex_template,
+    check_latex_against_template,
     interpret_template_text,
 )
 
@@ -31,7 +36,15 @@ result, changes, plan = build_docx_from_template(
     rules,
     metadata={"title": "...", "authors": "..."},
 )
+
+latex_source = build_latex_template(
+    rules,
+    metadata={"title": "...", "authors": "..."},
+)
+
+latex_report = check_latex_against_template(latex_source, rules)
 ```
 
 В модуле нет импортов Django, моделей проекта, сетевых клиентов и настроек
-конкретного приложения. Для переноса нужен только `python-docx`.
+конкретного приложения. Для DOCX нужен `python-docx`; создание и проверка
+LaTeX-исходника работают на стандартной библиотеке Python.

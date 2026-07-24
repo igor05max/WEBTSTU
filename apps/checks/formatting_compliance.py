@@ -4,6 +4,7 @@ from pathlib import Path
 from apps.submissions.document_analysis import read_file_bytes
 from document_template_engine import (
     DocumentTemplateEngineError,
+    check_latex_against_template,
     check_docx_against_template,
     normalize_template_rules,
 )
@@ -105,13 +106,13 @@ def build_formatting_compliance_report(submission, version):
         )
 
     suffix = Path(version.file.name).suffix.casefold()
-    if suffix != ".docx":
+    if suffix not in {".docx", ".tex"}:
         issues = [
             _issue(
                 "template_limited_format_analysis",
-                "Для точной сборки нужен DOCX",
-                "Поля, шрифты, интервалы и роли абзацев можно надёжно проверить и исправить только в DOCX.",
-                suggestion="При необходимости загрузите работу в формате DOCX.",
+                "Для точной проверки нужен DOCX или LaTeX",
+                "Поля, шрифты, интервалы и структуру можно надёжно проверить в DOCX или исходнике LaTeX.",
+                suggestion="При необходимости загрузите работу в формате DOCX или TEX.",
             )
         ]
         return True, _payload(
@@ -124,16 +125,17 @@ def build_formatting_compliance_report(submission, version):
     with version.file.open("rb") as source:
         data = read_file_bytes(source)
     try:
-        report = check_docx_against_template(
-            data,
-            rules,
-            metadata=_submission_metadata(submission),
+        checker = (
+            check_latex_against_template
+            if suffix == ".tex"
+            else check_docx_against_template
         )
+        report = checker(data, rules, metadata=_submission_metadata(submission))
     except DocumentTemplateEngineError as exc:
         issues = [
             _issue(
-                "template_docx_open_failed",
-                "Не удалось разобрать DOCX",
+                "template_document_open_failed",
+                "Не удалось разобрать документ",
                 str(exc),
                 suggestion="Проверьте, что файл открывается в текстовом редакторе, и загрузите новую версию.",
             )

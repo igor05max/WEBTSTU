@@ -22,6 +22,7 @@ from apps.submissions.document_analysis import (
     read_file_bytes,
 )
 from document_template_engine import (
+    extract_latex_template_rules,
     interpret_template_text,
     normalize_template_rules,
 )
@@ -31,6 +32,7 @@ TEMPLATE_EXTENSIONS = {
     ".docx",
     ".doc",
     ".pdf",
+    ".tex",
     ".txt",
     ".md",
     ".rtf",
@@ -130,7 +132,12 @@ def _extract_template_content(template):
     snapshot = analyze_document_bytes(data, template.file.name)
     text = snapshot.get("text") or ""
     parse_warning = snapshot.get("parse_error") or ""
-    deterministic_rules = _extract_docx_rules(data) if suffix == ".docx" else {}
+    if suffix == ".docx":
+        deterministic_rules = _extract_docx_rules(data)
+    elif suffix == ".tex":
+        deterministic_rules = extract_latex_template_rules(data)
+    else:
+        deterministic_rules = {}
 
     if suffix == ".pdf":
         try:
@@ -142,6 +149,17 @@ def _extract_template_content(template):
                 parse_warning = ""
         except Exception:
             text = ""
+    elif suffix == ".tex":
+        for encoding in ("utf-8-sig", "utf-8", "cp1251", "utf-16le"):
+            try:
+                text = data.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+            else:
+                break
+        else:
+            text = data.decode("utf-8", errors="replace")
+        parse_warning = ""
     elif suffix in TEXT_EXTENSIONS:
         text = snapshot.get("text") or ""
     return text[:120_000], deterministic_rules, parse_warning

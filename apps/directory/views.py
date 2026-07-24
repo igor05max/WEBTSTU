@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
-from django.http import FileResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 
@@ -9,6 +9,7 @@ from apps.directory.formatting_templates import get_latest_formatting_template
 from apps.directory.journal_search import search_journals
 from apps.directory.models import ArticleType, FormattingTemplate
 from apps.directory.publication_topics import search_publication_topics
+from document_template_engine import build_latex_template
 
 
 def _get_article_type(request):
@@ -32,6 +33,10 @@ def _template_payload(template):
         "created_at": template.created_at.isoformat(),
         "uploaded_by": str(template.uploaded_by),
         "download_url": reverse("directory:formatting_template_download", args=[template.id]),
+        "latex_download_url": reverse(
+            "directory:formatting_template_latex_download",
+            args=[template.id],
+        ),
     }
 
 
@@ -104,3 +109,14 @@ def formatting_template_download(request, pk):
         as_attachment=True,
         filename=Path(template.file.name).name,
     )
+
+
+@login_required
+def formatting_template_latex_download(request, pk):
+    template = get_object_or_404(FormattingTemplate, pk=pk)
+    source = build_latex_template(template.extracted_rules or {})
+    response = HttpResponse(source, content_type="application/x-tex; charset=utf-8")
+    response["Content-Disposition"] = (
+        f'attachment; filename="formatting-template-{template.pk}-v{template.version_number}.tex"'
+    )
+    return response

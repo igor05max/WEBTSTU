@@ -718,6 +718,19 @@
     line-height: 1.55;
 }
 
+.workspace-page-main .submission-template-download-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 5px;
+}
+
+.workspace-page-main .submission-template-download-actions .button {
+    min-height: 34px;
+    padding: 8px 12px;
+    font-size: 0.7rem;
+}
+
 .workspace-page-main .submission-formatting-rules {
     margin-top: 14px;
     display: grid;

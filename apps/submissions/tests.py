@@ -1936,6 +1936,7 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertContains(response, "Структура документа")
         self.assertContains(response, "В порядке их расположения в готовом файле")
         self.assertContains(response, "Посмотреть и отправить отредактированную")
+        self.assertContains(response, "Скачать LaTeX (.tex)")
         self.assertNotContains(response, "Создать DOCX по шаблону")
         rendered = response.content.decode()
         ordered_labels = [
@@ -1948,6 +1949,94 @@ class SubmissionFormattingTemplateTests(TestCase):
         ]
         positions = [rendered.index(label) for label in ordered_labels]
         self.assertEqual(positions, sorted(positions))
+
+    def test_submission_latex_template_contains_saved_metadata(self):
+        submission, _source_version = self._create_correctable_submission()
+        submission.document_authors = "И.И. Исследователь"
+        submission.organizations = "ТГТУ"
+        submission.abstract = "Аннотация для LaTeX."
+        submission.keywords = "видео; анализ"
+        submission.save(
+            update_fields=[
+                "document_authors",
+                "organizations",
+                "abstract",
+                "keywords",
+                "updated_at",
+            ]
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("submissions:latex_template_download", args=[submission.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/x-tex; charset=utf-8")
+        source = response.content.decode("utf-8")
+        self.assertIn("Проверка исправленной версии", source)
+        self.assertIn("И.И. Исследователь", source)
+        self.assertIn(r"\setmainfont{Times New Roman}", source)
+
+    def test_latex_material_is_checked_against_formatting_rules(self):
+        rules = {
+            "page": {
+                "size": "A4",
+                "orientation": "portrait",
+                "margins_cm": {"top": 2, "right": 2, "bottom": 2, "left": 2},
+            },
+            "body": {
+                "font_family": "Times New Roman",
+                "font_size_pt": 14,
+                "line_spacing": 1,
+                "first_line_indent_cm": 1,
+                "alignment": "justify",
+            },
+            "document": {
+                "blocks": [
+                    {"role": "title", "required": True},
+                    {"role": "authors", "required": True},
+                    {"role": "body", "required": True},
+                ]
+            },
+        }
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("template.tex", b"template"),
+            uploaded_by=self.user,
+            extracted_rules=rules,
+        )
+        submission = Submission.objects.create(
+            title="LaTeX-проверка",
+            author=self.user,
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            formatting_rules_snapshot={"effective": rules},
+            formatting_check_requested=True,
+        )
+        source = (
+            r"\documentclass[14pt,a4paper]{article}"
+            r"\usepackage[margin=2cm]{geometry}"
+            r"\usepackage{fontspec}\setmainfont{Times New Roman}"
+            r"\usepackage{setspace}\setstretch{1}"
+            r"\setlength{\parindent}{1cm}"
+            r"\title{LATEX-ПРОВЕРКА}\author{И.И. Автор}"
+            r"\begin{document}Научный текст работы.\end{document}"
+        ).encode("utf-8")
+        version = SubmissionVersion.objects.create(
+            submission=submission,
+            version_number=1,
+            file=SimpleUploadedFile("article.tex", source),
+            uploaded_by=self.user,
+        )
+
+        _passed, report = build_formatting_compliance_report(submission, version)
+
+        self.assertEqual(report["details"]["engine"], "document_template_engine")
+        self.assertEqual(report["metrics"]["source_format"], "latex")
+        self.assertEqual(report["issues"], [])
 
     def test_corrected_document_preview_does_not_create_a_version(self):
         submission, source_version = self._create_correctable_submission()

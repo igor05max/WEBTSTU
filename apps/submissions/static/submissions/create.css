@@ -742,6 +742,13 @@
     gap: 18px;
 }
 
+.formatting-template-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .formatting-template-selected[hidden],
 .formatting-template-rules[hidden],
 [data-template-section][hidden],
@@ -868,6 +875,10 @@
     .formatting-template-selected {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .formatting-template-actions {
+        justify-content: flex-start;
     }
 
     .formatting-template-rules [data-template-rules-list] {

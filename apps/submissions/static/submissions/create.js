@@ -18,6 +18,7 @@
         var templateName = document.querySelector("[data-template-name]");
         var templateMeta = document.querySelector("[data-template-meta]");
         var templateDownload = document.querySelector("[data-template-download]");
+        var templateLatexDownload = document.querySelector("[data-template-latex-download]");
         var rulesPanel = document.querySelector("[data-template-rules]");
         var rulesList = document.querySelector("[data-template-rules-list]");
         if (!articleType || !journalInput || !journalHidden || !topicInput || !topicHidden || !templateHidden) {
@@ -51,6 +52,10 @@
                 templateHidden.value = "";
                 templateEmpty.hidden = false;
                 templateSelected.hidden = true;
+                if (templateLatexDownload) {
+                    templateLatexDownload.hidden = true;
+                    templateLatexDownload.removeAttribute("href");
+                }
                 rulesPanel.hidden = true;
                 rulesList.replaceChildren();
                 if (selectedDestinationKind() === "journal") {
@@ -69,6 +74,10 @@
                 (template.status_label || template.status || "") +
                 (template.uploaded_by ? " · загрузил " + template.uploaded_by : "");
             templateDownload.href = template.download_url || "#";
+            if (templateLatexDownload) {
+                templateLatexDownload.href = template.latex_download_url || "#";
+                templateLatexDownload.hidden = !template.latex_download_url;
+            }
             rulesList.replaceChildren();
             var rows = [];
             ruleRows(template.rules || {}, "", rows);
@@ -266,6 +275,10 @@
                     ? "Новый шаблон заменит предложенный и станет последней версией."
                     : "Новый шаблон будет сохранён для следующих пользователей.";
                 templateDownload.removeAttribute("href");
+                if (templateLatexDownload) {
+                    templateLatexDownload.hidden = true;
+                    templateLatexDownload.removeAttribute("href");
+                }
                 rulesPanel.hidden = true;
             });
         }
