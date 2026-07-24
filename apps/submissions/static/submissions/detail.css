@@ -203,6 +203,20 @@
 .workspace-page-main .submission-check-issue.is-error { border-left-color: #dc5963; }
 .workspace-page-main .submission-check-issue.is-critical { border-left-color: #a32432; background: #fff8f9; }
 
+.workspace-page-main .status-pill.is-checking::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: submission-detail-checking-spin .75s linear infinite;
+}
+
+@keyframes submission-detail-checking-spin {
+    to { transform: rotate(360deg); }
+}
+
 .workspace-page-main .submission-check-issue-head {
     display: flex;
     align-items: flex-start;

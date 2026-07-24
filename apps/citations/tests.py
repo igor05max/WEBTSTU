@@ -329,6 +329,9 @@ class CitationSystemTests(TestCase):
         )
         self.assertContains(page, "Распознано из документа")
         self.assertContains(page, "Иванов И. И.")
+        self.assertContains(page, 'name="max_claims" value="6"')
+        self.assertContains(page, "Подбираем источники по тексту материала")
+        self.assertNotContains(page, "Проанализировать и найти")
 
         search = self.client.post(
             reverse("citations:workspace"),

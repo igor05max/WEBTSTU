@@ -1,5 +1,8 @@
+import os
 from pathlib import Path
+from subprocess import DEVNULL
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -7,6 +10,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.checks.recommendations import recommend_articles
+from apps.checks.services import launch_submission_checks_process
 from apps.directory.models import ArticleType, Journal
 from apps.submissions.services import create_submission_with_initial_version
 
@@ -74,7 +78,7 @@ class ArticleRecommendationTests(TestCase):
         self.assertEqual(payload["recommendations"][0]["article_id"], "1001")
         self.assertTrue(payload["recommendations"][0]["matched_terms"])
 
-    def test_submission_detail_shows_recommendations_for_current_version(self):
+    def test_submission_does_not_repeat_source_recommendations_as_a_check(self):
         submission = create_submission_with_initial_version(
             author=self.user,
             title="Анализ медицинских изображений нейронными сетями",
@@ -84,16 +88,29 @@ class ArticleRecommendationTests(TestCase):
             file=SimpleUploadedFile("article.txt", b"content"),
         )
 
-        recommendation_run = submission.check_runs.filter(
+        recommendation_exists = submission.check_runs.filter(
             check_definition__code="article_recommendations",
             version=submission.current_version,
-        ).first()
-
-        self.assertIsNotNone(recommendation_run)
-        self.assertTrue(recommendation_run.result_payload["recommendations"])
+        ).exists()
 
         self.client.force_login(self.user)
         response = self.client.get(reverse("submissions:detail", args=[submission.pk]))
 
-        self.assertContains(response, "Рекомендуемые статьи")
-        self.assertContains(response, "Нейронные сети для анализа медицинских изображений")
+        self.assertFalse(recommendation_exists)
+        self.assertNotContains(response, "Ссылки и научные источники")
+        self.assertNotContains(response, "Рекомендуемые статьи")
+
+
+class BackgroundCheckProcessTests(TestCase):
+    @patch("apps.checks.services.subprocess.Popen")
+    def test_check_process_is_detached_from_the_web_request(self, mocked_popen):
+        launch_submission_checks_process(17, 29, False)
+
+        _command, kwargs = mocked_popen.call_args
+        self.assertEqual(kwargs["stdin"], DEVNULL)
+        self.assertEqual(kwargs["stdout"], DEVNULL)
+        self.assertEqual(kwargs["stderr"], DEVNULL)
+        if os.name == "nt":
+            self.assertTrue(kwargs["creationflags"])
+        else:
+            self.assertTrue(kwargs["start_new_session"])

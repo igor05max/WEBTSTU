@@ -14,10 +14,11 @@ from apps.checks.document_checks import (
     build_snapshot,
 )
 from apps.checks.formatting_compliance import build_formatting_compliance_report
-from apps.citations.checks import build_citation_coverage_report
 from apps.submissions.route_suggestions import ensure_submission_route_suggestion, get_selectable_directions_queryset
 from apps.submissions.models import Submission, SubmissionStatus
 from apps.submissions.subject_area import detect_direction_for_submission
+
+RETIRED_CHECK_CODES = frozenset({"article_recommendations"})
 
 DEFAULT_CHECK_DEFINITIONS = (
     {
@@ -60,14 +61,6 @@ DEFAULT_CHECK_DEFINITIONS = (
         "is_blocking": False,
         "backend_code": "subject_area_detection",
     },
-    {
-        "code": "article_recommendations",
-        "name": "Ссылки и научные источники",
-        "description": "Находит утверждения без ссылок, точные места цитирования и подтверждающие публикации.",
-        "order": 40,
-        "is_blocking": False,
-        "backend_code": "article_recommendations",
-    },
 )
 
 logger = logging.getLogger(__name__)
@@ -88,23 +81,20 @@ def ensure_default_check_definitions():
             },
         )
         definitions.append(definition)
+    CheckDefinition.objects.filter(code__in=RETIRED_CHECK_CODES).update(is_active=False)
     return definitions
 
 
 def get_active_check_definitions():
     ensure_default_check_definitions()
-    return list(CheckDefinition.objects.filter(is_active=True).order_by("order", "id"))
+    return list(
+        CheckDefinition.objects.filter(is_active=True)
+        .exclude(code__in=RETIRED_CHECK_CODES)
+        .order_by("order", "id")
+    )
 
 
 def _evaluate_check(check_definition, submission, version, *, snapshot=None):
-    if check_definition.code == "article_recommendations":
-        return build_citation_coverage_report(
-            submission,
-            version,
-            snapshot=snapshot,
-            min_percent=settings.CITATION_MIN_RECOMMENDATION_PERCENT,
-        )
-
     if check_definition.code == "subject_area_detection":
         payload = detect_direction_for_submission(
             submission,
@@ -199,7 +189,13 @@ def launch_submission_checks_process(submission_id, version_id, resume_workflow_
         "env": os.environ.copy(),
     }
     if os.name == "nt":
-        popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        popen_kwargs["creationflags"] = (
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0)
+        )
+    else:
+        popen_kwargs["start_new_session"] = True
 
     subprocess.Popen(command, **popen_kwargs)
 

@@ -650,8 +650,8 @@ class SubmissionCreateViewTests(TestCase):
         submission.refresh_from_db()
 
         self.assertEqual(submission.status, SubmissionStatus.SUBMITTED)
-        self.assertEqual(submission.check_runs.count(), 6)
-        self.assertTrue(
+        self.assertEqual(submission.check_runs.count(), 5)
+        self.assertFalse(
             submission.check_runs.filter(
                 check_definition__code="article_recommendations",
                 version=submission.current_version,
@@ -690,7 +690,7 @@ class SubmissionCreateViewTests(TestCase):
         self.assertTrue(completed)
         self.assertNotEqual(template.analysis_status, "pending")
         self.assertIn("effective", submission.formatting_rules_snapshot)
-        self.assertEqual(submission.check_runs.count(), 6)
+        self.assertEqual(submission.check_runs.count(), 5)
         self.assertNotEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
 
     def test_create_submission_stores_coauthors(self):
@@ -735,7 +735,7 @@ class SubmissionCreateViewTests(TestCase):
         self.assertEqual(version.version_number, 2)
         self.assertEqual(submission.current_version_id, version.id)
         self.assertEqual(submission.status, SubmissionStatus.SUBMITTED)
-        self.assertEqual(submission.check_runs.filter(version=version).count(), 6)
+        self.assertEqual(submission.check_runs.filter(version=version).count(), 5)
 
     def test_upload_new_version_after_revision_request_auto_returns_to_review(self):
         reviewer_group = Group.objects.create(name="Проверяющий доработки")
@@ -1241,7 +1241,7 @@ class SubmissionAsyncCheckQueueTests(TestCase):
         )
 
         self.assertEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
-        self.assertEqual(len(current_version_runs), 6)
+        self.assertEqual(len(current_version_runs), 5)
         self.assertTrue(all(run.status == CheckRunStatus.PENDING for run in current_version_runs))
         mocked_launch.assert_called_once_with(submission.id, submission.current_version_id, False)
 
@@ -2013,7 +2013,8 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertContains(response, "Структура документа")
         self.assertContains(response, "В порядке их расположения в готовом файле")
         self.assertContains(response, "Посмотреть и отправить отредактированную")
-        self.assertContains(response, "Посмотреть LaTeX")
+        self.assertContains(response, "Скачать LaTeX")
+        self.assertNotContains(response, "Посмотреть LaTeX")
         self.assertNotContains(response, "Создать DOCX по шаблону")
         rendered = response.content.decode()
         ordered_labels = [

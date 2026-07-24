@@ -15,7 +15,7 @@ def submission_appeal_upload_to(instance, filename):
 class SubmissionStatus(models.TextChoices):
     DRAFT = "draft", "Создана"
     SUBMITTED = "submitted", "Готова к отправке"
-    AUTO_CHECKING = "auto_checking", "Проверяется"
+    AUTO_CHECKING = "auto_checking", "Проверка идёт"
     IN_REVIEW = "in_review", "На согласовании"
     REVISION_REQUESTED = "revision_requested", "Требует доработки"
     APPEAL_PENDING = "appeal_pending", "Апелляция на рассмотрении"

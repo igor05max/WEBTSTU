@@ -20,7 +20,7 @@ from document_template_engine import build_latex_template
 from apps.accounts.roles import has_chair_head_role
 from apps.accounts.models import User
 from apps.checks.models import CheckDefinition, CheckRunStatus
-from apps.checks.services import queue_submission_checks
+from apps.checks.services import RETIRED_CHECK_CODES, queue_submission_checks
 from apps.conclusions.models import ConclusionDocument
 from apps.directory.formatting_templates import (
     build_rules_snapshot,
@@ -430,7 +430,11 @@ def _get_submission_status_tone(status):
 
 
 def _build_check_entries(submission, check_runs):
-    definitions = list(CheckDefinition.objects.filter(is_active=True).order_by("order", "id"))
+    definitions = list(
+        CheckDefinition.objects.filter(is_active=True)
+        .exclude(code__in=RETIRED_CHECK_CODES)
+        .order_by("order", "id")
+    )
     current_version_id = submission.current_version_id
     latest_runs_by_code = {}
     for run in check_runs:
@@ -1013,7 +1017,11 @@ def submission_detail(request, pk):
         version.preview_kind = get_preview_kind(version.file.name)
         version.preview_available = version.preview_kind is not None
         version.display_filename = get_display_filename(version.file.name)
-    check_runs = list(submission.check_runs.all())
+    check_runs = [
+        run
+        for run in submission.check_runs.all()
+        if run.check_definition.code not in RETIRED_CHECK_CODES
+    ]
     check_entries = _build_check_entries(submission, check_runs)
     recommendation_run = _get_latest_check_run_for_current_version(
         submission,
@@ -1750,6 +1758,7 @@ def submission_checks_report_view(request, pk):
         run
         for run in submission.check_runs.all()
         if run.version_id == submission.current_version_id
+        and run.check_definition.code not in RETIRED_CHECK_CODES
     ]
     runs.sort(key=lambda run: (run.check_definition.order, run.check_definition_id))
     report = {

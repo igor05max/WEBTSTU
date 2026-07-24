@@ -158,7 +158,6 @@ def workspace(request):
             "selected_submission": selected_submission,
             "auto_analyze": bool(
                 request.method == "GET"
-                and request.GET.get("auto") == "1"
                 and selected_submission is not None
             ),
         },

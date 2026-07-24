@@ -14,6 +14,14 @@
     const applyForm = plan.querySelector("[data-apply-form]");
     const selectionInput = plan.querySelector("[data-selection-input]");
 
+    const setButtonState = (button, isAdded) => {
+        button.classList.toggle("is-added", isAdded);
+        button.setAttribute("aria-pressed", isAdded ? "true" : "false");
+        button.innerHTML = isAdded
+            ? "<span>−</span> Убрать ссылку"
+            : "<span>+</span> Добавить ссылку";
+    };
+
     const render = () => {
         list.innerHTML = "";
         const articleNumbers = new Map();
@@ -33,8 +41,7 @@
             entry.querySelector("p").textContent = item.citation;
             entry.querySelector("button").addEventListener("click", () => {
                 selected.delete(item.key);
-                item.button.classList.remove("is-added");
-                item.button.innerHTML = "<span>+</span> Добавить ссылку";
+                setButtonState(item.button, false);
                 render();
             });
             list.append(entry);
@@ -58,7 +65,12 @@
             const source = button.closest(".citation-source");
             const claim = button.closest(".citation-claim");
             const key = `${button.dataset.claimId}::${button.dataset.articleId}`;
-            if (selected.has(key)) return;
+            if (selected.has(key)) {
+                selected.delete(key);
+                setButtonState(button, false);
+                render();
+                return;
+            }
             selected.set(key, {
                 key,
                 claimId: button.dataset.claimId,
@@ -68,8 +80,7 @@
                 claim: claim.querySelector("h3").textContent.trim(),
                 button,
             });
-            button.classList.add("is-added");
-            button.textContent = "✓ Добавлено";
+            setButtonState(button, true);
             render();
         });
     });

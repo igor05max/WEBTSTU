@@ -5,7 +5,7 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260724b">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260724c">
 {% endblock %}
 
 {% block content %}
@@ -44,6 +44,31 @@
 </section>
 {% endif %}
 
+{% if selected_submission and not result %}
+<section class="citation-search-card citation-auto-search-card">
+    <div class="citation-card-heading">
+        <div>
+            <span>01 · Подбор источников</span>
+            <h2>Ищем подходящие публикации</h2>
+        </div>
+        <p>Система разберёт до 6 утверждений и покажет результаты сразу после завершения.</p>
+    </div>
+    <form method="post" class="citation-search-form"{% if auto_analyze %} data-auto-analyze{% endif %}>
+        {% csrf_token %}
+        <input type="hidden" name="submission" value="{{ selected_submission.pk }}">
+        <input type="hidden" name="max_claims" value="6">
+        {% if form.non_field_errors %}
+            <div class="citation-form-error">{{ form.non_field_errors }}</div>
+            <a class="citation-primary-action" href="{% url 'citations:workspace' %}?submission={{ selected_submission.pk }}">Повторить подбор</a>
+        {% else %}
+            <div class="citation-auto-progress" role="status">
+                <span aria-hidden="true"></span>
+                <strong>Подбираем источники по тексту материала…</strong>
+            </div>
+        {% endif %}
+    </form>
+</section>
+{% elif not selected_submission %}
 <section class="citation-search-card">
     <div class="citation-card-heading">
         <div>
@@ -52,17 +77,11 @@
         </div>
         <p>Выберите один вариант. DOCX после подбора можно скачать с уже добавленными ссылками.</p>
     </div>
-    <form method="post" enctype="multipart/form-data" class="citation-search-form"{% if auto_analyze %} data-auto-analyze{% endif %}>
+    <form method="post" enctype="multipart/form-data" class="citation-search-form">
         {% csrf_token %}
         {% if form.non_field_errors %}
             <div class="citation-form-error">{{ form.non_field_errors }}</div>
         {% endif %}
-        {% if selected_submission %}
-            <input type="hidden" name="submission" value="{{ selected_submission.pk }}">
-            <div class="citation-form-notice" data-auto-analysis-note>
-                {% if auto_analyze %}Подбираем источники по тексту материала…{% else %}Повторный поиск выполнится по текущей версии материала.{% endif %}
-            </div>
-        {% else %}
         <div class="citation-source-grid">
             <label class="citation-field">
                 <span>{{ form.submission.label }}</span>
@@ -82,7 +101,6 @@
             {{ form.text }}
             {% for error in form.text.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
         </label>
-        {% endif %}
         <div class="citation-form-footer">
             <label class="citation-claims-count">
                 <span>{{ form.max_claims.label }}</span>
@@ -95,6 +113,7 @@
         </div>
     </form>
 </section>
+{% endif %}
 
 {% if result %}
 <section class="citation-results">
@@ -225,16 +244,16 @@
     <div>
         <span class="citation-kicker">Следующий этап</span>
         <h2>Можно продолжить без добавления источников</h2>
-        <p>Рекомендации необязательны. При продолжении система начнёт проверки текущей версии материала.</p>
+        <p>Рекомендации необязательны. Проверки продолжатся в фоне, поэтому страницу можно закрыть.</p>
     </div>
     <form method="post" action="{% url 'submissions:start_checks' selected_submission.pk %}">
         {% csrf_token %}
-        <button class="citation-primary-action" type="submit">Оставить как есть и начать проверки</button>
+        <button class="citation-primary-action" type="submit">Начать проверки</button>
     </form>
 </section>
 {% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260724b" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20260724c" defer></script>
 {% endblock %}

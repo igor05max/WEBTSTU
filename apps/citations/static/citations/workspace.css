@@ -117,6 +117,30 @@
     font-weight: 700;
 }
 
+.citation-auto-progress {
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-radius: 12px;
+    background: var(--citation-green-soft);
+    color: var(--citation-green);
+}
+
+.citation-auto-progress > span {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: citation-auto-spin .75s linear infinite;
+}
+
+@keyframes citation-auto-spin {
+    to { transform: rotate(360deg); }
+}
+
 .citation-next-step {
     display: flex;
     align-items: center;

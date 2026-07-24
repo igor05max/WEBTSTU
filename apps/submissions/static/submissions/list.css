@@ -522,6 +522,19 @@
     background: #edf3ff;
 }
 
+.submission-list-status.status-auto_checking i {
+    width: 10px;
+    height: 10px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    background: transparent;
+    animation: submission-list-checking-spin .75s linear infinite;
+}
+
+@keyframes submission-list-checking-spin {
+    to { transform: rotate(360deg); }
+}
+
 .submission-list-status.status-in_review {
     color: #bd5d0b;
     background: #fff3e7;

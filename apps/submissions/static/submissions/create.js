@@ -130,8 +130,8 @@
                 (template.uploaded_by ? " · загрузил " + template.uploaded_by : "");
             templateDownload.href = template.download_url || "#";
             if (templateLatexDownload) {
-                templateLatexDownload.href = template.latex_preview_url || "#";
-                templateLatexDownload.hidden = !template.latex_preview_url;
+                templateLatexDownload.href = template.latex_download_url || "#";
+                templateLatexDownload.hidden = !template.latex_download_url;
             }
             rulesList.replaceChildren();
             var rows = ruleRows(template.rules || {});

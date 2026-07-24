@@ -34,7 +34,7 @@ class CitationSearchForm(forms.Form):
         label="Сколько утверждений разобрать",
         min_value=1,
         max_value=16,
-        initial=8,
+        initial=6,
     )
 
     def __init__(self, *args, user=None, **kwargs):

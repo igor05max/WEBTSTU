@@ -5,7 +5,7 @@
 
 {% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
 
-{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/detail.css' %}?v=20260723a">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/detail.css' %}?v=20260724b">{% endblock %}
 
 {% block content %}
     {% if route_review_preview_payload %}
@@ -17,7 +17,7 @@
             <div>
                 <h1 class="submission-title">{{ submission.title }}</h1>
             </div>
-            <span id="submission-status-pill" class="status-pill {{ status_tone }}">
+            <span id="submission-status-pill" class="status-pill {{ status_tone }}{% if is_auto_checking %} is-checking{% endif %}">
                 {{ submission.get_status_display }}
             </span>
         </div>
@@ -93,9 +93,9 @@
 
         {% if is_auto_checking %}
             <div id="submission-progress-note" class="submission-note">
-                <div class="submission-section-title">Автопроверки выполняются</div>
+                <div class="submission-section-title">Проверка идёт в фоне</div>
                 <div class="submission-note-text">
-                    Материал уже создан. Если загружен новый шаблон, система сначала извлечёт из него правила, затем выполнит проверки, определит область и предложит маршрут. Страница обновится автоматически.
+                    Можно закрыть эту страницу: сервер продолжит проверку документа и работу локальных моделей. Результаты появятся здесь автоматически.
                 </div>
             </div>
         {% endif %}
@@ -167,8 +167,8 @@
                             Скачать исходный
                         </a>
                         {% if formatting_rules and not formatting_template_is_processing %}
-                            <a class="button secondary" href="{% url 'directory:formatting_template_latex_preview' submission.formatting_template.pk %}" target="_blank">
-                                Посмотреть LaTeX
+                            <a class="button secondary" href="{% url 'directory:formatting_template_latex_download' submission.formatting_template.pk %}">
+                                Скачать LaTeX
                             </a>
                         {% endif %}
                     </div>
@@ -901,7 +901,8 @@
 
                 function applyProgress(payload) {
                     statusPill.textContent = payload.status_display;
-                    statusPill.className = "status-pill " + (payload.status_tone || "primary");
+                    statusPill.className = "status-pill " + (payload.status_tone || "primary") +
+                        (payload.is_auto_checking ? " is-checking" : "");
                     if (canRevealRouteDetails && directionValue) {
                         directionValue.textContent = payload.direction_name;
                     }
