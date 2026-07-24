@@ -82,7 +82,7 @@
             <div id="submission-progress-note" class="submission-note">
                 <div class="submission-section-title">Автопроверки выполняются</div>
                 <div class="submission-note-text">
-                    Заявка уже открыта. Проверки, определение области и подбор маршрута идут в фоне. Результаты на этой странице обновляются автоматически.
+                    Материал уже создан. Если загружен новый шаблон, система сначала извлечёт из него правила, затем выполнит проверки, определит область и предложит маршрут. Страница обновится автоматически.
                 </div>
             </div>
         {% endif %}
@@ -144,14 +144,16 @@
                         Версия {{ submission.formatting_template.version_number }} ·
                         {{ submission.formatting_template.get_analysis_status_display }}
                     </span>
-                    {% if submission.formatting_template.analysis_message %}
+                    {% if submission.formatting_template.analysis_status == "pending" or submission.formatting_template.analysis_status == "processing" %}
+                        <small>Шаблон обрабатывается в фоне. После извлечения правил автоматически начнутся проверки материала.</small>
+                    {% elif submission.formatting_template.analysis_message %}
                         <small>{{ submission.formatting_template.analysis_message }}</small>
                     {% endif %}
                     <div class="submission-template-download-actions">
                         <a class="button secondary" href="{% url 'directory:formatting_template_download' submission.formatting_template.pk %}">
                             Скачать исходный
                         </a>
-                        {% if formatting_rules %}
+                        {% if formatting_rules and not formatting_template_is_processing %}
                             <a class="button secondary" href="{% url 'submissions:latex_template_download' submission.pk %}">
                                 Скачать LaTeX (.tex)
                             </a>
@@ -167,7 +169,7 @@
                         {% endif %}
                     </span>
                 {% endif %}
-                {% if formatting_rules %}
+                {% if formatting_rules and not formatting_template_is_processing %}
                     {% if not submission.formatting_template %}
                         <div class="submission-template-download-actions">
                             <a class="button secondary" href="{% url 'submissions:latex_template_download' submission.pk %}">

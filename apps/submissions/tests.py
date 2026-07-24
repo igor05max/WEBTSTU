@@ -30,6 +30,7 @@ from apps.submissions.models import Submission, SubmissionAppealStatus, Submissi
 from apps.submissions.subject_area import detect_direction_for_submission
 from apps.submissions.views import _build_route_preview_templates
 from apps.submissions.services import add_submission_version, create_submission_with_initial_version, submit_submission
+from apps.submissions.template_processing import prepare_submission_template_by_id
 from apps.workflow.models import (
     ApprovalTask,
     ApprovalTaskStatus,
@@ -594,6 +595,43 @@ class SubmissionCreateViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "Как дальше пойдёт заявка")
         self.assertContains(response, "Загрузить материал")
+        self.assertContains(response, 'data-wizard-step="1"')
+        self.assertContains(response, "Дальше ждать здесь не придётся")
+
+    @override_settings(SUBMISSION_CHECKS_ASYNC=True)
+    @patch("apps.submissions.views.queue_submission_template_processing")
+    def test_create_with_new_template_redirects_before_template_processing(self, queue_processing):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("submissions:create"),
+            data={
+                "article_type": self.article_type.id,
+                "journal": self.journal.id,
+                "journal_query": self.journal.name,
+                "formatting_check_requested": "on",
+                "file": SimpleUploadedFile("article.txt", b"Scientific material"),
+                "formatting_template_file": SimpleUploadedFile(
+                    "requirements.txt",
+                    b"Times New Roman, 14 pt",
+                ),
+            },
+        )
+
+        submission = Submission.objects.get(author=self.user)
+        template = submission.formatting_template
+        self.assertRedirects(
+            response,
+            reverse("submissions:detail", args=[submission.pk]),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
+        self.assertEqual(template.analysis_status, "pending")
+        self.assertEqual(submission.check_runs.count(), 0)
+        queue_processing.assert_called_once()
+        queued_submission, queued_template = queue_processing.call_args.args
+        self.assertEqual(queued_submission.pk, submission.pk)
+        self.assertEqual(queued_template.pk, template.pk)
 
     def test_create_submission_runs_checks_immediately(self):
         submission = create_submission_with_initial_version(
@@ -615,6 +653,41 @@ class SubmissionCreateViewTests(TestCase):
                 version=submission.current_version,
             ).exists()
         )
+
+    def test_template_preparation_refreshes_rules_before_checks(self):
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile(
+                "requirements.txt",
+                "Times New Roman, 14 пт, межстрочный интервал 1,5".encode(),
+            ),
+            uploaded_by=self.user,
+        )
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Материал с фоновым шаблоном",
+            abstract="",
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            file=SimpleUploadedFile("article.txt", b"Scientific material"),
+            defer_checks=True,
+        )
+
+        completed = prepare_submission_template_by_id(
+            submission.pk,
+            template_id=template.pk,
+            expected_version_id=submission.current_version_id,
+        )
+
+        submission.refresh_from_db()
+        template.refresh_from_db()
+        self.assertTrue(completed)
+        self.assertNotEqual(template.analysis_status, "pending")
+        self.assertIn("effective", submission.formatting_rules_snapshot)
+        self.assertEqual(submission.check_runs.count(), 6)
+        self.assertNotEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
 
     def test_create_submission_stores_coauthors(self):
         coauthor = get_user_model().objects.create_user(username="submission_coauthor", password="1234")

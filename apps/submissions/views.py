@@ -25,7 +25,6 @@ from apps.conclusions.models import ConclusionDocument
 from apps.directory.formatting_templates import (
     build_rules_snapshot,
     create_formatting_template,
-    process_formatting_template,
 )
 from apps.directory.publication_topics import resolve_or_create_publication_topic
 from apps.submissions.forms import (
@@ -57,6 +56,7 @@ from apps.submissions.document_analysis import (
     read_file_bytes,
 )
 from apps.submissions.models import Submission, SubmissionAppeal, SubmissionStatus, SubmissionVersion
+from apps.submissions.template_processing import queue_submission_template_processing
 from apps.submissions.route_suggestions import (
     ensure_submission_route_suggestion,
     get_selectable_directions_queryset,
@@ -844,6 +844,7 @@ def submission_create(request):
 
             formatting_template = form.cleaned_data["formatting_template"]
             uploaded_template = form.cleaned_data["formatting_template_file"]
+            template_requires_processing = uploaded_template is not None
             if uploaded_template is not None:
                 formatting_template = create_formatting_template(
                     article_type=article_type,
@@ -852,7 +853,6 @@ def submission_create(request):
                     journal=journal,
                     publication_topic=publication_topic,
                 )
-                process_formatting_template(formatting_template)
 
             rules_snapshot = build_rules_snapshot(
                 article_type=article_type,
@@ -887,12 +887,15 @@ def submission_create(request):
                 organizations=form.cleaned_data["organizations"] or metadata.get("organizations", ""),
                 contact_emails=form.cleaned_data["contact_emails"] or metadata.get("contact_emails", ""),
                 keywords=form.cleaned_data["keywords"] or metadata.get("keywords", ""),
+                defer_checks=template_requires_processing,
             )
+            if template_requires_processing:
+                queue_submission_template_processing(submission, formatting_template)
             submission.refresh_from_db()
             if submission.status == SubmissionStatus.AUTO_CHECKING:
                 messages.success(
                     request,
-                    "Заявка загружена. Автопроверки уже запущены в фоне, результаты появятся на странице автоматически.",
+                    "Материал создан. Шаблон и автопроверки обрабатываются на этой странице — ждать на форме загрузки больше не нужно.",
                 )
             elif submission.status == SubmissionStatus.SUBMITTED:
                 messages.success(
@@ -1194,6 +1197,11 @@ def submission_detail(request, pk):
             "can_edit": can_edit,
             "formatting_rules_form": formatting_rules_form,
             "formatting_rules": (submission.formatting_rules_snapshot or {}).get("effective") or {},
+            "formatting_template_is_processing": bool(
+                submission.formatting_template_id
+                and submission.formatting_template.analysis_status in {"pending", "processing"}
+                and not submission.formatting_template.extracted_rules
+            ),
             "formatting_rule_rows": _build_formatting_rule_rows(
                 submission.formatting_rules_snapshot
             ),

@@ -9,7 +9,6 @@
         var topicHidden = document.getElementById("id_publication_topic");
         var templateHidden = document.getElementById("id_formatting_template");
         var templateFile = document.getElementById("id_formatting_template_file");
-        var templateSection = document.querySelector("[data-template-section]");
         var journalField = document.querySelector("[data-destination-field='journal']");
         var topicField = document.querySelector("[data-destination-field='topic']");
         var templateEmpty = document.querySelector("[data-template-empty]");
@@ -229,7 +228,6 @@
             var destinationKind = selectedDestinationKind();
             journalField.hidden = destinationKind !== "journal";
             topicField.hidden = !code || destinationKind !== "topic";
-            templateSection.hidden = !code;
             if (resetValues) {
                 journalHidden.value = "";
                 topicHidden.value = "";
@@ -355,6 +353,190 @@
         });
 
         displayFile();
+    }
+
+    function initializeWizard() {
+        var form = document.querySelector("[data-submission-wizard]");
+        if (!form) {
+            return;
+        }
+        var steps = Array.prototype.slice.call(form.querySelectorAll("[data-wizard-step]"));
+        var progressButtons = Array.prototype.slice.call(form.querySelectorAll("[data-wizard-go]"));
+        var articleType = document.getElementById("id_article_type");
+        var fileInput = document.getElementById("id_file");
+        var journalInput = document.getElementById("id_journal_query");
+        var topicInput = document.getElementById("id_publication_topic_query");
+        var templateInput = document.getElementById("id_formatting_template");
+        var templateFile = document.getElementById("id_formatting_template_file");
+        var currentStep = 1;
+        var maxVisitedStep = 1;
+
+        function stepElement(number) {
+            return steps.find(function (step) {
+                return Number(step.getAttribute("data-wizard-step")) === number;
+            });
+        }
+
+        function destinationKind() {
+            if (!articleType || articleType.selectedIndex < 0) {
+                return "";
+            }
+            return articleType.options[articleType.selectedIndex].getAttribute("data-destination-kind") || "";
+        }
+
+        function clearStepError(step) {
+            var error = step.querySelector("[data-wizard-error]");
+            if (error) {
+                error.remove();
+            }
+        }
+
+        function showStepError(step, message, field) {
+            clearStepError(step);
+            var error = document.createElement("div");
+            error.className = "submission-wizard-error";
+            error.setAttribute("data-wizard-error", "");
+            error.setAttribute("role", "alert");
+            error.textContent = message;
+            var actions = step.querySelector(".submission-wizard-actions");
+            step.insertBefore(error, actions || null);
+            if (field && typeof field.focus === "function") {
+                field.focus({preventScroll: true});
+            }
+        }
+
+        function validateStep(number) {
+            var step = stepElement(number);
+            if (!step) {
+                return true;
+            }
+            clearStepError(step);
+
+            if (number === 1 && (!articleType || !articleType.value)) {
+                showStepError(step, "Выберите тип материала.", articleType);
+                return false;
+            }
+            if (number === 2 && (!fileInput || !fileInput.files || !fileInput.files.length)) {
+                showStepError(step, "Сначала выберите файл материала.", fileInput);
+                return false;
+            }
+            if (number === 3) {
+                var targetInput = destinationKind() === "journal" ? journalInput : topicInput;
+                if (!targetInput || !targetInput.value.trim()) {
+                    showStepError(
+                        step,
+                        destinationKind() === "journal"
+                            ? "Укажите журнал и выберите его из подсказок."
+                            : "Укажите тему или название события.",
+                        targetInput
+                    );
+                    return false;
+                }
+            }
+            if (
+                number === 4 &&
+                destinationKind() === "journal" &&
+                (!templateInput || !templateInput.value) &&
+                (!templateFile || !templateFile.files || !templateFile.files.length)
+            ) {
+                showStepError(
+                    step,
+                    "Для журнала без сохранённого шаблона загрузите файл шаблона.",
+                    templateFile
+                );
+                return false;
+            }
+
+            var invalidField = Array.prototype.find.call(
+                step.querySelectorAll("input, select, textarea"),
+                function (field) {
+                    return !field.disabled && !field.checkValidity();
+                }
+            );
+            if (invalidField) {
+                invalidField.reportValidity();
+                return false;
+            }
+            return true;
+        }
+
+        function showStep(number, options) {
+            var target = stepElement(number);
+            if (!target) {
+                return;
+            }
+            currentStep = number;
+            maxVisitedStep = Math.max(maxVisitedStep, number);
+            steps.forEach(function (step) {
+                step.hidden = Number(step.getAttribute("data-wizard-step")) !== number;
+            });
+            progressButtons.forEach(function (button) {
+                var buttonStep = Number(button.getAttribute("data-wizard-go"));
+                button.classList.toggle("is-complete", buttonStep < number);
+                button.classList.toggle("is-active", buttonStep === number);
+                button.disabled = buttonStep > maxVisitedStep;
+                if (buttonStep === number) {
+                    button.setAttribute("aria-current", "step");
+                } else {
+                    button.removeAttribute("aria-current");
+                }
+            });
+            if (!options || options.focus !== false) {
+                target.scrollIntoView({behavior: "smooth", block: "start"});
+            }
+        }
+
+        form.addEventListener("click", function (event) {
+            var next = event.target.closest("[data-wizard-next]");
+            var back = event.target.closest("[data-wizard-back]");
+            var progress = event.target.closest("[data-wizard-go]");
+            if (next) {
+                if (validateStep(currentStep)) {
+                    showStep(Math.min(steps.length, currentStep + 1));
+                }
+                return;
+            }
+            if (back) {
+                showStep(Math.max(1, currentStep - 1));
+                return;
+            }
+            if (progress && !progress.disabled) {
+                var requestedStep = Number(progress.getAttribute("data-wizard-go"));
+                if (requestedStep <= maxVisitedStep) {
+                    showStep(requestedStep);
+                }
+            }
+        });
+
+        form.addEventListener("submit", function (event) {
+            for (var number = 1; number <= steps.length; number += 1) {
+                if (!validateStep(number)) {
+                    event.preventDefault();
+                    showStep(number);
+                    return;
+                }
+            }
+            var submitButton = form.querySelector("[data-wizard-submit]");
+            var submitLabel = form.querySelector("[data-wizard-submit-label]");
+            if (submitButton) {
+                submitButton.disabled = true;
+            }
+            if (submitLabel) {
+                submitLabel.textContent = "Открываем материал…";
+            }
+        });
+
+        var errorStep = steps.find(function (step) {
+            return step.querySelector(".has-error, .submission-form-alert");
+        });
+        var initialStep = errorStep ? Number(errorStep.getAttribute("data-wizard-step")) : 1;
+        var optionalDetails = form.querySelector("[data-optional-details]");
+        if (optionalDetails && optionalDetails.querySelector(".has-error")) {
+            optionalDetails.open = true;
+        }
+        maxVisitedStep = initialStep;
+        showStep(initialStep, {focus: false});
+        form.classList.add("is-wizard-ready");
     }
 
     function initializeCoauthors() {
@@ -614,7 +796,7 @@
     document.addEventListener("DOMContentLoaded", function () {
         initializeDestinationAndTemplate();
         initializeFileZone();
+        initializeWizard();
         initializeCoauthors();
-        initializeMetadataExtraction();
     });
 })();
