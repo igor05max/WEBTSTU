@@ -24,6 +24,7 @@ urlpatterns = [
     path("submissions/", include("apps.submissions.urls")),
     path("workflow/", include("apps.workflow.urls")),
     path("settings/", include("apps.checks.urls")),
+    path("citations/", include("apps.citations.urls")),
 ]
 
 if settings.DEBUG:

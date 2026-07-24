@@ -85,6 +85,7 @@ LOCAL_APPS = [
     "apps.workflow.apps.WorkflowConfig",
     "apps.checks.apps.ChecksConfig",
     "apps.conclusions.apps.ConclusionsConfig",
+    "apps.citations.apps.CitationsConfig",
 ]
 
 INSTALLED_APPS = [
@@ -242,6 +243,37 @@ AI_MODELS_TIMEOUT = max(
     int(os.getenv("AI_MODELS_TIMEOUT", str(GEMINI_MODELS_TIMEOUT))),
 )
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", str(GEMINI_REQUEST_TIMEOUT)))
+CITATION_CORPUS_ROOT = Path(
+    os.getenv("CITATION_CORPUS_ROOT", str(BASE_DIR / "downloads_elibrary"))
+)
+CITATION_INDEX_PATH = Path(
+    os.getenv("CITATION_INDEX_PATH", str(BASE_DIR / "tmp" / "citation_index.sqlite3"))
+)
+CITATION_INDEX_AUTO_BUILD = os.getenv("CITATION_INDEX_AUTO_BUILD", "1") == "1"
+CITATION_SEARCH_LIMIT = int(os.getenv("CITATION_SEARCH_LIMIT", "5"))
+CITATION_CANDIDATE_LIMIT = int(os.getenv("CITATION_CANDIDATE_LIMIT", "40"))
+CITATION_LLM_ANALYSIS_ENABLED = os.getenv("CITATION_LLM_ANALYSIS_ENABLED", "1") == "1"
+CITATION_LLM_RERANK_ENABLED = os.getenv("CITATION_LLM_RERANK_ENABLED", "1") == "1"
+CITATION_LLM_TIMEOUT = int(os.getenv("CITATION_LLM_TIMEOUT", "120"))
+CITATION_EMBEDDING_BASE_URL = os.getenv(
+    "CITATION_EMBEDDING_BASE_URL",
+    AI_BASE_URL,
+).strip().rstrip("/")
+CITATION_EMBEDDING_API_KEY = os.getenv(
+    "CITATION_EMBEDDING_API_KEY",
+    AI_API_KEY,
+).strip()
+CITATION_EMBEDDING_MODEL = os.getenv(
+    "CITATION_EMBEDDING_MODEL",
+    "",
+).strip()
+CITATION_EMBEDDING_BATCH_SIZE = int(os.getenv("CITATION_EMBEDDING_BATCH_SIZE", "24"))
+CITATION_WORKSPACE_ROOT = Path(
+    os.getenv(
+        "CITATION_WORKSPACE_ROOT",
+        str(MEDIA_ROOT / "citation_workspaces"),
+    )
+)
 SUBMISSION_ROUTE_SUGGESTION_ENABLED = os.getenv(
     "SUBMISSION_ROUTE_SUGGESTION_ENABLED",
     "1",

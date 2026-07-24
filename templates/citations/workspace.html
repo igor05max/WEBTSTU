@@ -1,0 +1,200 @@
+{% extends "workspace_base.html" %}
+{% load static workspace_navigation %}
+
+{% block title %}Поиск научных источников{% endblock %}
+{% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260724a">
+{% endblock %}
+
+{% block content %}
+<header class="citation-hero">
+    <div>
+        <span class="citation-kicker">Research evidence retrieval</span>
+        <h1>Умный поиск источников</h1>
+        <p>Система находит утверждения без ссылок, понимает, что именно нужно подтвердить, и ищет доказательные фрагменты в локальном корпусе научных публикаций.</p>
+    </div>
+    <div class="citation-index-badge{% if index_status.ready %} is-ready{% endif %}">
+        <span></span>
+        {% if index_status.ready %}
+            {{ index_status.article_count }} статей · {{ index_status.chunk_count }} фрагментов
+        {% else %}
+            Индекс создастся при первом поиске
+        {% endif %}
+    </div>
+</header>
+
+<section class="citation-search-card">
+    <div class="citation-card-heading">
+        <div>
+            <span>01 · Исходный материал</span>
+            <h2>Что нужно проанализировать</h2>
+        </div>
+        <p>Выберите один вариант. DOCX после подбора можно скачать с уже добавленными ссылками.</p>
+    </div>
+    <form method="post" enctype="multipart/form-data" class="citation-search-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+            <div class="citation-form-error">{{ form.non_field_errors }}</div>
+        {% endif %}
+        <div class="citation-source-grid">
+            <label class="citation-field">
+                <span>{{ form.submission.label }}</span>
+                {{ form.submission }}
+                {% for error in form.submission.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
+            </label>
+            <label class="citation-field citation-file-field">
+                <span>{{ form.file.label }}</span>
+                {{ form.file }}
+                <small>{{ form.file.help_text }}</small>
+                {% for error in form.file.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
+            </label>
+        </div>
+        <div class="citation-divider"><span>или</span></div>
+        <label class="citation-field">
+            <span>{{ form.text.label }}</span>
+            {{ form.text }}
+            {% for error in form.text.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
+        </label>
+        <div class="citation-form-footer">
+            <label class="citation-claims-count">
+                <span>{{ form.max_claims.label }}</span>
+                {{ form.max_claims }}
+            </label>
+            <button class="citation-primary-action" type="submit">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M10.5 7v7M7 10.5h7"/></svg>
+                Проанализировать и найти
+            </button>
+        </div>
+    </form>
+</section>
+
+{% if result %}
+<section class="citation-results">
+    <div class="citation-results-heading">
+        <div>
+            <span>02 · Evidence map</span>
+            <h2>{{ result.source_title }}</h2>
+            <p>Найдено утверждений: {{ result.claims|length }} · рекомендаций: {{ result.total_recommendations }} · анализ: {% if result.analysis.source == "local_llm" %}локальная AI-модель{% else %}локальные правила{% endif %}</p>
+        </div>
+        <div class="citation-pipeline">
+            <span>утверждение</span><i>→</i><span>RU + EN</span><i>→</i><span>hybrid RAG</span><i>→</i><span>реранкинг</span>
+        </div>
+    </div>
+
+    <div class="citation-result-layout">
+        <div class="citation-claim-list">
+            {% for claim in result.claims %}
+            <article class="citation-claim" data-claim-id="{{ claim.id }}">
+                <header>
+                    <div class="citation-claim-number">{{ forloop.counter|stringformat:"02d" }}</div>
+                    <div>
+                        <div class="citation-claim-meta">
+                            <span class="citation-type is-{{ claim.type }}">
+                                {% if claim.type == "method" %}метод{% elif claim.type == "data" %}данные{% elif claim.type == "task" %}задача{% elif claim.type == "result" %}результат{% else %}тема{% endif %}
+                            </span>
+                            {% if claim.section %}<span>{{ claim.section }}</span>{% endif %}
+                            <span>абзац {{ claim.paragraph_index|add:"1" }}</span>
+                        </div>
+                        <h3>{{ claim.text }}</h3>
+                        <p>{{ claim.reason }}</p>
+                        <div class="citation-placement">
+                            <strong>Место ссылки</strong>
+                            <div>
+                                {% if claim.context_before %}<span>{{ claim.context_before }}</span>{% endif %}
+                                <mark>{{ claim.text }}</mark><b>[n]</b>
+                                {% if claim.context_after %}<span>{{ claim.context_after }}</span>{% endif %}
+                            </div>
+                            <small>{{ claim.placement_hint }}</small>
+                        </div>
+                    </div>
+                </header>
+
+                <details class="citation-query-details">
+                    <summary>Поисковые запросы</summary>
+                    <dl>
+                        <div><dt>RU</dt><dd>{{ claim.query_ru }}</dd></div>
+                        <div><dt>EN</dt><dd>{{ claim.query_en }}</dd></div>
+                    </dl>
+                </details>
+
+                {% if claim.recommendations %}
+                <div class="citation-sources">
+                    {% for article in claim.recommendations %}
+                    <article class="citation-source{% if article.verdict == 'supports' %} is-supports{% elif article.verdict == 'not_supports' %} is-rejected{% endif %}" data-article-id="{{ article.article_id }}">
+                        <div class="citation-score">
+                            <strong>{{ article.score_percent }}</strong><span>%</span>
+                            <small>
+                                {% if article.verdict == "supports" %}подтверждает{% elif article.verdict == "partial" %}частично{% elif article.verdict == "not_supports" %}не подтверждает{% else %}кандидат{% endif %}
+                            </small>
+                        </div>
+                        <div class="citation-source-body">
+                            <div class="citation-source-topline">
+                                <span>{{ article.year|default:"год не указан" }}</span>
+                                <span>{{ article.journal }}</span>
+                                {% if article.doi %}<span>DOI {{ article.doi }}</span>{% elif article.edn %}<span>EDN {{ article.edn }}</span>{% endif %}
+                            </div>
+                            <h4>{{ article.title }}</h4>
+                            {% if article.authors %}<div class="citation-authors">{{ article.authors }}</div>{% endif %}
+                            <div class="citation-why">
+                                <strong>Почему рекомендуется</strong>
+                                <p>{{ article.reason }}</p>
+                            </div>
+                            {% if article.evidence %}
+                            <blockquote><span>Связанный фрагмент</span>{{ article.evidence }}</blockquote>
+                            {% endif %}
+                            <span class="citation-text" hidden>{{ article.citation }}</span>
+                            <div class="citation-source-actions">
+                                <button class="citation-add-button" type="button" data-add-citation data-claim-id="{{ claim.id }}" data-article-id="{{ article.article_id }}">
+                                    <span>+</span> Добавить ссылку
+                                </button>
+                                {% if article.url %}
+                                    <a href="{{ article.url }}" target="_blank" rel="noreferrer">Открыть публикацию ↗</a>
+                                {% elif article.doi %}
+                                    <a href="https://doi.org/{{ article.doi }}" target="_blank" rel="noreferrer">Открыть DOI ↗</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="citation-empty-source">Для этого утверждения убедительных совпадений в локальном корпусе нет.</div>
+                {% endif %}
+            </article>
+            {% empty %}
+            <div class="citation-empty-source">Утверждения, которым явно нужна внешняя ссылка, не найдены.</div>
+            {% endfor %}
+        </div>
+
+        <aside class="citation-plan" data-citation-plan>
+            <span class="citation-plan-caption">03 · План цитирования</span>
+            <h2>Выбранные источники</h2>
+            <p>Добавляйте только те публикации, чей фрагмент действительно подтверждает утверждение.</p>
+            <div class="citation-plan-empty" data-plan-empty>
+                <strong>План пока пуст</strong>
+                <span>Нажмите «Добавить ссылку» у подходящего результата.</span>
+            </div>
+            <ol class="citation-plan-list" data-plan-list></ol>
+            <button class="citation-copy-button" type="button" data-copy-plan hidden>Скопировать список</button>
+            {% if result.can_apply_docx %}
+            <form method="post" action="{% url 'citations:apply' %}" data-apply-form hidden>
+                {% csrf_token %}
+                <input type="hidden" name="workspace_token" value="{{ result.token }}">
+                <input type="hidden" name="selections" value="[]" data-selection-input>
+                <button class="citation-primary-action" type="submit">Скачать DOCX со ссылками</button>
+                <small>Маркеры [n] добавятся к утверждениям, источники — в список литературы.</small>
+            </form>
+            {% else %}
+            <div class="citation-docx-hint">Автоматическая вставка в файл доступна при анализе DOCX. Для этого материала можно скопировать готовый план.</div>
+            {% endif %}
+        </aside>
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'citations/workspace.js' %}?v=20260724a" defer></script>
+{% endblock %}
