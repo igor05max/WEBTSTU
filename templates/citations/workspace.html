@@ -5,7 +5,7 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727a">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727b">
 {% endblock %}
 
 {% block content %}
@@ -131,9 +131,12 @@
             {% for claim in result.claims %}
             <article class="citation-claim" data-claim-id="{{ claim.id }}">
                 <header>
-                    <span>Фрагмент статьи</span>
+                    <span>Куда поставить ссылку</span>
+                    <div class="citation-location">
+                        {{ claim.section|default:"Текст статьи" }} · абзац {{ claim.paragraph_index|add:"1" }}
+                    </div>
                     <h3>{{ claim.text }}</h3>
-                    <small>Ссылка будет поставлена сразу после этого фрагмента.</small>
+                    <small>Номер ссылки [n] появится сразу после этого предложения.</small>
                 </header>
 
                 <div class="citation-sources">
@@ -141,8 +144,11 @@
                     <article class="citation-source" data-article-id="{{ article.article_id }}">
                         <div class="citation-source-body">
                             <div class="citation-source-heading">
-                                <h4>{{ article.title }}</h4>
-                                <strong class="citation-score">{{ article.score_percent }}%</strong>
+                                <div>
+                                    <span>Подходящая статья</span>
+                                    <h4>{{ article.title }}</h4>
+                                </div>
+                                <strong class="citation-score"><span>соответствие</span>{{ article.score_percent }}%</strong>
                             </div>
                             <div class="citation-source-topline">
                                 {% if article.authors %}<span>{{ article.authors }}</span>{% endif %}
@@ -213,5 +219,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260727a" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20260727b" defer></script>
 {% endblock %}

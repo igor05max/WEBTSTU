@@ -389,6 +389,13 @@
     text-transform: uppercase;
 }
 
+.citation-location {
+    margin-top: 5px;
+    color: var(--citation-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
 .citation-source-topline {
     display: flex;
     flex-wrap: wrap;
@@ -436,7 +443,19 @@
     margin-top: 0;
 }
 
+.citation-source-heading > div > span {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--citation-green);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
 .citation-score {
+    display: grid;
+    gap: 2px;
     flex: 0 0 auto;
     padding: 6px 9px;
     border-radius: 9px;
@@ -444,6 +463,13 @@
     color: var(--citation-green);
     font-size: 13px;
     font-weight: 800;
+}
+
+.citation-score span {
+    color: var(--citation-muted);
+    font-size: 8px;
+    letter-spacing: .03em;
+    text-transform: uppercase;
 }
 
 .citation-source-body {

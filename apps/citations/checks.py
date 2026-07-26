@@ -90,7 +90,7 @@ def build_citation_coverage_report(
     snapshot=None,
     max_claims=8,
     results_per_claim=4,
-    min_percent=20,
+    min_percent=50,
 ):
     citation_snapshot = _load_citation_snapshot(version, snapshot)
     if len((citation_snapshot.get("text") or "").strip()) < settings.CITATION_CHECK_MIN_TEXT_LENGTH:

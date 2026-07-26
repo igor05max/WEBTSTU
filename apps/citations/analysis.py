@@ -91,6 +91,37 @@ def _normalize(value):
     return SPACE_RE.sub(" ", (value or "").replace("\x00", " ")).strip()
 
 
+def _language_of_text(value):
+    cyrillic = len(re.findall(r"[а-яё]", value or "", re.I))
+    latin = len(re.findall(r"[a-z]", value or "", re.I))
+    if cyrillic >= max(12, round(latin * 1.2)):
+        return "ru"
+    if latin >= max(12, round(cyrillic * 1.2)):
+        return "en"
+    return "mixed"
+
+
+def _document_language(paragraphs):
+    parts = []
+    for paragraph in paragraphs:
+        text = _normalize(paragraph.get("text"))
+        heading_key = text.casefold().strip(" .:")
+        if SECTION_NAMES.get(heading_key) == "Список литературы":
+            break
+        parts.append(text)
+    return _language_of_text("\n".join(parts))
+
+
+def _claims_in_document_language(claims, language):
+    if language not in {"ru", "en"}:
+        return claims
+    return [
+        claim
+        for claim in claims
+        if _language_of_text(claim.get("text", "")) in {language, "mixed"}
+    ]
+
+
 def document_snapshot(data, file_name):
     suffix = Path(file_name or "").suffix.casefold()
     if suffix == ".pdf":
@@ -330,9 +361,21 @@ def _attach_locations(claims, paragraphs):
         int(item.get("index", 0)): _normalize(item.get("text"))
         for item in paragraphs
     }
+    section_by_index = {}
+    current_section = ""
+    for item in paragraphs:
+        paragraph_index = int(item.get("index", 0))
+        text = _normalize(item.get("text"))
+        section = SECTION_NAMES.get(text.casefold().strip(" .:"))
+        if section:
+            current_section = section
+        section_by_index[paragraph_index] = current_section
     for claim in claims:
-        paragraph = paragraph_by_index.get(int(claim.get("paragraph_index", 0)), "")
+        paragraph_index = int(claim.get("paragraph_index", 0))
+        paragraph = paragraph_by_index.get(paragraph_index, "")
         claim_text = _normalize(claim.get("text"))
+        if not claim.get("section"):
+            claim["section"] = section_by_index.get(paragraph_index) or "Текст статьи"
         start = paragraph.find(claim_text) if paragraph and claim_text else -1
         end = start + len(claim_text) if start >= 0 else -1
         claim["char_start"] = start
@@ -359,16 +402,24 @@ def analyze_claims(snapshot, *, max_claims=8):
     paragraphs = snapshot.get("paragraphs") or []
     if not paragraphs and snapshot.get("text"):
         paragraphs = text_snapshot(snapshot["text"])["paragraphs"]
+    document_language = _document_language(paragraphs)
+    candidate_limit = min(24, max(max_claims, max_claims * 2))
     try:
-        claims = _llm_claims(paragraphs, max_claims)
+        claims = _llm_claims(paragraphs, candidate_limit)
     except Exception:
         claims = []
+    claims = _claims_in_document_language(claims, document_language)
     if not claims:
-        claims = _heuristic_claims(paragraphs, max_claims)
+        claims = _claims_in_document_language(
+            _heuristic_claims(paragraphs, candidate_limit),
+            document_language,
+        )
+    claims = claims[:max_claims]
     _attach_locations(claims, paragraphs)
     return {
         "claims": claims,
         "source": claims[0]["analysis_source"] if claims else "none",
+        "document_language": document_language,
         "paragraph_count": len(paragraphs),
         "text_length": len(snapshot.get("text") or ""),
     }

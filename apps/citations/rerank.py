@@ -40,7 +40,10 @@ def _fallback(claims):
 
 
 def _remove_weak_results(claims):
-    minimum = int(getattr(settings, "CITATION_MIN_RECOMMENDATION_PERCENT", 20))
+    minimum = max(
+        50,
+        int(getattr(settings, "CITATION_MIN_RECOMMENDATION_PERCENT", 50)),
+    )
     for claim in claims:
         claim["recommendations"] = [
             item

@@ -113,9 +113,31 @@ class CitationSystemTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "НЕЙРОННЫЕ СЕТИ ДЛЯ АНАЛИЗА ИЗОБРАЖЕНИЙ")
         self.assertContains(response, "10.1000/test.1")
-        self.assertContains(response, "Фрагмент статьи")
+        self.assertContains(response, "Куда поставить ссылку")
+        self.assertContains(response, "абзац 1")
         self.assertNotContains(response, "Почему рекомендуется")
         self.assertNotContains(response, "Поисковые запросы")
+
+    def test_russian_article_does_not_offer_fragments_from_english_translation(self):
+        snapshot = text_snapshot(
+            "Введение\n"
+            "Выбор направления подготовки формулируется как задача ранжирования "
+            "образовательных программ по многокомпонентному цифровому профилю абитуриента.\n"
+            "Для поддержки принятия решений используются методы многокритериального "
+            "анализа, позволяющие сопоставлять альтернативные образовательные траектории.\n"
+            "The selection of a field of study is formulated as the task of ranking "
+            "a fixed set of degree programmes according to a multi-component applicant "
+            "digital profile."
+        )
+
+        analysis = analyze_claims(snapshot, max_claims=6)
+
+        self.assertEqual(analysis["document_language"], "ru")
+        self.assertTrue(analysis["claims"])
+        self.assertTrue(
+            all("The selection of a field" not in claim["text"] for claim in analysis["claims"])
+        )
+        self.assertTrue(all(claim["section"] == "Введение" for claim in analysis["claims"]))
 
     def test_source_article_is_removed_but_same_candidate_can_match_two_fragments(self):
         identity = build_source_identity(
@@ -214,6 +236,7 @@ class CitationSystemTests(TestCase):
             {
                 "recommendations": [
                     {"title": "Нулевой", "score_percent": 0, "verdict": "partial"},
+                    {"title": "Слабый", "score_percent": 40, "verdict": "partial"},
                     {"title": "Отклонённый", "score_percent": 87, "verdict": "not_supports"},
                     {"title": "Подходящий", "score_percent": 72, "verdict": "supports"},
                 ]
