@@ -13,6 +13,11 @@ from docx import Document
 from apps.citations.analysis import analyze_claims, document_snapshot, text_snapshot
 from apps.citations.forms import CitationSearchForm
 from apps.citations.index import ensure_index, get_index_status, search_claim
+from apps.citations.matching import (
+    build_source_identity,
+    claims_with_recommendations,
+    remove_source_article,
+)
 from apps.citations.rerank import rerank_claims
 from apps.citations.workspaces import (
     apply_to_docx,
@@ -111,6 +116,24 @@ def workspace(request):
                 for claim in claims:
                     claim["recommendations"] = search_claim(claim)
                 rerank_claims(claims)
+                remove_source_article(
+                    claims,
+                    build_source_identity(
+                        snapshot,
+                        source_title=(
+                            selected_submission.title
+                            if selected_submission is not None
+                            else ""
+                        ),
+                        source_authors=(
+                            selected_submission.document_authors
+                            if selected_submission is not None
+                            else ""
+                        ),
+                    ),
+                )
+                claims = claims_with_recommendations(claims)
+                analysis["claims"] = claims
                 workspace_payload = create_workspace(
                     user_id=request.user.pk,
                     file_bytes=file_bytes,
@@ -143,7 +166,7 @@ def workspace(request):
                 if not claims:
                     messages.warning(
                         request,
-                        "Утверждения без ссылок не обнаружены. Попробуйте передать введение или обзор литературы.",
+                        "Подходящие новые источники не найдены.",
                     )
             except Exception as exc:
                 form.add_error(None, f"Поиск источников не завершён: {exc}")

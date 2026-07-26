@@ -3,17 +3,13 @@ from django.conf import settings
 from apps.checks.recommendations import recommend_articles
 from apps.citations.analysis import analyze_claims, document_snapshot
 from apps.citations.index import search_claim
+from apps.citations.matching import (
+    build_source_identity,
+    claims_with_recommendations,
+    remove_source_article,
+)
 from apps.citations.rerank import rerank_claims
 from apps.submissions.document_analysis import read_file_bytes
-
-
-TYPE_LABELS = {
-    "topic": "тема и научный контекст",
-    "method": "метод",
-    "data": "данные",
-    "task": "постановка задачи",
-    "result": "результат",
-}
 
 
 def _summary(issues):
@@ -115,13 +111,21 @@ def build_citation_coverage_report(
             claim.get("recommendations"),
             min_percent,
         )
+    remove_source_article(
+        claims,
+        build_source_identity(
+            citation_snapshot,
+            source_title=getattr(submission, "title", ""),
+            source_authors=getattr(submission, "document_authors", ""),
+        ),
+    )
+    claims = claims_with_recommendations(claims)
 
     issues = []
     unique_recommendations = {}
     for claim in claims:
         recommendations = claim.get("recommendations") or []
         best = recommendations[0] if recommendations else None
-        type_label = TYPE_LABELS.get(claim.get("type"), "научное утверждение")
         suggestion = "Подберите подтверждающий источник вручную или уточните формулировку."
         if best:
             identity = str(best.get("article_id") or best.get("doi") or best.get("title"))
@@ -134,9 +138,9 @@ def build_citation_coverage_report(
         issues.append(
             {
                 "code": f"citation_needed_{claim['id']}",
-                "title": f"Нужна ссылка: {type_label}",
+                "title": "Подходящий научный источник",
                 "severity": "warning",
-                "message": claim.get("reason") or "Утверждение требует внешнего подтверждения.",
+                "message": "Для этого фрагмента найдена публикация, которую можно процитировать.",
                 "location": (
                     f"{claim.get('section') or 'Текст статьи'}, "
                     f"абзац {int(claim.get('paragraph_index', 0)) + 1}"
@@ -159,8 +163,10 @@ def build_citation_coverage_report(
     )
     claims_with_sources = sum(bool(claim.get("recommendations")) for claim in claims)
     message = (
-        f"Найдено {len(claims)} мест, где нужна научная ссылка. "
-        f"Для {claims_with_sources} из них найдены источники с соответствием не ниже {min_percent}%."
+        f"Найдено {claims_with_sources} фрагментов с подходящими научными источниками "
+        f"и соответствием не ниже {min_percent}%."
+        if claims_with_sources
+        else "Подходящие новые источники не найдены."
     )
     payload = {
         "schema_version": "2.0",

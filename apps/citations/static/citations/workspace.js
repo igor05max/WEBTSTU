@@ -24,24 +24,35 @@
 
     const render = () => {
         list.innerHTML = "";
-        const articleNumbers = new Map();
-        let nextNumber = 1;
+        const grouped = new Map();
         selected.forEach((item) => {
-            if (!articleNumbers.has(item.articleId)) {
-                articleNumbers.set(item.articleId, nextNumber++);
+            if (!grouped.has(item.articleId)) {
+                grouped.set(item.articleId, {
+                    articleId: item.articleId,
+                    title: item.title,
+                    citation: item.citation,
+                    items: [],
+                });
             }
-            const number = articleNumbers.get(item.articleId);
+            grouped.get(item.articleId).items.push(item);
+        });
+        [...grouped.values()].forEach((group, index) => {
+            const number = index + 1;
             const entry = document.createElement("li");
             entry.innerHTML = `
                 <div><span>[${number}]</span><strong></strong></div>
                 <p></p>
                 <button type="button" aria-label="Удалить источник">×</button>
             `;
-            entry.querySelector("strong").textContent = item.title;
-            entry.querySelector("p").textContent = item.citation;
+            entry.querySelector("strong").textContent = group.title;
+            entry.querySelector("p").textContent = group.items.length > 1
+                ? `Для ${group.items.length} фрагментов · ${group.citation}`
+                : group.citation;
             entry.querySelector("button").addEventListener("click", () => {
-                selected.delete(item.key);
-                setButtonState(item.button, false);
+                group.items.forEach((item) => {
+                    selected.delete(item.key);
+                    setButtonState(item.button, false);
+                });
                 render();
             });
             list.append(entry);

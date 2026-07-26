@@ -15,6 +15,11 @@ from docx.shared import Cm
 from apps.citations.analysis import analyze_claims, text_snapshot
 from apps.citations.checks import build_citation_coverage_report
 from apps.citations.index import build_index, search_claim
+from apps.citations.matching import (
+    build_source_identity,
+    claims_with_recommendations,
+    remove_source_article,
+)
 from apps.citations.rerank import _remove_weak_results
 from apps.citations.workspaces import apply_to_docx, create_workspace
 from apps.directory.models import ArticleType, Journal
@@ -108,7 +113,76 @@ class CitationSystemTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "НЕЙРОННЫЕ СЕТИ ДЛЯ АНАЛИЗА ИЗОБРАЖЕНИЙ")
         self.assertContains(response, "10.1000/test.1")
-        self.assertContains(response, "Почему рекомендуется")
+        self.assertContains(response, "Фрагмент статьи")
+        self.assertNotContains(response, "Почему рекомендуется")
+        self.assertNotContains(response, "Поисковые запросы")
+
+    def test_source_article_is_removed_but_same_candidate_can_match_two_fragments(self):
+        identity = build_source_identity(
+            source_title="Собственная статья автора",
+        )
+        repeated_candidate = {
+            "article_id": "1001",
+            "title": "Общий источник для двух фрагментов",
+        }
+        claims = [
+            {
+                "id": "claim-1",
+                "recommendations": [
+                    {"article_id": "self", "title": "Собственная статья автора"},
+                    dict(repeated_candidate),
+                ],
+            },
+            {
+                "id": "claim-2",
+                "recommendations": [dict(repeated_candidate)],
+            },
+            {
+                "id": "claim-3",
+                "recommendations": [],
+            },
+        ]
+
+        removed = remove_source_article(claims, identity)
+        visible_claims = claims_with_recommendations(claims)
+
+        self.assertEqual(removed, 1)
+        self.assertEqual([claim["id"] for claim in visible_claims], ["claim-1", "claim-2"])
+        self.assertEqual(
+            [claim["recommendations"][0]["article_id"] for claim in visible_claims],
+            ["1001", "1001"],
+        )
+
+    def test_uploaded_article_is_not_recommended_to_itself(self):
+        document = Document()
+        document.add_paragraph("НЕЙРОННЫЕ СЕТИ ДЛЯ АНАЛИЗА ИЗОБРАЖЕНИЙ")
+        document.add_paragraph("Иванов И. И.")
+        document.add_paragraph(
+            "Свёрточные нейронные сети широко применяются для классификации "
+            "медицинских изображений и обеспечивают высокую точность распознавания."
+        )
+        source = BytesIO()
+        document.save(source)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("citations:workspace"),
+            {
+                "file": SimpleUploadedFile(
+                    "same-article.docx",
+                    source.getvalue(),
+                    content_type=(
+                        "application/vnd.openxmlformats-officedocument."
+                        "wordprocessingml.document"
+                    ),
+                ),
+                "max_claims": 3,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["result"]["claims"], [])
+        self.assertContains(response, "Подходящие новые источники не найдены")
 
     def test_submission_check_contains_exact_citation_locations(self):
         submission = SimpleNamespace(
@@ -196,6 +270,54 @@ class CitationSystemTests(TestCase):
         )
         self.assertIn("Список литературы", text)
         self.assertIn("Иванов И. И.", text)
+
+    def test_one_source_can_support_two_fragments_without_duplicate_reference(self):
+        document = Document()
+        first_text = "Нейронные сети применяются для анализа изображений."
+        second_text = "Такие модели используются для классификации объектов."
+        document.add_paragraph(f"{first_text} {second_text}")
+        source = BytesIO()
+        document.save(source)
+        recommendation = {
+            "article_id": "1001",
+            "title": "Нейронные сети для анализа изображений",
+            "citation": "Иванов И. И. Нейронные сети для анализа изображений. 2024.",
+        }
+        claims = [
+            {
+                "id": "claim-1",
+                "text": first_text,
+                "recommendations": [dict(recommendation)],
+            },
+            {
+                "id": "claim-2",
+                "text": second_text,
+                "recommendations": [dict(recommendation)],
+            },
+        ]
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="two-fragments.docx",
+            snapshot={"text": f"{first_text} {second_text}"},
+            claims=claims,
+            index_status={"ready": True},
+        )
+
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[
+                {"claim_id": "claim-1", "article_id": "1001"},
+                {"claim_id": "claim-2", "article_id": "1001"},
+            ],
+        )
+        result = Document(output)
+        text = "\n".join(paragraph.text for paragraph in result.paragraphs)
+
+        self.assertIn(f"{first_text} [1]", text)
+        self.assertIn(f"{second_text} [1]", text)
+        self.assertEqual(text.count("Иванов И. И. Нейронные сети"), 1)
 
     def test_added_reference_continues_word_automatic_numbering(self):
         document = Document()

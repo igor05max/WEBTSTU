@@ -31,7 +31,7 @@ class CitationSearchForm(forms.Form):
         ),
     )
     max_claims = forms.IntegerField(
-        label="Сколько утверждений разобрать",
+        label="Сколько фрагментов проверить",
         min_value=1,
         max_value=16,
         initial=6,

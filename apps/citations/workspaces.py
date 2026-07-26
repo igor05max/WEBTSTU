@@ -93,7 +93,9 @@ def _selected_sources(payload, selections):
 
 
 def _insert_marker_after_claim(paragraph, claim_text, marker):
-    if marker in paragraph.text:
+    normalized_paragraph = " ".join(paragraph.text.casefold().replace("ё", "е").split())
+    normalized_claim_text = " ".join(claim_text.casefold().replace("ё", "е").split())
+    if f"{normalized_claim_text} {marker}" in normalized_paragraph:
         return True
     full_text = "".join(run.text for run in paragraph.runs)
     normalized_chars = []
