@@ -1,11 +1,14 @@
+import hashlib
+import io
 import os
 from pathlib import Path
+import posixpath
 import shutil
 import subprocess
 import tempfile
 from xml.etree import ElementTree
 from uuid import uuid4
-from zipfile import BadZipFile, ZipFile
+from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
 from django.conf import settings
 
@@ -25,6 +28,14 @@ PREVIEW_KINDS = {
 
 WORD_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 WORD = f"{{{WORD_NAMESPACE}}}"
+OFFICE_NAMESPACE = "urn:schemas-microsoft-com:office:office"
+VML_NAMESPACE = "urn:schemas-microsoft-com:vml"
+RELATIONSHIP_NAMESPACE = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+)
+PACKAGE_RELATIONSHIP_NAMESPACE = (
+    "http://schemas.openxmlformats.org/package/2006/relationships"
+)
 
 
 class DocumentPreviewError(ValueError):
@@ -255,11 +266,19 @@ def build_docx_bytes_pdf(document_bytes):
     if len(document_bytes) > DOCX_MAX_UNCOMPRESSED_BYTES:
         raise DocumentPreviewError("Исправленный DOCX слишком большой для просмотра.")
 
+    cache_directory = Path(settings.MEDIA_ROOT) / "document_previews" / "corrected_documents"
+    cache_directory.mkdir(parents=True, exist_ok=True)
+    cache_key = hashlib.sha256(document_bytes).hexdigest()
+    cached_path = cache_directory / f"{cache_key}.pdf"
+    if _is_valid_pdf(cached_path):
+        return cached_path.read_bytes()
+
+    preview_bytes = _build_preview_safe_docx(document_bytes)
     with tempfile.TemporaryDirectory(prefix="corrected-document-preview-") as temporary_directory:
         temporary_directory = Path(temporary_directory)
         source_path = temporary_directory / "corrected-document.docx"
         output_path = temporary_directory / "corrected-document.pdf"
-        source_path.write_bytes(document_bytes)
+        source_path.write_bytes(preview_bytes)
         convert_word_path_to_pdf(
             source_path,
             output_path,
@@ -267,7 +286,102 @@ def build_docx_bytes_pdf(document_bytes):
         )
         if not _is_valid_pdf(output_path):
             raise DocumentPreviewError("Не удалось подготовить исправленный DOCX для просмотра.")
-        return output_path.read_bytes()
+        preview_pdf = output_path.read_bytes()
+
+    temporary_cache_path = cache_directory / f".{cache_key}-{uuid4().hex}.pdf"
+    try:
+        temporary_cache_path.write_bytes(preview_pdf)
+        os.replace(temporary_cache_path, cached_path)
+    finally:
+        temporary_cache_path.unlink(missing_ok=True)
+    return preview_pdf
+
+
+def _build_preview_safe_docx(document_bytes):
+    """
+    Keep the visual fallback for embedded OLE equations without loading the OLE payload.
+
+    Word stores legacy MathType equations as an embedded binary object plus a VML
+    preview image. LibreOffice may abort while importing a document containing many
+    such objects. The downloadable DOCX is never changed; only its temporary preview
+    copy drops the OLE relationship and keeps the already embedded image.
+    """
+
+    try:
+        with ZipFile(io.BytesIO(document_bytes)) as input_archive:
+            try:
+                document_xml = input_archive.read("word/document.xml")
+                relationships_xml = input_archive.read(
+                    "word/_rels/document.xml.rels"
+                )
+            except KeyError:
+                return document_bytes
+
+            document_root = ElementTree.fromstring(document_xml)
+            removed_relationship_ids = set()
+            removed_objects = 0
+            ole_tag = f"{{{OFFICE_NAMESPACE}}}OLEObject"
+            relationship_id_attribute = f"{{{RELATIONSHIP_NAMESPACE}}}id"
+            for parent in document_root.iter():
+                for child in list(parent):
+                    if child.tag != ole_tag:
+                        continue
+                    relationship_id = child.get(relationship_id_attribute)
+                    if relationship_id:
+                        removed_relationship_ids.add(relationship_id)
+                    parent.remove(child)
+                    removed_objects += 1
+
+            if not removed_objects:
+                return document_bytes
+
+            ole_attribute = f"{{{OFFICE_NAMESPACE}}}ole"
+            shape_tag = f"{{{VML_NAMESPACE}}}shape"
+            for shape in document_root.iter(shape_tag):
+                shape.attrib.pop(ole_attribute, None)
+
+            relationships_root = ElementTree.fromstring(relationships_xml)
+            relationship_tag = (
+                f"{{{PACKAGE_RELATIONSHIP_NAMESPACE}}}Relationship"
+            )
+            removed_targets = set()
+            for relationship in list(relationships_root.findall(relationship_tag)):
+                relationship_type = relationship.get("Type", "")
+                if (
+                    relationship.get("Id") not in removed_relationship_ids
+                    and not relationship_type.endswith("/oleObject")
+                ):
+                    continue
+                target = relationship.get("Target", "")
+                if target:
+                    removed_targets.add(
+                        posixpath.normpath(posixpath.join("word", target)).lstrip("/")
+                    )
+                relationships_root.remove(relationship)
+
+            output = io.BytesIO()
+            with ZipFile(output, "w", ZIP_DEFLATED) as output_archive:
+                for info in input_archive.infolist():
+                    normalized_name = posixpath.normpath(info.filename).lstrip("/")
+                    if normalized_name in removed_targets:
+                        continue
+                    value = input_archive.read(info)
+                    if info.filename == "word/document.xml":
+                        value = ElementTree.tostring(
+                            document_root,
+                            encoding="utf-8",
+                            xml_declaration=True,
+                        )
+                    elif info.filename == "word/_rels/document.xml.rels":
+                        value = ElementTree.tostring(
+                            relationships_root,
+                            encoding="utf-8",
+                            xml_declaration=True,
+                        )
+                    output_archive.writestr(info, value)
+            return output.getvalue()
+    except (BadZipFile, ElementTree.ParseError, OSError):
+        return document_bytes
 
 
 def _read_style_names(archive):

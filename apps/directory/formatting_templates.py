@@ -71,6 +71,204 @@ def _dominant(values):
     return Counter(cleaned).most_common(1)[0][0]
 
 
+_NON_BODY_STYLE_TOKENS = (
+    "abstract",
+    "affiliation",
+    "article_type",
+    "author",
+    "back_matter",
+    "bullet",
+    "caption",
+    "heading",
+    "itemize",
+    "keyword",
+    "list",
+    "reference",
+    "title",
+    "аннотац",
+    "автор",
+    "заголов",
+    "ключев",
+    "литератур",
+    "назван",
+    "подпис",
+    "список",
+)
+
+
+def _style_chain(style):
+    while style is not None:
+        yield style
+        style = style.base_style
+
+
+def _first_style_value(style, getter):
+    for candidate in _style_chain(style):
+        value = getter(candidate)
+        if value is not None:
+            return value
+    return None
+
+
+def _style_font_size(style):
+    try:
+        from docx.oxml.ns import qn
+    except ImportError:
+        return None
+    for candidate in _style_chain(style):
+        direct_size = _round_pt(candidate.font.size)
+        if direct_size is not None:
+            return direct_size
+        run_properties = candidate.element.find(qn("w:rPr"))
+        if run_properties is None:
+            continue
+        for size_name in ("w:sz", "w:szCs"):
+            size = run_properties.find(qn(size_name))
+            if size is None:
+                continue
+            try:
+                return round(float(size.get(qn("w:val"))) / 2, 1)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _document_default_font_size(document):
+    try:
+        from docx.oxml.ns import qn
+    except ImportError:
+        return None
+    defaults = document.styles.element.find(qn("w:docDefaults"))
+    if defaults is None:
+        return None
+    run_defaults = defaults.find(qn("w:rPrDefault"))
+    run_properties = run_defaults.find(qn("w:rPr")) if run_defaults is not None else None
+    if run_properties is None:
+        return None
+    for size_name in ("w:sz", "w:szCs"):
+        size = run_properties.find(qn(size_name))
+        if size is None:
+            continue
+        try:
+            return round(float(size.get(qn("w:val"))) / 2, 1)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _resolved_style_rules(document, paragraphs):
+    if not paragraphs:
+        return {}
+    normal_style = document.styles["Normal"]
+    representative_style = paragraphs[0].style or normal_style
+    style_font_size = _style_font_size(representative_style)
+
+    font_names = []
+    font_sizes = []
+    line_spacings = []
+    first_line_indents = []
+    alignments = []
+    for paragraph in paragraphs:
+        for run in paragraph.runs:
+            if not run.text.strip():
+                continue
+            if run.font.name:
+                font_names.append(run.font.name)
+            if run.font.size is not None:
+                font_sizes.append(_round_pt(run.font.size))
+
+        formatting = paragraph.paragraph_format
+        spacing = formatting.line_spacing
+        if spacing is None:
+            spacing = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.line_spacing,
+            )
+        if spacing is None:
+            spacing = normal_style.paragraph_format.line_spacing
+        indent = formatting.first_line_indent
+        if indent is None:
+            indent = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.first_line_indent,
+            )
+        if indent is None:
+            indent = normal_style.paragraph_format.first_line_indent
+        alignment = paragraph.alignment
+        if alignment is None:
+            alignment = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.alignment,
+            )
+        if alignment is None:
+            alignment = normal_style.paragraph_format.alignment
+
+        first_line_indents.append(_round_cm(indent))
+        if alignment is not None:
+            alignments.append(str(alignment).split()[0].casefold())
+
+        reference_size = (
+            _style_font_size(paragraph.style or representative_style)
+            or _dominant(font_sizes)
+            or _style_font_size(normal_style)
+            or _document_default_font_size(document)
+        )
+        if hasattr(spacing, "pt") and reference_size:
+            line_spacings.append(round(float(spacing.pt) / reference_size, 2))
+        elif isinstance(spacing, (int, float)):
+            line_spacings.append(round(float(spacing), 2))
+
+    style_font_name = _first_style_value(
+        representative_style,
+        lambda style: style.font.name,
+    )
+    return {
+        "font_family": (
+            _dominant(font_names)
+            or style_font_name
+            or normal_style.font.name
+            or ""
+        ),
+        "font_size_pt": (
+            style_font_size
+            or _dominant(font_sizes)
+            or _style_font_size(normal_style)
+            or _document_default_font_size(document)
+        ),
+        "line_spacing": _dominant(line_spacings),
+        "first_line_indent_cm": _dominant(first_line_indents),
+        "alignment": _dominant(alignments) or "",
+    }
+
+
+def _body_paragraphs(document):
+    candidates = []
+    for paragraph in document.paragraphs[:1000]:
+        if not paragraph.text.strip():
+            continue
+        style_name = (paragraph.style.name or "").casefold() if paragraph.style else ""
+        if any(token in style_name for token in _NON_BODY_STYLE_TOKENS):
+            continue
+        candidates.append(paragraph)
+    if not candidates:
+        candidates = [
+            paragraph
+            for paragraph in document.paragraphs[:1000]
+            if paragraph.text.strip()
+        ]
+    style_id = _dominant(
+        paragraph.style.style_id
+        for paragraph in candidates
+        if paragraph.style is not None
+    )
+    selected = [
+        paragraph
+        for paragraph in candidates
+        if paragraph.style is not None and paragraph.style.style_id == style_id
+    ]
+    return selected or candidates
+
+
 def _pdf_font_family(base_font):
     name = str(base_font or "").split("+")[-1].casefold()
     if "palladio" in name or "palatino" in name:
@@ -290,50 +488,49 @@ def _extract_docx_rules(data):
             },
         }
 
-    font_names = []
-    font_sizes = []
-    line_spacings = []
-    first_line_indents = []
-    alignments = []
-    for paragraph in document.paragraphs[:1000]:
-        if not paragraph.text.strip():
-            continue
-        style_name = (paragraph.style.name or "").casefold() if paragraph.style else ""
-        if "heading" in style_name or "заголов" in style_name:
-            continue
-        for run in paragraph.runs:
-            if run.text.strip():
-                font_names.append(run.font.name)
-                font_sizes.append(_round_pt(run.font.size))
-        formatting = paragraph.paragraph_format
-        spacing = formatting.line_spacing
-        if hasattr(spacing, "pt"):
-            paragraph_sizes = [
-                _round_pt(run.font.size)
-                for run in paragraph.runs
-                if run.text.strip() and run.font.size is not None
-            ]
-            reference_size = _dominant(paragraph_sizes)
-            if reference_size:
-                line_spacings.append(
-                    round(float(spacing.pt) / reference_size, 2)
-                )
-        elif isinstance(spacing, (int, float)):
-            line_spacings.append(round(float(spacing), 2))
-        first_line_indents.append(_round_cm(formatting.first_line_indent))
-        if paragraph.alignment is not None:
-            alignments.append(str(paragraph.alignment).split()[0].casefold())
+    body_rules = _resolved_style_rules(document, _body_paragraphs(document))
+    heading_paragraphs = [
+        paragraph
+        for paragraph in document.paragraphs[:1000]
+        if paragraph.text.strip()
+        and paragraph.style is not None
+        and (
+            "heading" in (paragraph.style.name or "").casefold()
+            or "заголов" in (paragraph.style.name or "").casefold()
+        )
+    ]
+    heading_rules = _resolved_style_rules(document, heading_paragraphs)
+    title_paragraphs = [
+        paragraph
+        for paragraph in document.paragraphs[:100]
+        if paragraph.text.strip()
+        and paragraph.style is not None
+        and (
+            "title" in (paragraph.style.name or "").casefold()
+            or "назван" in (paragraph.style.name or "").casefold()
+        )
+    ]
+    title_rules = _resolved_style_rules(document, title_paragraphs)
+    if title_rules.get("font_size_pt"):
+        heading_rules["title_font_size_pt"] = title_rules["font_size_pt"]
 
-    return {
+    result = {
         "page": page_rules,
-        "body": {
-            "font_family": _dominant(font_names) or "",
-            "font_size_pt": _dominant(font_sizes),
-            "line_spacing": _dominant(line_spacings),
-            "first_line_indent_cm": _dominant(first_line_indents),
-            "alignment": _dominant(alignments) or "",
-        },
+        "body": body_rules,
     }
+    if heading_paragraphs:
+        result["headings"] = {
+            key: value
+            for key, value in heading_rules.items()
+            if key
+            in {
+                "font_family",
+                "font_size_pt",
+                "title_font_size_pt",
+            }
+            and value not in (None, "")
+        }
+    return result
 
 
 def _extract_template_content(template):
