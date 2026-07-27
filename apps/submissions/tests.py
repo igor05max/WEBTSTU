@@ -603,6 +603,8 @@ class SubmissionCreateViewTests(TestCase):
         self.assertContains(response, "Уточнить структуру нейросетью")
         self.assertNotContains(response, 'id="id_organizations"')
         self.assertNotContains(response, "Организации авторов")
+        self.assertContains(response, "accounts/global-loading.css")
+        self.assertContains(response, "accounts/global-loading.js")
 
     @patch("apps.submissions.views.analyze_document")
     def test_metadata_endpoint_can_request_grounded_semantic_refinement(
@@ -2141,6 +2143,7 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertNotContains(response, "Конструктор документа по шаблону")
         self.assertContains(response, "Структура документа")
         self.assertContains(response, "В порядке их расположения в готовом файле")
+        self.assertContains(response, "accounts/global-loading.js")
         self.assertContains(response, "Посмотреть и отправить отредактированную")
         self.assertContains(response, "Скачать LaTeX")
         self.assertNotContains(response, "Посмотреть LaTeX")

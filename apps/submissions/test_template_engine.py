@@ -242,6 +242,47 @@ class ReusableTemplateEngineTests(SimpleTestCase):
         self.assertFalse(blocks["supervisor"]["required"])
         self.assertFalse(blocks["references"]["required"])
 
+    def test_english_template_block_labels_are_displayed_in_russian(self):
+        normalized = normalize_template_rules(
+            {
+                "document": {
+                    "blocks": [
+                        {"role": "title", "label": "Title", "required": True},
+                        {
+                            "role": "authors",
+                            "label": "Firstname Lastname",
+                            "required": True,
+                        },
+                        {
+                            "role": "institution",
+                            "label": "Affiliation",
+                            "required": True,
+                        },
+                        {"role": "abstract", "label": "Abstract", "required": True},
+                        {"role": "keywords", "label": "Keywords", "required": True},
+                        {"role": "body", "label": "Main Text", "required": True},
+                        {
+                            "role": "references",
+                            "label": "References",
+                            "required": True,
+                        },
+                    ]
+                }
+            }
+        )
+
+        labels = {
+            block["role"]: block["label"]
+            for block in normalized["document"]["blocks"]
+        }
+        self.assertEqual(labels["title"], "Название")
+        self.assertEqual(labels["authors"], "Авторы")
+        self.assertEqual(labels["institution"], "Организация")
+        self.assertEqual(labels["abstract"], "Аннотация")
+        self.assertEqual(labels["keywords"], "Ключевые слова")
+        self.assertEqual(labels["body"], "Основной текст")
+        self.assertEqual(labels["references"], "Список литературы")
+
     def test_plan_recognizes_title_block_without_false_missing_sections(self):
         plan = build_docx_plan(_sample_docx(), LEGACY_RULES)
 

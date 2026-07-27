@@ -101,6 +101,17 @@ def _alignment_name(value: Any) -> str:
     }.get(numeric, str(value).split()[0].casefold())
 
 
+def _alignment_label(value: Any) -> str:
+    normalized = str(value or "").strip().casefold()
+    return {
+        "left": "по левому краю",
+        "center": "по центру",
+        "right": "по правому краю",
+        "justify": "по ширине",
+        "distribute": "распределённое",
+    }.get(normalized, str(value or ""))
+
+
 def _document_defaults(document) -> dict[str, Any]:
     from docx.oxml.ns import qn
 
@@ -580,7 +591,8 @@ def check_docx_against_template(
             _issue(
                 "template_alignment",
                 "Выравнивание основного текста отличается",
-                f"Распознано: {metrics['alignment']}; требуется: {expected_alignment}.",
+                f"Распознано: {_alignment_label(metrics['alignment'])}; "
+                f"требуется: {_alignment_label(expected_alignment)}.",
                 suggestion="Конструктор исправит выравнивание только в основном тексте.",
                 fixable=True,
             )
@@ -638,7 +650,8 @@ def check_docx_against_template(
                 _issue(
                     f"template_block_{role}_alignment",
                     f"Неверно выровнен блок «{label}»",
-                    f"Распознано: {actual_alignment}; требуется: {expected_alignment}.",
+                    f"Распознано: {_alignment_label(actual_alignment)}; "
+                    f"требуется: {_alignment_label(expected_alignment)}.",
                     suggestion="Конструктор исправит только этот блок.",
                     fixable=True,
                 )

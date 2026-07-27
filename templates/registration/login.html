@@ -11,6 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/login.css' %}?v=20260717a">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+    {% include "includes/global_loading_head.html" %}
 </head>
 <body>
 <div class="auth-shell">
@@ -147,5 +148,6 @@
 </div>
 
 <script src="{% static 'accounts/login.js' %}?v=20260717a" defer></script>
+{% include "includes/global_loading_body.html" %}
 </body>
 </html>

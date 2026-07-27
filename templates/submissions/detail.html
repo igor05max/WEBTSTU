@@ -564,7 +564,7 @@
                                             <article class="submission-check-issue is-{{ issue.severity }}">
                                                  <div class="submission-check-issue-head">
                                                      <strong>{{ issue.title }}</strong>
-                                                     <span>{{ issue.severity }}{% if issue.fixable %} · можно исправить{% endif %}</span>
+                                                     <span>{{ issue.severity_display }}{% if issue.fixable %} · можно исправить{% endif %}</span>
                                                  </div>
                                                 <p>{{ issue.message }}</p>
                                                 {% if issue.location %}<small>{{ issue.location }}</small>{% endif %}
@@ -905,7 +905,8 @@
 
                     fetch(progressUrl, {
                         headers: {
-                            "X-Requested-With": "XMLHttpRequest"
+                            "X-Requested-With": "XMLHttpRequest",
+                            "X-Site-Loading": "silent"
                         }
                     })
                         .then(function (response) {

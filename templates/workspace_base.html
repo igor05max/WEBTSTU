@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
     <link rel="stylesheet" href="{% static 'accounts/workspace-pages.css' %}?v=20260717c">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+    {% include "includes/global_loading_head.html" %}
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -30,6 +31,7 @@
 </div>
 
 <script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
+{% include "includes/global_loading_body.html" %}
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

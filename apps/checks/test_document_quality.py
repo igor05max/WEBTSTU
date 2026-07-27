@@ -8,6 +8,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.checks.document_checks import build_document_quality_report, build_file_safety_report
+from apps.checks.content_review import _build_prompt as build_content_review_prompt
 from apps.checks.models import CheckRunStatus
 from apps.directory.models import ArticleType, Journal
 from apps.submissions.document_analysis import analyze_document_bytes, match_authors_to_users
@@ -52,6 +53,18 @@ def build_article_docx(*, dangerous_member=False, reference_heading="Списо�
 
 
 class DocumentAnalysisTests(TestCase):
+    def test_content_review_is_requested_in_russian_for_english_documents(self):
+        prompt = build_content_review_prompt(
+            SimpleNamespace(title="English research paper", abstract=""),
+            "The document body is written in English.",
+        )
+
+        self.assertIn(
+            "overall_assessment, title, explanation и recommendation всегда пиши по-русски",
+            prompt,
+        )
+        self.assertIn("quote оставляй на языке исходного документа", prompt)
+
     def test_extracts_editable_metadata_and_matches_directory_users(self):
         snapshot = analyze_document_bytes(build_article_docx(), "article.docx")
 

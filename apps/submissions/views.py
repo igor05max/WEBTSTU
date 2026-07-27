@@ -466,6 +466,23 @@ def _build_check_entries(submission, check_runs):
             payload = run.result_payload or {}
 
         issues = payload.get("issues") if isinstance(payload.get("issues"), list) else []
+        severity_labels = {
+            "critical": "Критическое",
+            "error": "Ошибка",
+            "warning": "Предупреждение",
+            "info": "Информация",
+        }
+        issues = [
+            {
+                **issue,
+                "severity_display": severity_labels.get(
+                    str(issue.get("severity") or "").casefold(),
+                    "Замечание",
+                ),
+            }
+            for issue in issues
+            if isinstance(issue, dict)
+        ]
         summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
         metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
         details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
@@ -542,7 +559,17 @@ def _build_formatting_rule_rows(snapshot):
     add("Межстрочный интервал", body.get("line_spacing"))
     if body.get("first_line_indent_cm") is not None:
         add("Абзацный отступ", f"{body['first_line_indent_cm']} см")
-    add("Выравнивание", body.get("alignment"))
+    alignment = {
+        "left": "по левому краю",
+        "center": "по центру",
+        "right": "по правому краю",
+        "justify": "по ширине",
+        "distribute": "распределённое",
+    }.get(
+        str(body.get("alignment") or "").casefold(),
+        body.get("alignment"),
+    )
+    add("Выравнивание", alignment)
     required_sections = structure.get("required_sections") or []
     add("Обязательные разделы", ", ".join(str(value) for value in required_sections))
     if limits.get("min_words") is not None:

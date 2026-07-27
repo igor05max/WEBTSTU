@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
     <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20260727b">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+    {% include "includes/global_loading_head.html" %}
 </head>
 <body>
 <div class="dashboard-shell">
@@ -292,5 +293,6 @@
 
 <script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
 <script src="{% static 'submissions/create.js' %}?v=20260727b" defer></script>
+{% include "includes/global_loading_body.html" %}
 </body>
 </html>

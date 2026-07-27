@@ -298,7 +298,16 @@ def normalize_template_rules(rules: Any) -> dict[str, Any]:
                 if value not in (None, "")
             }
         )
-        block["label"] = str(block.get("label") or definition["label"])
+        source_label = str(
+            block.get("source_label")
+            or block.get("label")
+            or ""
+        ).strip()
+        if source_label and not block.get("source_label"):
+            block["source_label"] = source_label
+        # The interface always uses canonical Russian names. The original
+        # template wording remains available for recognition and diagnostics.
+        block["label"] = definition["label"]
         block["aliases"] = list(
             dict.fromkeys(
                 [
