@@ -1,11 +1,16 @@
 from pathlib import Path
 
 from django import forms
+from django.core.files.base import ContentFile
 
+from apps.submissions.document_conversion import (
+    LegacyDocConversionError,
+    convert_legacy_doc_to_docx,
+)
 from apps.submissions.models import Submission
 
 
-SUPPORTED_UPLOAD_EXTENSIONS = {".docx", ".pdf", ".txt", ".md", ".rtf"}
+SUPPORTED_UPLOAD_EXTENSIONS = {".doc", ".docx", ".pdf", ".txt", ".md", ".rtf"}
 
 
 class CitationSearchForm(forms.Form):
@@ -18,7 +23,7 @@ class CitationSearchForm(forms.Form):
     file = forms.FileField(
         label="Или загрузите статью",
         required=False,
-        help_text="DOCX, PDF, TXT, MD или RTF, не более 50 МБ.",
+        help_text="DOC, DOCX, PDF, TXT, MD или RTF, не более 50 МБ.",
     )
     text = forms.CharField(
         label="Или вставьте фрагмент текста",
@@ -52,9 +57,18 @@ class CitationSearchForm(forms.Form):
             return None
         suffix = Path(uploaded.name).suffix.casefold()
         if suffix not in SUPPORTED_UPLOAD_EXTENSIONS:
-            raise forms.ValidationError("Поддерживаются DOCX, PDF, TXT, MD и RTF.")
+            raise forms.ValidationError("Поддерживаются DOC, DOCX, PDF, TXT, MD и RTF.")
         if uploaded.size > 50 * 1024 * 1024:
             raise forms.ValidationError("Файл превышает ограничение 50 МБ.")
+        if suffix == ".doc":
+            try:
+                converted = convert_legacy_doc_to_docx(uploaded.read())
+            except LegacyDocConversionError as exc:
+                raise forms.ValidationError(str(exc)) from exc
+            return ContentFile(
+                converted,
+                name=f"{Path(uploaded.name).stem}.docx",
+            )
         return uploaded
 
     def clean(self):

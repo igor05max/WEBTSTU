@@ -147,6 +147,33 @@ class CitationSystemTests(TestCase):
         self.assertEqual(form.cleaned_data["text"], "")
         self.assertIsNone(form.cleaned_data["submission"])
 
+    def test_legacy_doc_is_converted_to_docx_before_search(self):
+        document = Document()
+        document.add_paragraph("Документ после конвертации.")
+        converted = BytesIO()
+        document.save(converted)
+        with patch(
+            "apps.citations.forms.convert_legacy_doc_to_docx",
+            return_value=converted.getvalue(),
+        ) as mocked_convert:
+            form = CitationSearchForm(
+                data={"text": "", "max_claims": 3},
+                files={
+                    "file": SimpleUploadedFile(
+                        "Статья.doc",
+                        bytes.fromhex("d0cf11e0a1b11ae1") + b"legacy-word",
+                        content_type="application/msword",
+                    )
+                },
+                user=self.user,
+            )
+
+            self.assertTrue(form.is_valid(), form.errors)
+
+        mocked_convert.assert_called_once()
+        self.assertEqual(form.cleaned_data["file"].name, "Статья.docx")
+        self.assertGreater(form.cleaned_data["file"].size, 100)
+
     def test_source_form_explains_missing_input_without_reset_instruction(self):
         form = CitationSearchForm(
             data={"submission": "", "text": "", "max_claims": 3},
