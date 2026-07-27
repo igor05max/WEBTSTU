@@ -5,7 +5,7 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727f">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727g">
 {% endblock %}
 
 {% block content %}
@@ -155,12 +155,12 @@
             {% for claim in result.claims %}
             <article class="citation-claim" data-claim-id="{{ claim.id }}">
                 <header>
-                    <span>Куда поставить ссылку</span>
+                    <span>Строка для ссылки</span>
                     <div class="citation-location">
                         {{ claim.section|default:"Текст статьи" }} · абзац {{ claim.paragraph_index|add:"1" }}
                     </div>
                     <h3>{{ claim.text }}</h3>
-                    <small>Номер ссылки [n] появится сразу после этого предложения.</small>
+                    <small>Ссылка [n] будет вставлена сразу после этой строки.</small>
                 </header>
 
                 <div class="citation-sources">
@@ -179,6 +179,12 @@
                                 {% if article.year %}<span>{{ article.year }}</span>{% endif %}
                                 {% if article.doi %}<span>DOI {{ article.doi }}</span>{% elif article.edn %}<span>EDN {{ article.edn }}</span>{% endif %}
                             </div>
+                            {% if article.reason %}
+                            <div class="citation-common-topic">
+                                <span>Общая тема</span>
+                                <p>{{ article.reason }}</p>
+                            </div>
+                            {% endif %}
                             <span class="citation-text" hidden>{{ article.citation }}</span>
                             <div class="citation-source-actions">
                                 <button class="citation-add-button" type="button" data-add-citation data-claim-id="{{ claim.id }}" data-article-id="{{ article.article_id }}">

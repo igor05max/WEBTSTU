@@ -710,6 +710,32 @@
     line-height: 1.5;
 }
 
+.citation-common-topic {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 12px;
+    align-items: baseline;
+    margin-top: 13px;
+    padding: 11px 13px;
+    border-radius: 10px;
+    background: #f3f7f5;
+}
+
+.citation-common-topic span {
+    color: var(--citation-green);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.citation-common-topic p {
+    margin: 0;
+    color: var(--citation-ink);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
 .citation-empty-source-icon {
     display: grid;
     width: 38px;
