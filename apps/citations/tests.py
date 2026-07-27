@@ -285,7 +285,7 @@ class CitationSystemTests(TestCase):
         self.assertEqual(response.context["result"]["analyzed_claim_count"], 1)
         self.assertContains(response, "Анализ выполнен")
         self.assertContains(response, "Файл успешно загружен и обработан")
-        self.assertContains(response, "Это не ошибка загрузки")
+        self.assertContains(response, "Слабые тематические совпадения")
         self.assertContains(response, "Подходящие новые источники не найдены")
         self.assertNotContains(response, "data-citation-source-form")
 
