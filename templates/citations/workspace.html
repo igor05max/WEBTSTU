@@ -136,7 +136,7 @@
             <span>02 · Анализ завершён</span>
             <h2>{{ result.source_title }}</h2>
             {% if result.claims %}
-                <p>Фрагмент статьи, подходящая публикация и процент соответствия. Найдено: {{ result.claims|length }}.</p>
+                <p>Фрагмент статьи, публикация и процент соответствия. Источников: {{ result.total_recommendations }}.</p>
             {% else %}
                 <p>Файл успешно загружен и обработан. Проверено фрагментов: {{ result.analyzed_claim_count }}.</p>
             {% endif %}
@@ -144,6 +144,12 @@
     </div>
 
     {% if result.claims %}
+    {% if result.best_available %}
+    <div class="citation-best-available" role="status">
+        <strong>Точных подтверждений в локальной базе не найдено.</strong>
+        <span>Показываем до 8 наиболее близких статей с соответствием выше 20%. Перед добавлением ссылки проверьте содержание публикации.</span>
+    </div>
+    {% endif %}
     <div class="citation-result-layout">
         <div class="citation-claim-list">
             {% for claim in result.claims %}
@@ -163,7 +169,7 @@
                         <div class="citation-source-body">
                             <div class="citation-source-heading">
                                 <div>
-                                    <span>Подходящая статья</span>
+                                    <span>{% if article.best_available %}Наиболее близкая статья{% else %}Подходящая статья{% endif %}</span>
                                     <h4>{{ article.title }}</h4>
                                 </div>
                                 <strong class="citation-score"><span>соответствие</span>{{ article.score_percent }}%</strong>

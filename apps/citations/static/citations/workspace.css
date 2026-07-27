@@ -689,6 +689,27 @@
     background: var(--citation-green-soft);
 }
 
+.citation-best-available {
+    display: grid;
+    gap: 5px;
+    margin: 22px 0;
+    padding: 16px 18px;
+    border: 1px solid #ead7a7;
+    border-radius: 14px;
+    background: #fff8e7;
+    color: #725616;
+}
+
+.citation-best-available strong {
+    color: #513c0c;
+    font-size: 14px;
+}
+
+.citation-best-available span {
+    font-size: 13px;
+    line-height: 1.5;
+}
+
 .citation-empty-source-icon {
     display: grid;
     width: 38px;

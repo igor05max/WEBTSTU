@@ -116,7 +116,7 @@ def workspace(request):
                 analyzed_claim_count = len(claims)
                 for claim in claims:
                     claim["recommendations"] = search_claim(claim)
-                rerank_claims(claims)
+                rerank_claims(claims, best_available_limit=8)
                 remove_source_article(
                     claims,
                     build_source_identity(
@@ -163,6 +163,11 @@ def workspace(request):
                     "submission_id": workspace_payload.get("submission_id"),
                     "total_recommendations": sum(
                         len(claim.get("recommendations") or []) for claim in claims
+                    ),
+                    "best_available": any(
+                        item.get("best_available")
+                        for claim in claims
+                        for item in (claim.get("recommendations") or [])
                     ),
                 }
                 if not claims:

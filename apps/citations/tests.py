@@ -1,3 +1,4 @@
+import json
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -21,7 +22,7 @@ from apps.citations.matching import (
     claims_with_recommendations,
     remove_source_article,
 )
-from apps.citations.rerank import _remove_weak_results
+from apps.citations.rerank import _remove_weak_results, rerank_claims
 from apps.citations.workspaces import apply_to_docx, create_workspace
 from apps.directory.models import ArticleType, Journal
 from apps.submissions.models import SubmissionStatus
@@ -325,6 +326,68 @@ class CitationSystemTests(TestCase):
             [item["title"] for item in filtered[0]["recommendations"]],
             ["Выше границы", "Подходящий"],
         )
+
+    def test_eight_best_candidates_are_restored_when_llm_rejects_everything(self):
+        claims = []
+        rejected = []
+        for claim_number in range(2):
+            claim_id = f"claim-{claim_number}"
+            recommendations = []
+            for article_number in range(5):
+                article_id = f"article-{claim_number}-{article_number}"
+                recommendations.append(
+                    {
+                        "article_id": article_id,
+                        "title": f"Статья {claim_number}-{article_number}",
+                        "year": 2024,
+                        "evidence": "Тематически близкий фрагмент публикации.",
+                        "reason": "Тематическое совпадение.",
+                        "hybrid_score": 0.3,
+                        "semantic_score": 0.2,
+                        "matched_terms": ["метод", "модель"],
+                    }
+                )
+                rejected.append(
+                    {
+                        "id": f"{claim_id}::{article_id}",
+                        "verdict": "not_supports",
+                        "score": 0,
+                        "reason": "Прямого подтверждения нет.",
+                        "evidence": "Тематически близкий фрагмент публикации.",
+                    }
+                )
+            claims.append(
+                {
+                    "id": claim_id,
+                    "text": f"Проверяемое утверждение {claim_number}.",
+                    "type": "topic",
+                    "recommendations": recommendations,
+                }
+            )
+
+        with (
+            override_settings(CITATION_LLM_RERANK_ENABLED=True),
+            patch("apps.citations.rerank.is_ai_configured", return_value=True),
+            patch(
+                "apps.citations.rerank.generate_content",
+                return_value=({}, "local-test-model"),
+            ),
+            patch(
+                "apps.citations.rerank.extract_response_text",
+                return_value=json.dumps({"items": rejected}, ensure_ascii=False),
+            ),
+        ):
+            rerank_claims(claims, best_available_limit=8)
+
+        restored = [
+            item
+            for claim in claims
+            for item in (claim.get("recommendations") or [])
+        ]
+        self.assertEqual(len(restored), 8)
+        self.assertTrue(all(item["score_percent"] > 20 for item in restored))
+        self.assertTrue(all(item["best_available"] for item in restored))
+        self.assertTrue(all(item["verdict"] == "possible" for item in restored))
 
     def test_apply_selected_source_to_docx(self):
         document = Document()

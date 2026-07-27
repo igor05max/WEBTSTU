@@ -113,7 +113,7 @@ def build_citation_coverage_report(
             claim,
             limit=results_per_claim,
         )
-    rerank_claims(claims)
+    rerank_claims(claims, best_available_limit=8)
     for claim in claims:
         claim["recommendations"] = _filter_recommendations(
             claim.get("recommendations"),
@@ -128,6 +128,11 @@ def build_citation_coverage_report(
         ),
     )
     claims = claims_with_recommendations(claims)
+    has_best_available = any(
+        item.get("best_available")
+        for claim in claims
+        for item in (claim.get("recommendations") or [])
+    )
 
     issues = []
     unique_recommendations = {}
@@ -139,16 +144,31 @@ def build_citation_coverage_report(
             identity = str(best.get("article_id") or best.get("doi") or best.get("title"))
             unique_recommendations.setdefault(identity, best)
             doi_part = f", DOI {best['doi']}" if best.get("doi") else ""
-            suggestion = (
-                f"Можно сослаться на «{best['title']}» "
-                f"({best.get('year') or 'год не указан'}, {best['score_percent']}%{doi_part})."
-            )
+            if best.get("best_available"):
+                suggestion = (
+                    f"Наиболее близкий источник — «{best['title']}» "
+                    f"({best.get('year') or 'год не указан'}, {best['score_percent']}%{doi_part}). "
+                    "Перед добавлением ссылки проверьте содержание публикации."
+                )
+            else:
+                suggestion = (
+                    f"Можно сослаться на «{best['title']}» "
+                    f"({best.get('year') or 'год не указан'}, {best['score_percent']}%{doi_part})."
+                )
         issues.append(
             {
                 "code": f"citation_needed_{claim['id']}",
-                "title": "Подходящий научный источник",
+                "title": (
+                    "Наиболее близкий научный источник"
+                    if best and best.get("best_available")
+                    else "Подходящий научный источник"
+                ),
                 "severity": "warning",
-                "message": "Для этого фрагмента найдена публикация, которую можно процитировать.",
+                "message": (
+                    "Точного подтверждения не найдено; показана наиболее близкая публикация."
+                    if best and best.get("best_available")
+                    else "Для этого фрагмента найдена публикация, которую можно процитировать."
+                ),
                 "location": (
                     f"{claim.get('section') or 'Текст статьи'}, "
                     f"абзац {int(claim.get('paragraph_index', 0)) + 1}"
@@ -170,12 +190,18 @@ def build_citation_coverage_report(
         key=lambda item: (-int(item.get("score_percent") or 0), item.get("title", "")),
     )
     claims_with_sources = sum(bool(claim.get("recommendations")) for claim in claims)
-    message = (
-        f"Найдено {claims_with_sources} фрагментов с подходящими научными источниками "
-        f"и соответствием не ниже {min_percent}%."
-        if claims_with_sources
-        else "Подходящие новые источники не найдены."
-    )
+    if has_best_available:
+        message = (
+            f"Точных подтверждений не найдено. Показано {len(recommendations)} "
+            "наиболее близких публикаций из локальной базы."
+        )
+    elif claims_with_sources:
+        message = (
+            f"Найдено {claims_with_sources} фрагментов с подходящими научными источниками "
+            f"и соответствием не ниже {min_percent}%."
+        )
+    else:
+        message = "Подходящие новые источники не найдены."
     payload = {
         "schema_version": "2.0",
         "check_code": "article_recommendations",
@@ -187,6 +213,7 @@ def build_citation_coverage_report(
             "claims_with_sources": claims_with_sources,
             "recommended_sources": len(recommendations),
             "minimum_score_percent": min_percent,
+            "best_available": has_best_available,
         },
         "details": {
             "analysis_source": analysis.get("source", "none"),

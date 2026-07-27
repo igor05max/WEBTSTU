@@ -39,11 +39,129 @@ def _fallback(claims):
     return claims
 
 
-def _remove_weak_results(claims):
-    minimum = max(
+def _minimum_score_percent():
+    return max(
         21,
         int(getattr(settings, "CITATION_MIN_RECOMMENDATION_PERCENT", 21)),
     )
+
+
+def _best_available_candidates(claims):
+    return {
+        str(claim.get("id") or ""): [
+            dict(item) for item in (claim.get("recommendations") or [])
+        ]
+        for claim in claims
+    }
+
+
+def _restore_best_available(claims, candidates_by_claim, *, limit):
+    if limit <= 0 or any(claim.get("recommendations") for claim in claims):
+        return claims
+
+    minimum = _minimum_score_percent()
+    ranked = []
+    for claim_index, claim in enumerate(claims):
+        claim_id = str(claim.get("id") or "")
+        for candidate_index, item in enumerate(candidates_by_claim.get(claim_id) or []):
+            score = int(item.get("score_percent") or 0)
+            if score < minimum:
+                continue
+            identity = str(
+                item.get("article_id")
+                or item.get("doi")
+                or item.get("edn")
+                or item.get("title")
+                or ""
+            ).casefold()
+            if not identity:
+                continue
+            ranked.append(
+                (
+                    -score,
+                    claim_index,
+                    candidate_index,
+                    identity,
+                    claim,
+                    item,
+                )
+            )
+
+    ranked.sort(key=lambda row: row[:3])
+    seen_articles = set()
+    restored_count = 0
+    for _, _, _, identity, claim, item in ranked:
+        if identity in seen_articles:
+            continue
+        seen_articles.add(identity)
+        restored = dict(item)
+        restored["best_available"] = True
+        restored["verdict"] = "possible"
+        restored["rerank_source"] = "hybrid_local:best_available"
+        claim.setdefault("recommendations", []).append(restored)
+        restored_count += 1
+        if restored_count >= limit:
+            break
+    return claims
+
+
+def _limit_unique_results(claims, *, limit):
+    if limit <= 0:
+        return claims
+    ranked = []
+    for claim_index, claim in enumerate(claims):
+        for candidate_index, item in enumerate(claim.get("recommendations") or []):
+            identity = str(
+                item.get("article_id")
+                or item.get("doi")
+                or item.get("edn")
+                or item.get("title")
+                or ""
+            ).casefold()
+            if not identity:
+                continue
+            ranked.append(
+                (
+                    -int(item.get("score_percent") or 0),
+                    claim_index,
+                    candidate_index,
+                    identity,
+                    claim,
+                    item,
+                )
+            )
+    ranked.sort(key=lambda row: row[:3])
+    for claim in claims:
+        claim["recommendations"] = []
+    seen_articles = set()
+    selected_count = 0
+    for _, _, _, identity, claim, item in ranked:
+        if identity in seen_articles:
+            continue
+        seen_articles.add(identity)
+        claim["recommendations"].append(item)
+        selected_count += 1
+        if selected_count >= limit:
+            break
+    return claims
+
+
+def _mark_best_available(claims):
+    for claim in claims:
+        for item in claim.get("recommendations") or []:
+            item["best_available"] = True
+            item["verdict"] = "possible"
+            item["rerank_source"] = "hybrid_local:best_available"
+    return claims
+
+
+def _remove_weak_results(
+    claims,
+    *,
+    fallback_candidates=None,
+    best_available_limit=0,
+):
+    minimum = _minimum_score_percent()
     for claim in claims:
         claim["recommendations"] = [
             item
@@ -51,13 +169,27 @@ def _remove_weak_results(claims):
             if int(item.get("score_percent") or 0) >= minimum
             and item.get("verdict") != "not_supports"
         ]
+    _limit_unique_results(claims, limit=best_available_limit)
+    if fallback_candidates:
+        _restore_best_available(
+            claims,
+            fallback_candidates,
+            limit=best_available_limit,
+        )
     return claims
 
 
-def rerank_claims(claims):
+def rerank_claims(claims, *, best_available_limit=0):
     _fallback(claims)
+    fallback_candidates = _best_available_candidates(claims)
     if not settings.CITATION_LLM_RERANK_ENABLED or not is_ai_configured():
-        return _remove_weak_results(claims)
+        if best_available_limit:
+            _mark_best_available(claims)
+        return _remove_weak_results(
+            claims,
+            fallback_candidates=fallback_candidates,
+            best_available_limit=best_available_limit,
+        )
 
     items = []
     lookup = {}
@@ -113,7 +245,13 @@ def rerank_claims(claims):
         )
         parsed = _parse_json(extract_response_text(response))
     except Exception:
-        return claims
+        if best_available_limit:
+            _mark_best_available(claims)
+        return _remove_weak_results(
+            claims,
+            fallback_candidates=fallback_candidates,
+            best_available_limit=best_available_limit,
+        )
 
     for raw in parsed.get("items") or []:
         if not isinstance(raw, dict):
@@ -146,4 +284,8 @@ def rerank_claims(claims):
                 item["title"],
             )
         )
-    return _remove_weak_results(claims)
+    return _remove_weak_results(
+        claims,
+        fallback_candidates=fallback_candidates,
+        best_available_limit=best_available_limit,
+    )
