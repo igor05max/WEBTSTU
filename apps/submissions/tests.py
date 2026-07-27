@@ -713,6 +713,7 @@ class SubmissionCreateViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertFalse(analyze_document_mock.call_args.kwargs["use_ai"])
         payload = response.json()
         self.assertEqual(
             payload["metadata"]["authors"],
@@ -734,8 +735,18 @@ class SubmissionCreateViewTests(TestCase):
         )
 
     @override_settings(SUBMISSION_CHECKS_ASYNC=True)
+    @patch("apps.submissions.views.analyze_document")
     @patch("apps.submissions.views.queue_submission_template_processing")
-    def test_create_with_new_template_redirects_before_template_processing(self, queue_processing):
+    def test_create_with_new_template_redirects_before_template_processing(
+        self,
+        queue_processing,
+        analyze_document_mock,
+    ):
+        analyze_document_mock.return_value = {
+            "metadata": {},
+            "paragraphs": [],
+            "article": {"sections": [], "references": []},
+        }
         self.client.force_login(self.user)
 
         response = self.client.post(
@@ -767,6 +778,7 @@ class SubmissionCreateViewTests(TestCase):
         self.assertTrue(submission.authors.filter(pk=self.chair_head.pk).exists())
         self.assertEqual(template.analysis_status, "pending")
         self.assertEqual(submission.check_runs.count(), 0)
+        self.assertFalse(analyze_document_mock.call_args.kwargs["use_ai"])
         queue_processing.assert_called_once()
         queued_submission, queued_template = queue_processing.call_args.args
         self.assertEqual(queued_submission.pk, submission.pk)

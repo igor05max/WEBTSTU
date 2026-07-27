@@ -919,6 +919,7 @@ def submission_create(request):
             document_snapshot = analyze_document(
                 read_file_bytes(uploaded_material),
                 uploaded_material.name,
+                use_ai=False,
             )
             metadata = document_snapshot.get("metadata") or {}
             title = (
@@ -1052,7 +1053,7 @@ def extract_submission_metadata_view(request):
     snapshot = analyze_document(
         read_file_bytes(uploaded_file),
         uploaded_file.name,
-        use_ai=True if semantic_requested else None,
+        use_ai=semantic_requested,
     )
     metadata = snapshot.get("metadata") or {}
     users = list(User.objects.select_related("org_unit").filter(is_active=True))

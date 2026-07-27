@@ -231,6 +231,15 @@
                 list.hidden = false;
             }
 
+            function renderSearchStatus(message) {
+                list.replaceChildren();
+                var status = document.createElement("div");
+                status.className = "journal-suggest-empty";
+                status.textContent = message;
+                list.appendChild(status);
+                list.hidden = false;
+            }
+
             function runSearch() {
                 var query = input.value.trim();
                 hidden.value = "";
@@ -241,6 +250,7 @@
                 }
                 requestNumber += 1;
                 var currentRequest = requestNumber;
+                renderSearchStatus("Ищем подходящие варианты…");
                 fetch(url + "?q=" + encodeURIComponent(query) + "&article_type=" + encodeURIComponent(articleType.value), {
                     headers: {
                         "X-Requested-With": "XMLHttpRequest",
@@ -260,7 +270,7 @@
                     })
                     .catch(function () {
                         if (currentRequest === requestNumber) {
-                            hideResults();
+                            renderSearchStatus("Не удалось загрузить подсказки. Попробуйте ещё раз.");
                         }
                     });
             }
@@ -467,6 +477,18 @@
             return articleType.options[articleType.selectedIndex].getAttribute("data-destination-kind") || "";
         }
 
+        function ensureDestinationFieldVisibility() {
+            var kind = destinationKind();
+            var journalField = form.querySelector("[data-destination-field='journal']");
+            var topicField = form.querySelector("[data-destination-field='topic']");
+            if (journalField) {
+                journalField.hidden = kind !== "journal";
+            }
+            if (topicField) {
+                topicField.hidden = !kind || kind !== "topic";
+            }
+        }
+
         function clearStepError(step) {
             var error = step.querySelector("[data-wizard-error]");
             if (error) {
@@ -550,6 +572,9 @@
             }
             currentStep = number;
             maxVisitedStep = Math.max(maxVisitedStep, number);
+            if (number === 3) {
+                ensureDestinationFieldVisibility();
+            }
             steps.forEach(function (step) {
                 step.hidden = Number(step.getAttribute("data-wizard-step")) !== number;
             });
@@ -618,6 +643,9 @@
             optionalDetails.open = true;
         }
         maxVisitedStep = initialStep;
+        if (articleType) {
+            articleType.addEventListener("change", ensureDestinationFieldVisibility);
+        }
         showStep(initialStep, {focus: false});
         form.classList.add("is-wizard-ready");
     }
@@ -842,6 +870,7 @@
             }
             requestNumber += 1;
             var currentRequest = requestNumber;
+            revealEditableFields();
             if (semanticRetry) {
                 semanticRetry.hidden = true;
                 semanticRetry.disabled = true;
