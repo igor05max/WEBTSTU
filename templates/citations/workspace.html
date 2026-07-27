@@ -5,7 +5,7 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727g">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727h">
 {% endblock %}
 
 {% block content %}
@@ -151,56 +151,52 @@
     </div>
     {% endif %}
     <div class="citation-result-layout">
-        <div class="citation-claim-list">
+        <div class="citation-recommendation-list">
             {% for claim in result.claims %}
-            <article class="citation-claim" data-claim-id="{{ claim.id }}">
-                <header>
-                    <span>Строка для ссылки</span>
-                    <div class="citation-location">
-                        {{ claim.section|default:"Текст статьи" }} · абзац {{ claim.paragraph_index|add:"1" }}
+                {% for article in claim.recommendations %}
+                <article class="citation-recommendation citation-claim citation-source" data-claim-id="{{ claim.id }}" data-article-id="{{ article.article_id }}">
+                    <div class="citation-fragment-block">
+                        <span class="citation-block-label">Кусок текста из вашей статьи</span>
+                        <div class="citation-location">{{ claim.section|default:"Текст статьи" }} · абзац {{ claim.paragraph_index|add:"1" }}</div>
+                        <h3>{{ claim.text }}</h3>
+                        <div class="citation-placement"><strong>[n]</strong><span>поставим сразу после этого фрагмента</span></div>
                     </div>
-                    <h3>{{ claim.text }}</h3>
-                    <small>Ссылка [n] будет вставлена сразу после этой строки.</small>
-                </header>
 
-                <div class="citation-sources">
-                    {% for article in claim.recommendations %}
-                    <article class="citation-source" data-article-id="{{ article.article_id }}">
-                        <div class="citation-source-body">
-                            <div class="citation-source-heading">
-                                <div>
-                                    <span>{% if article.best_available %}Наиболее близкая статья{% else %}Подходящая статья{% endif %}</span>
-                                    <h4>{{ article.title }}</h4>
-                                </div>
-                                <strong class="citation-score"><span>соответствие</span>{{ article.score_percent }}%</strong>
+                    {% if article.reason %}
+                    <div class="citation-common-topic">
+                        <span>Общая тема</span>
+                        <p>{{ article.reason }}</p>
+                    </div>
+                    {% endif %}
+
+                    <div class="citation-found-source">
+                        <div class="citation-source-heading">
+                            <div>
+                                <span>Найденная статья</span>
+                                <h4>{{ article.title }}</h4>
                             </div>
-                            <div class="citation-source-topline">
-                                {% if article.authors %}<span>{{ article.authors }}</span>{% endif %}
-                                {% if article.year %}<span>{{ article.year }}</span>{% endif %}
-                                {% if article.doi %}<span>DOI {{ article.doi }}</span>{% elif article.edn %}<span>EDN {{ article.edn }}</span>{% endif %}
-                            </div>
-                            {% if article.reason %}
-                            <div class="citation-common-topic">
-                                <span>Общая тема</span>
-                                <p>{{ article.reason }}</p>
-                            </div>
-                            {% endif %}
-                            <span class="citation-text" hidden>{{ article.citation }}</span>
-                            <div class="citation-source-actions">
-                                <button class="citation-add-button" type="button" data-add-citation data-claim-id="{{ claim.id }}" data-article-id="{{ article.article_id }}">
-                                    <span>+</span> Добавить ссылку
-                                </button>
-                                {% if article.url %}
-                                    <a href="{{ article.url }}" target="_blank" rel="noreferrer">Открыть публикацию ↗</a>
-                                {% elif article.doi %}
-                                    <a href="https://doi.org/{{ article.doi }}" target="_blank" rel="noreferrer">Открыть DOI ↗</a>
-                                {% endif %}
-                            </div>
+                            <strong class="citation-score"><span>соответствие</span>{{ article.score_percent }}%</strong>
                         </div>
-                    </article>
-                    {% endfor %}
-                </div>
-            </article>
+                        <div class="citation-source-topline">
+                            {% if article.authors %}<span>{{ article.authors }}</span>{% endif %}
+                            {% if article.year %}<span>{{ article.year }}</span>{% endif %}
+                            {% if article.doi %}<span>DOI {{ article.doi }}</span>{% elif article.edn %}<span>EDN {{ article.edn }}</span>{% endif %}
+                        </div>
+                    </div>
+
+                    <span class="citation-text" hidden>{{ article.citation }}</span>
+                    <div class="citation-source-actions">
+                        <button class="citation-add-button" type="button" data-add-citation data-claim-id="{{ claim.id }}" data-article-id="{{ article.article_id }}">
+                            <span>+</span> Добавить
+                        </button>
+                        {% if article.url %}
+                            <a href="{{ article.url }}" target="_blank" rel="noreferrer">Открыть статью ↗</a>
+                        {% elif article.doi %}
+                            <a href="https://doi.org/{{ article.doi }}" target="_blank" rel="noreferrer">Открыть DOI ↗</a>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
             {% endfor %}
         </div>
 
@@ -256,5 +252,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260727d" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20260727e" defer></script>
 {% endblock %}

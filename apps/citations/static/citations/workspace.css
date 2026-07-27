@@ -437,6 +437,55 @@
     gap: 20px;
 }
 
+.citation-recommendation-list {
+    display: grid;
+    gap: 14px;
+}
+
+.citation-recommendation {
+    padding: 20px;
+    border: 1px solid var(--citation-line);
+    border-radius: 16px;
+    background: #fff;
+}
+
+.citation-fragment-block {
+    display: grid;
+    gap: 6px;
+}
+
+.citation-block-label {
+    color: var(--citation-green);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.citation-placement {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    width: fit-content;
+    margin-top: 3px;
+    padding: 7px 10px;
+    border-radius: 9px;
+    background: var(--citation-green-soft);
+    color: var(--citation-green);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.citation-placement strong {
+    font-size: 13px;
+}
+
+.citation-found-source {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--citation-line);
+}
+
 .citation-claim {
     padding: 22px;
     border: 1px solid var(--citation-line);
@@ -719,6 +768,10 @@
     padding: 11px 13px;
     border-radius: 10px;
     background: #f3f7f5;
+}
+
+.citation-recommendation .citation-common-topic {
+    margin-top: 14px;
 }
 
 .citation-common-topic span {

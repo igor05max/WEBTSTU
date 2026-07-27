@@ -76,8 +76,8 @@
         button.classList.toggle("is-added", isAdded);
         button.setAttribute("aria-pressed", isAdded ? "true" : "false");
         button.innerHTML = isAdded
-            ? "<span>−</span> Убрать ссылку"
-            : "<span>+</span> Добавить ссылку";
+            ? "<span>−</span> Убрать"
+            : "<span>+</span> Добавить";
     };
 
     const render = () => {
