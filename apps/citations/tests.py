@@ -717,7 +717,7 @@ class CitationSystemTests(TestCase):
         )
         self.assertContains(page, "Данные материала")
         self.assertContains(page, str(self.user))
-        self.assertContains(page, "Отправитель материала; изменить здесь нельзя.")
+        self.assertContains(page, "Авторы не выбраны; показан отправитель материала.")
         self.assertNotContains(page, "Иванов И. И.")
         self.assertContains(page, 'name="max_claims" value="6"')
         self.assertContains(page, "Подбираем источники по тексту материала")
@@ -778,7 +778,7 @@ class CitationSystemTests(TestCase):
         self.assertEqual(submission.versions.count(), 2)
         mocked_queue.assert_called_once()
 
-    def test_superuser_sees_sender_as_author_and_can_search_submission(self):
+    def test_superuser_sees_selected_author_and_can_search_submission(self):
         coauthor = get_user_model().objects.create_user(
             username="manual_coauthor",
             first_name="Артём",
@@ -802,7 +802,7 @@ class CitationSystemTests(TestCase):
             keywords="нейронные сети; изображения",
             journal=journal,
             article_type=article_type,
-            authors=[self.user, coauthor],
+            authors=[coauthor],
             file=SimpleUploadedFile(
                 "article.txt",
                 (
@@ -820,9 +820,13 @@ class CitationSystemTests(TestCase):
         )
 
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, str(self.user))
-        self.assertNotContains(page, str(coauthor))
-        self.assertContains(page, "Отправитель материала; изменить здесь нельзя.")
+        self.assertEqual(
+            page.context["selected_submission_author_data"],
+            {"display": str(coauthor), "is_selected": True},
+        )
+        self.assertContains(page, str(coauthor))
+        self.assertContains(page, "Указаны в поле «Авторы» материала.")
+        self.assertNotContains(page, "показан отправитель материала")
         self.assertNotContains(page, "Не удалось распознать")
 
         search = self.client.post(

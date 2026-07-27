@@ -7,6 +7,7 @@ from apps.citations.matching import (
     build_source_identity,
     claims_with_recommendations,
     remove_source_article,
+    submission_authors_display,
 )
 from apps.citations.rerank import rerank_claims
 from apps.submissions.document_analysis import read_file_bytes
@@ -124,7 +125,7 @@ def build_citation_coverage_report(
         build_source_identity(
             citation_snapshot,
             source_title=getattr(submission, "title", ""),
-            source_authors=str(getattr(submission, "author", "") or ""),
+            source_authors=submission_authors_display(submission),
         ),
     )
     claims = claims_with_recommendations(claims)

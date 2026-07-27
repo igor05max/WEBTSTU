@@ -21,6 +21,18 @@ def _metadata_value(snapshot, field):
     return str(value or "")
 
 
+def submission_authors_display(submission):
+    if submission is None:
+        return ""
+    get_authors_display = getattr(submission, "get_authors_display", None)
+    selected_authors = (
+        str(get_authors_display() or "").strip()
+        if callable(get_authors_display)
+        else ""
+    )
+    return selected_authors or str(getattr(submission, "author", "") or "").strip()
+
+
 def build_source_identity(snapshot=None, *, source_title="", source_authors=""):
     snapshot = snapshot or {}
     titles = {

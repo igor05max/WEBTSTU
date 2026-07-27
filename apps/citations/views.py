@@ -17,6 +17,7 @@ from apps.citations.matching import (
     build_source_identity,
     claims_with_recommendations,
     remove_source_article,
+    submission_authors_display,
 )
 from apps.citations.rerank import rerank_claims
 from apps.citations.workspaces import (
@@ -47,12 +48,24 @@ def _read_form_source(form):
 
 def _submission_for_user(request, submission_id):
     submission = get_object_or_404(
-        Submission.objects.select_related("author", "current_version"),
+        Submission.objects.select_related("author", "current_version").prefetch_related(
+            "authors"
+        ),
         pk=submission_id,
     )
     if submission.author_id != request.user.pk and not request.user.is_superuser:
         raise PermissionError("Этот материал недоступен.")
     return submission
+
+
+def _submission_author_data(submission):
+    if submission is None:
+        return {"display": "", "is_selected": False}
+    selected_authors = str(submission.get_authors_display() or "").strip()
+    return {
+        "display": selected_authors or submission_authors_display(submission),
+        "is_selected": bool(selected_authors),
+    }
 
 
 def _workspace_submission(request, payload):
@@ -126,11 +139,7 @@ def workspace(request):
                             if selected_submission is not None
                             else ""
                         ),
-                        source_authors=(
-                            str(selected_submission.author)
-                            if selected_submission is not None
-                            else ""
-                        ),
+                        source_authors=submission_authors_display(selected_submission),
                     ),
                 )
                 claims = claims_with_recommendations(claims)
@@ -186,6 +195,9 @@ def workspace(request):
             "result": result,
             "index_status": get_index_status(),
             "selected_submission": selected_submission,
+            "selected_submission_author_data": _submission_author_data(
+                selected_submission
+            ),
             "auto_analyze": bool(
                 request.method == "GET"
                 and selected_submission is not None

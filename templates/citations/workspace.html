@@ -29,8 +29,12 @@
         <div>
             <dt>Авторы</dt>
             <dd>
-                {{ selected_submission.author }}
-                <small class="citation-metadata-note">Отправитель материала; изменить здесь нельзя.</small>
+                {{ selected_submission_author_data.display }}
+                {% if selected_submission_author_data.is_selected %}
+                    <small class="citation-metadata-note">Указаны в поле «Авторы» материала.</small>
+                {% else %}
+                    <small class="citation-metadata-note">Авторы не выбраны; показан отправитель материала.</small>
+                {% endif %}
             </dd>
         </div>
         {% if selected_submission.organizations %}
