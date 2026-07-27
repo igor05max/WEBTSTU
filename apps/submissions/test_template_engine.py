@@ -493,3 +493,27 @@ class ReusableTemplateEngineTests(SimpleTestCase):
             places=2,
         )
         self.assertIn("рисунки вписаны в рабочую область страницы: 1", changes)
+
+    def test_builder_merges_adjacent_citation_markers_from_an_older_result(self):
+        from docx import Document
+
+        document = Document()
+        document.add_paragraph(
+            "Сложность оценки качества ответа [1]. [8, 9] "
+            "Следующее предложение сохраняется."
+        )
+        source = BytesIO()
+        document.save(source)
+
+        built, changes, _plan = build_docx_from_template(
+            source.getvalue(),
+            LEGACY_RULES,
+        )
+        result = Document(BytesIO(built))
+
+        self.assertEqual(
+            result.paragraphs[0].text,
+            "Сложность оценки качества ответа [1, 8, 9]. "
+            "Следующее предложение сохраняется.",
+        )
+        self.assertIn("объединены соседние маркеры источников: 1", changes)

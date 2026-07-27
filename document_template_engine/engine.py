@@ -864,6 +864,73 @@ def _normalize_inline_figures(document) -> int:
     return changed
 
 
+def _replace_paragraph_range(paragraph, start: int, end: int, replacement: str):
+    runs = list(paragraph.runs)
+    offset = 0
+    first_run = None
+    first_local = 0
+    last_run = None
+    last_local = 0
+    for run in runs:
+        run_start = offset
+        run_end = run_start + len(run.text)
+        if first_run is None and start <= run_end:
+            first_run = run
+            first_local = max(0, start - run_start)
+        if end <= run_end:
+            last_run = run
+            last_local = max(0, end - run_start)
+            break
+        offset = run_end
+    if first_run is None:
+        return
+    if last_run is None:
+        last_run = runs[-1]
+        last_local = len(last_run.text)
+    if first_run is last_run:
+        first_run.text = (
+            first_run.text[:first_local]
+            + replacement
+            + first_run.text[last_local:]
+        )
+        return
+    first_index = runs.index(first_run)
+    last_index = runs.index(last_run)
+    first_run.text = first_run.text[:first_local] + replacement
+    for run in runs[first_index + 1 : last_index]:
+        run.text = ""
+    last_run.text = last_run.text[last_local:]
+
+
+def _repair_adjacent_citation_markers(document) -> int:
+    pattern = re.compile(r"\[([\d\s,;]+)\]([.!?…])\s+\[([\d\s,;]+)\]")
+    repaired = 0
+    for paragraph in document.paragraphs:
+        full_text = "".join(run.text for run in paragraph.runs)
+        for match in reversed(list(pattern.finditer(full_text))):
+            numbers = sorted(
+                {
+                    int(value)
+                    for value in re.findall(
+                        r"\d+",
+                        f"{match.group(1)} {match.group(3)}",
+                    )
+                }
+            )
+            replacement = (
+                f"[{', '.join(str(value) for value in numbers)}]"
+                f"{match.group(2)}"
+            )
+            _replace_paragraph_range(
+                paragraph,
+                match.start(),
+                match.end(),
+                replacement,
+            )
+            repaired += 1
+    return repaired
+
+
 def _insert_supplied_metadata(document, rules: dict[str, Any], metadata: dict[str, Any] | None):
     values = _metadata_values(metadata)
     roles = _assign_roles(document, metadata)
@@ -1104,6 +1171,11 @@ def build_docx_from_template(
     if resized_figures:
         changes.append(
             f"рисунки вписаны в рабочую область страницы: {resized_figures}"
+        )
+    repaired_markers = _repair_adjacent_citation_markers(document)
+    if repaired_markers:
+        changes.append(
+            f"объединены соседние маркеры источников: {repaired_markers}"
         )
 
     if body_rules.get("line_spacing") not in (None, ""):
