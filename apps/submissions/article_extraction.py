@@ -9,11 +9,14 @@ content that is not present in the document.
 
 from __future__ import annotations
 
+from functools import lru_cache
 import json
 import re
 import statistics
 import unicodedata
 from typing import Any, Callable
+
+import pymorphy3
 
 
 SPACE_RE = re.compile(r"\s+")
@@ -106,6 +109,40 @@ SUPERVISOR_MARKERS = (
     "scientific supervisor",
     "research supervisor",
 )
+NON_PERSON_ENTITY_WORDS = {
+    "academy",
+    "association",
+    "center",
+    "centre",
+    "college",
+    "company",
+    "department",
+    "federation",
+    "government",
+    "institute",
+    "laboratory",
+    "ministry",
+    "organization",
+    "republic",
+    "society",
+    "state",
+    "university",
+    "академия",
+    "ассоциация",
+    "ведомство",
+    "институт",
+    "кафедра",
+    "колледж",
+    "компания",
+    "лаборатория",
+    "министерство",
+    "организация",
+    "правительство",
+    "республика",
+    "университет",
+    "федерация",
+    "центр",
+}
 FRONT_LABEL_MARKERS = (
     "удк",
     "doi",
@@ -126,6 +163,64 @@ def normalize_for_match(value: Any) -> str:
     text = unicodedata.normalize("NFKC", str(value or ""))
     text = normalize_space(text).casefold().replace("ё", "е")
     return text.strip(" \t\r\n.:;–—-")
+
+
+@lru_cache(maxsize=1)
+def _get_name_morph_analyzer():
+    return pymorphy3.MorphAnalyzer()
+
+
+def is_probable_person_name(value: Any) -> bool:
+    """Reject organizations and places that merely look like capitalized names."""
+
+    candidate = normalize_space(value)
+    normalized = normalize_for_match(candidate)
+    if not candidate or not normalized:
+        return False
+    words = re.findall(r"[A-Za-zА-ЯЁа-яё][A-Za-zА-ЯЁа-яё'’-]*", candidate)
+    if len(words) < 2:
+        return False
+    normalized_words = {normalize_for_match(word) for word in words}
+    if normalized_words & NON_PERSON_ENTITY_WORDS:
+        return False
+
+    cyrillic_words = [
+        word
+        for word in words
+        if re.search(r"[А-ЯЁа-яё]", word)
+    ]
+    if not cyrillic_words:
+        return LATIN_FULL_NAME_RE.fullmatch(candidate) is not None
+
+    grammemes = set()
+    for word in cyrillic_words:
+        for parsed in _get_name_morph_analyzer().parse(word):
+            grammemes.update(
+                marker
+                for marker in ("Name", "Surn", "Patr")
+                if marker in parsed.tag
+            )
+    has_initials = bool(re.search(r"(?:[А-ЯЁ]\s*\.\s*){1,3}", candidate))
+    if has_initials:
+        return "Surn" in grammemes
+    return "Name" in grammemes and bool({"Surn", "Patr"} & grammemes)
+
+
+def filter_probable_person_names(values: Any) -> list[str]:
+    result = []
+    seen = set()
+    for value in values or []:
+        candidate = normalize_space(value)
+        normalized = normalize_for_match(candidate)
+        if (
+            not normalized
+            or normalized in seen
+            or not is_probable_person_name(candidate)
+        ):
+            continue
+        seen.add(normalized)
+        result.append(candidate)
+    return result
 
 
 def _uppercase_ratio(value: str) -> float:
@@ -507,6 +602,8 @@ def _extract_authors(
                     matches.append(candidate)
         found_in_record = False
         for candidate in matches:
+            if not is_probable_person_name(candidate):
+                continue
             surname = _author_surname(candidate)
             if not surname or surname in seen:
                 continue
@@ -1006,7 +1103,7 @@ def article_to_legacy_metadata(article: dict[str, Any]) -> dict[str, Any]:
         field = article.get(name) or {}
         return field.get("value", default) if isinstance(field, dict) else default
 
-    authors = list(value("authors", []) or [])
+    authors = filter_probable_person_names(value("authors", []) or [])
     organizations = list(value("organizations", []) or [])
     emails = list(value("emails", []) or [])
     keywords = list(value("keywords", []) or [])
@@ -1105,7 +1202,9 @@ def build_semantic_review_prompt(
         "оформлением. Используй только переданные блоки. Не исправляй и не дополняй "
         "текст. Для каждого поля верни только ID исходных блоков и уверенность 0..1. "
         "Документ может быть на любом языке, но все служебные пояснения всегда пиши "
-        "по-русски. "
+        "по-русски. В поле authors выбирай только имена физических лиц. Названия "
+        "государств, организаций, ведомств, кафедр и географических объектов авторами "
+        "не являются. "
         "Если данных нет, верни пустой список. Ответ — один JSON без Markdown.\n"
         f"Схема ответа: {json.dumps(request, ensure_ascii=False)}\n"
         "Текущий детерминированный результат: "
@@ -1181,7 +1280,7 @@ def refine_article_with_model(
                         for match in LATIN_FULL_NAME_RE.finditer(text)
                     ]
                 values.extend(text_values)
-            selected_value: Any = list(dict.fromkeys(values))
+            selected_value: Any = filter_probable_person_names(values)
         elif name == "organizations":
             selected_value = texts
         elif name == "keywords":

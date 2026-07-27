@@ -265,17 +265,8 @@
                             </div>
                         </div>
 
-                        <div class="submission-field{% if form.responsible_author.errors %} has-error{% endif %}">
-                            <label for="{{ form.responsible_author.id_for_label }}">{{ form.responsible_author.label }}</label>
-                            {{ form.responsible_author }}
-                            {% if form.responsible_author.help_text %}
-                                <small class="submission-field-help">{{ form.responsible_author.help_text }}</small>
-                            {% endif %}
-                            {% if form.responsible_author.errors %}<div class="submission-field-errors">{{ form.responsible_author.errors }}</div>{% endif %}
-                        </div>
-
-                        <div class="submission-field{% if form.co_authors.errors %} has-error{% endif %}">
-                            <label for="coauthor-search">{{ form.co_authors.label }}</label>
+                        <div class="submission-field{% if form.authors.errors %} has-error{% endif %}">
+                            <label for="coauthor-search">{{ form.authors.label }}</label>
                             <div class="coauthor-picker" data-coauthor-picker>
                                 <div class="coauthor-picker-control">
                                     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
@@ -283,12 +274,12 @@
                                 </div>
                                 <div class="coauthor-selected" data-coauthor-selected aria-live="polite"></div>
                                 <div class="coauthor-options" data-coauthor-options></div>
-                                <div class="coauthor-native" data-coauthor-native>{{ form.co_authors }}</div>
+                                <div class="coauthor-native" data-coauthor-native>{{ form.authors }}</div>
                             </div>
-                            {% if form.co_authors.help_text %}
-                                <small class="submission-field-help">{{ form.co_authors.help_text }}</small>
+                            {% if form.authors.help_text %}
+                                <small class="submission-field-help">{{ form.authors.help_text }}</small>
                             {% endif %}
-                            {% if form.co_authors.errors %}<div class="submission-field-errors">{{ form.co_authors.errors }}</div>{% endif %}
+                            {% if form.authors.errors %}<div class="submission-field-errors">{{ form.authors.errors }}</div>{% endif %}
                         </div>
 
                         <div class="submission-field submission-comment-field{% if form.version_comment.errors %} has-error{% endif %}">

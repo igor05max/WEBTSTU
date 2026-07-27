@@ -3,6 +3,7 @@ import io
 import tempfile
 from unittest.mock import patch
 from xml.etree import ElementTree
+from zipfile import ZipFile
 
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
@@ -15,6 +16,7 @@ from pypdf import PdfReader, PdfWriter
 from apps.accounts.models import User
 from apps.conclusions.models import ConclusionDocument, ConclusionSignature
 from apps.conclusions.services import (
+    _inflect_person_name_to_genitive,
     calculate_file_sha256,
     ensure_conclusion_document,
     verify_conclusion_document,
@@ -32,6 +34,26 @@ from apps.workflow.models import (
     WorkflowStepStatus,
 )
 from apps.workflow.services import approve_task
+
+
+class RussianNameInflectionTests(TestCase):
+    def test_inflects_full_male_name_to_genitive(self):
+        self.assertEqual(
+            _inflect_person_name_to_genitive("Архипов Алексей Евгеньевич"),
+            "Архипова Алексея Евгеньевича",
+        )
+
+    def test_inflects_full_female_name_to_genitive(self):
+        self.assertEqual(
+            _inflect_person_name_to_genitive("Абакумова Людмила Станиславовна"),
+            "Абакумовой Людмилы Станиславовны",
+        )
+
+    def test_keeps_indeclinable_surname(self):
+        self.assertEqual(
+            _inflect_person_name_to_genitive("Лопатко Арсений Сергеевич"),
+            "Лопатко Арсения Сергеевича",
+        )
 
 
 class ConclusionSignatureTests(TestCase):
@@ -169,6 +191,19 @@ class ConclusionSignatureTests(TestCase):
         self.assertTrue(document.document_file.name.endswith(".docx"))
         self.assertEqual(document.document_sha256, calculate_file_sha256(document.document_file))
         self.assertTrue(document.is_sealed)
+
+    def test_generated_conclusion_uses_genitive_author_names(self):
+        self.document.delete()
+        self.author.first_name = "Балабанов Павел Владимирович"
+        self.author.save(update_fields=["first_name"])
+        self.submission.authors.add(self.author)
+
+        document = ensure_conclusion_document(self.workflow_run)
+
+        with document.document_file.open("rb") as source:
+            with ZipFile(source) as archive:
+                document_xml = archive.read("word/document.xml").decode("utf-8")
+        self.assertIn("Балабанова Павла Владимировича", document_xml)
 
     def test_final_approval_creates_three_file_package_with_visual_signatures(self):
         approve_task(self.task, self.reviewer)

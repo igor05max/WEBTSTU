@@ -53,6 +53,7 @@ from apps.submissions.document_preview import (
 )
 from apps.submissions.document_ai import analyze_document
 from apps.submissions.document_analysis import match_authors_to_users, read_file_bytes
+from apps.submissions.article_extraction import filter_probable_person_names
 from apps.submissions.models import Submission, SubmissionAppeal, SubmissionStatus, SubmissionVersion
 from apps.submissions.template_processing import (
     prepare_submission_template_by_id,
@@ -929,7 +930,6 @@ def submission_create(request):
             )
             submission = create_submission_with_initial_version(
                 author=request.user,
-                responsible_author=form.cleaned_data["responsible_author"],
                 title=title,
                 abstract=form.cleaned_data["abstract"] or metadata.get("abstract", ""),
                 journal=journal,
@@ -940,7 +940,7 @@ def submission_create(request):
                 formatting_check_requested=form.cleaned_data["formatting_check_requested"],
                 file=uploaded_material,
                 comment=form.cleaned_data["version_comment"],
-                co_authors=form.cleaned_data["co_authors"],
+                authors=form.cleaned_data["authors"],
                 document_authors=form.cleaned_data["document_authors"] or metadata.get("document_authors", ""),
                 organizations=form.cleaned_data["organizations"] or metadata.get("organizations", ""),
                 contact_emails=form.cleaned_data["contact_emails"] or metadata.get("contact_emails", ""),
@@ -1056,8 +1056,9 @@ def extract_submission_metadata_view(request):
         use_ai=semantic_requested,
     )
     metadata = snapshot.get("metadata") or {}
+    probable_authors = filter_probable_person_names(metadata.get("authors") or [])
     users = list(User.objects.select_related("org_unit").filter(is_active=True))
-    matches = match_authors_to_users(metadata.get("authors") or [], users)
+    matches = match_authors_to_users(probable_authors, users)
     directory_names = {
         str(match.get("author") or ""): str(match.get("full_name") or "").strip()
         for match in matches
@@ -1065,7 +1066,7 @@ def extract_submission_metadata_view(request):
     }
     resolved_authors = [
         directory_names.get(str(author), str(author))
-        for author in metadata.get("authors") or []
+        for author in probable_authors
     ]
     metadata = {
         **metadata,

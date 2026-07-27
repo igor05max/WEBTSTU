@@ -28,31 +28,19 @@
                 <div class="submission-meta-value"><a href="{% url 'activities:list' %}?scope=all&amp;owner={{ submission.author_id }}">{{ submission.author }}</a></div>
             </div>
             <div class="submission-meta-card">
-                <div class="submission-meta-label">Ответственный автор</div>
+                <div class="submission-meta-label">Авторы</div>
                 <div class="submission-meta-value">
-                    {% if submission.responsible_author %}
-                        <a href="{% url 'activities:list' %}?scope=all&amp;owner={{ submission.responsible_author_id }}">{{ submission.responsible_author }}</a>
+                    {% if submission.document_authors %}
+                        {{ submission.document_authors|linebreaksbr }}
                     {% else %}
-                        {{ submission.author }}
+                        {% for author in submission.authors.all %}
+                            {{ author }}{% if not forloop.last %}, {% endif %}
+                        {% empty %}
+                            Не указаны
+                        {% endfor %}
                     {% endif %}
                 </div>
             </div>
-            <div class="submission-meta-card">
-                <div class="submission-meta-label">Пользователи-авторы</div>
-                <div class="submission-meta-value">
-                    {% for author in submission.authors.all %}
-                        <a href="{% url 'activities:list' %}?scope=all&amp;owner={{ author.id }}">{{ author }}</a>{% if not forloop.last %}, {% endif %}
-                    {% empty %}
-                        Не указаны
-                    {% endfor %}
-                </div>
-            </div>
-            {% if submission.document_authors %}
-                <div class="submission-meta-card">
-                    <div class="submission-meta-label">Авторы в документе</div>
-                    <div class="submission-meta-value">{{ submission.document_authors|linebreaksbr }}</div>
-                </div>
-            {% endif %}
             {% if submission.organizations %}
                 <div class="submission-meta-card">
                     <div class="submission-meta-label">Организации</div>

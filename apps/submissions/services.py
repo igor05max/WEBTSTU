@@ -68,7 +68,6 @@ def add_submission_version(
 def create_submission_with_initial_version(
     *,
     author,
-    responsible_author=None,
     title,
     abstract,
     journal,
@@ -79,7 +78,7 @@ def create_submission_with_initial_version(
     formatting_rules_snapshot=None,
     formatting_check_requested=True,
     comment="",
-    co_authors=None,
+    authors=None,
     document_authors="",
     organizations="",
     contact_emails="",
@@ -87,7 +86,12 @@ def create_submission_with_initial_version(
     defer_checks=False,
     mark_as_checking=True,
 ):
-    responsible_author = responsible_author or author
+    selected_authors = [
+        selected_author
+        for selected_author in (authors or [])
+        if selected_author is not None and selected_author.id is not None
+    ]
+    routing_author = selected_authors[0] if selected_authors else None
     submission = Submission.objects.create(
         title=title or "Без названия",
         abstract=abstract,
@@ -96,7 +100,7 @@ def create_submission_with_initial_version(
         contact_emails=contact_emails or "",
         keywords=keywords or "",
         author=author,
-        responsible_author=responsible_author,
+        responsible_author=routing_author,
         journal=journal,
         publication_topic=publication_topic,
         article_type=article_type,
@@ -105,11 +109,7 @@ def create_submission_with_initial_version(
         formatting_check_requested=bool(formatting_check_requested),
         status=SubmissionStatus.DRAFT,
     )
-    author_ids = {responsible_author.id}
-    for co_author in co_authors or []:
-        if co_author is None or co_author.id is None:
-            continue
-        author_ids.add(co_author.id)
+    author_ids = {selected_author.id for selected_author in selected_authors}
     if author_ids:
         submission.authors.set(author_ids)
 

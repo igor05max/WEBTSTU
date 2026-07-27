@@ -685,7 +685,7 @@
 
             var remove = document.createElement("button");
             remove.type = "button";
-            remove.setAttribute("aria-label", "Убрать соавтора " + option.text);
+            remove.setAttribute("aria-label", "Убрать автора " + option.text);
             remove.textContent = "×";
             remove.addEventListener("click", function () {
                 toggleOption(option, false);
@@ -821,20 +821,19 @@
         }
 
         function applyMatchedUsers(matches) {
-            var responsibleSelect = document.getElementById("id_responsible_author");
-            var coauthorSelect = document.getElementById("id_co_authors");
-            if (!responsibleSelect || !coauthorSelect) {
+            var authorSelect = document.getElementById("id_authors");
+            if (!authorSelect) {
                 return 0;
             }
             var matchedIds = [];
             (matches || []).forEach(function (match) {
-                var responsibleOption = Array.prototype.find.call(
-                    responsibleSelect.options,
+                var authorOption = Array.prototype.find.call(
+                    authorSelect.options,
                     function (item) {
                         return String(item.value) === String(match.user_id);
                     }
                 );
-                if (responsibleOption) {
+                if (authorOption) {
                     matchedIds.push(String(match.user_id));
                 }
             });
@@ -842,23 +841,15 @@
                 return 0;
             }
 
-            responsibleSelect.value = matchedIds[0];
-            responsibleSelect.dispatchEvent(new Event("change", {bubbles: true}));
-
-            matchedIds.slice(1).forEach(function (userId) {
-                var option = Array.prototype.find.call(coauthorSelect.options, function (item) {
+            matchedIds.forEach(function (userId) {
+                var option = Array.prototype.find.call(authorSelect.options, function (item) {
                     return String(item.value) === userId;
                 });
                 if (option) {
                     option.selected = true;
                 }
             });
-            Array.prototype.forEach.call(coauthorSelect.options, function (option) {
-                if (String(option.value) === matchedIds[0]) {
-                    option.selected = false;
-                }
-            });
-            coauthorSelect.dispatchEvent(new Event("change", {bubbles: true}));
+            authorSelect.dispatchEvent(new Event("change", {bubbles: true}));
             return matchedIds.length;
         }
 

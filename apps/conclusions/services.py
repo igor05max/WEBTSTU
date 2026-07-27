@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+from functools import lru_cache
 from pathlib import Path
 import re
 import shutil
@@ -14,6 +15,7 @@ from django.contrib.auth.models import Group
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
+import pymorphy3
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -29,6 +31,7 @@ PRORECTOR_STEP_NAME = "Утверждение проректором по нау
 SIGNATURE_BLUE = (58 / 255, 105 / 255, 246 / 255)
 SIGNATURE_FONT_NAME = "ConclusionSignatureFont"
 SIGNATURE_XML_NAMESPACE = "urn:tgtu:electronic-document:1.0"
+CYRILLIC_NAME_PART_RE = re.compile(r"^([^А-ЯЁа-яё]*)([А-ЯЁа-яё-]+)([^А-ЯЁа-яё]*)$")
 
 
 class ConclusionGenerationError(ValueError):
@@ -48,16 +51,111 @@ def _get_signer_name(user):
     return full_name or user.username
 
 
+@lru_cache(maxsize=1)
+def _get_morph_analyzer():
+    return pymorphy3.MorphAnalyzer()
+
+
+def _restore_name_part_case(source, inflected):
+    if source.isupper():
+        return inflected.upper()
+    if source[:1].isupper():
+        return inflected[:1].upper() + inflected[1:]
+    return inflected
+
+
+def _detect_person_gender(name_parts):
+    analyzer = _get_morph_analyzer()
+    for part, required_grammeme in reversed(
+        tuple(zip(name_parts, ("Surn", "Name", "Patr"), strict=False))
+    ):
+        match = CYRILLIC_NAME_PART_RE.fullmatch(part)
+        if not match:
+            continue
+        word = match.group(2).split("-")[-1]
+        parses = [
+            parsed
+            for parsed in analyzer.parse(word)
+            if required_grammeme in parsed.tag and "nomn" in parsed.tag
+        ]
+        for parsed in parses:
+            if parsed.tag.gender in {"masc", "femn"}:
+                return parsed.tag.gender
+    return None
+
+
+def _inflect_name_word(word, *, required_grammeme, gender):
+    analyzer = _get_morph_analyzer()
+    parses = analyzer.parse(word)
+    preferred = [
+        parsed
+        for parsed in parses
+        if required_grammeme in parsed.tag and "nomn" in parsed.tag
+    ]
+    if gender:
+        gender_matches = [parsed for parsed in preferred if parsed.tag.gender == gender]
+        if gender_matches:
+            preferred = gender_matches
+    if not preferred:
+        preferred = [parsed for parsed in parses if "nomn" in parsed.tag]
+    for parsed in preferred or parses:
+        inflected = parsed.inflect({"gent"})
+        if inflected is not None:
+            return _restore_name_part_case(word, inflected.word)
+    return word
+
+
+def _inflect_name_part(part, *, required_grammeme, gender):
+    match = CYRILLIC_NAME_PART_RE.fullmatch(part)
+    if not match:
+        return part
+    prefix, name, suffix = match.groups()
+    inflected_parts = [
+        _inflect_name_word(
+            item,
+            required_grammeme=required_grammeme,
+            gender=gender,
+        )
+        for item in name.split("-")
+    ]
+    return f"{prefix}{'-'.join(inflected_parts)}{suffix}"
+
+
+def _inflect_person_name_to_genitive(full_name):
+    name_parts = str(full_name or "").strip().split()
+    if not name_parts:
+        return ""
+    gender = _detect_person_gender(name_parts)
+    grammemes = ("Surn", "Name", "Patr")
+    return " ".join(
+        _inflect_name_part(
+            part,
+            required_grammeme=grammemes[index] if index < len(grammemes) else "Patr",
+            gender=gender,
+        )
+        for index, part in enumerate(name_parts)
+    )
+
+
 def _get_short_author_names(submission):
     authors = submission.authors.order_by("last_name", "first_name", "username")
     names = []
     for author in authors:
         if author.last_name:
             initials = "".join(f"{value[:1]}." for value in (author.first_name,) if value)
-            names.append(f"{author.last_name} {initials}".strip())
+            surname = _inflect_name_part(
+                author.last_name,
+                required_grammeme="Surn",
+                gender=_detect_person_gender(
+                    [author.last_name, author.first_name, ""]
+                ),
+            )
+            names.append(f"{surname} {initials}".strip())
         else:
-            names.append(_get_signer_name(author))
-    return ", ".join(names) or _get_signer_name(submission.author)
+            names.append(_inflect_person_name_to_genitive(_get_signer_name(author)))
+    return ", ".join(names) or _inflect_person_name_to_genitive(
+        _get_signer_name(submission.author)
+    )
 
 
 def _replace_template_values(template_bytes, values):

@@ -114,14 +114,14 @@ class RootAdminAccessTests(TestCase):
         )
         journal = Journal.objects.create(name="Админский журнал")
         article_type = ArticleType.objects.create(code="admin-article", name="Статья")
-        Submission.objects.create(
+        draft = Submission.objects.create(
             title="Черновик автора в админке",
             author=author,
             journal=journal,
             article_type=article_type,
             status=SubmissionStatus.DRAFT,
         )
-        Submission.objects.create(
+        approved = Submission.objects.create(
             title="Согласованная статья автора в админке",
             author=author,
             journal=journal,
@@ -129,6 +129,8 @@ class RootAdminAccessTests(TestCase):
             status=SubmissionStatus.APPROVED,
             submitted_at=timezone.now(),
         )
+        draft.authors.add(author)
+        approved.authors.add(author)
 
         response = self.client.get(reverse("admin:accounts_user_change", args=[author.id]))
 
@@ -296,14 +298,14 @@ class AuthorDirectoryAndProfileTests(TestCase):
         self.journal = Journal.objects.create(name="Журнал авторских профилей")
         self.article_type = ArticleType.objects.create(code="author-profile-article", name="Статья")
 
-        Submission.objects.create(
+        draft = Submission.objects.create(
             title="Черновик автора",
             author=self.author,
             journal=self.journal,
             article_type=self.article_type,
             status=SubmissionStatus.DRAFT,
         )
-        Submission.objects.create(
+        sent = Submission.objects.create(
             title="Отправленная статья автора",
             author=self.author,
             journal=self.journal,
@@ -311,7 +313,7 @@ class AuthorDirectoryAndProfileTests(TestCase):
             status=SubmissionStatus.IN_REVIEW,
             submitted_at=timezone.now(),
         )
-        Submission.objects.create(
+        approved = Submission.objects.create(
             title="Одобренная статья автора",
             author=self.author,
             journal=self.journal,
@@ -327,7 +329,10 @@ class AuthorDirectoryAndProfileTests(TestCase):
             status=SubmissionStatus.IN_REVIEW,
             submitted_at=timezone.now(),
         )
-        shared_submission.authors.add(self.coauthor)
+        draft.authors.add(self.author)
+        sent.authors.add(self.author)
+        approved.authors.add(self.author)
+        shared_submission.authors.add(self.author, self.coauthor)
 
     def test_author_directory_lists_only_users_with_materials(self):
         self.client.force_login(self.author)

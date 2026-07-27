@@ -143,15 +143,9 @@ class Submission(models.Model):
         verbose_name = "Заявка"
         verbose_name_plural = "Заявки"
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        effective_author_id = self.responsible_author_id or self.author_id
-        if effective_author_id and not self.authors.filter(pk=effective_author_id).exists():
-            self.authors.add(effective_author_id)
-
     @property
     def routing_author(self):
-        return self.responsible_author or self.author
+        return self.responsible_author or self.authors.order_by("pk").first() or self.author
 
     def get_authors_display(self):
         return ", ".join(str(author) for author in self.authors.all())

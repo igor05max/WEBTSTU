@@ -129,6 +129,31 @@ class SubmissionListScopeTests(TestCase):
         titles = list(response.context["submissions"].values_list("title", flat=True))
         self.assertIn("Совместная статья", titles)
 
+    def test_detail_shows_sender_and_authors_without_responsible_author(self):
+        submission = Submission.objects.create(
+            title="Материал от представителя",
+            author=self.user,
+            document_authors="Иванов Иван Иванович\nСидорова Анна Петровна",
+            journal=self.journal,
+            article_type=self.article_type,
+            status=SubmissionStatus.DRAFT,
+        )
+        submission.authors.add(self.coauthor)
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("submissions:detail", args=[submission.pk])
+        )
+
+        self.assertContains(response, "Отправитель")
+        self.assertContains(response, "Авторы")
+        self.assertContains(response, str(self.user))
+        self.assertContains(response, "Иванов Иван Иванович")
+        self.assertContains(response, "Сидорова Анна Петровна")
+        self.assertNotContains(response, str(self.coauthor))
+        self.assertNotContains(response, "Ответственный автор")
+        self.assertNotContains(response, "Пользователи-авторы")
+
     def test_work_scope_groups_active_submission_stages(self):
         self.client.force_login(self.user)
 
@@ -602,6 +627,9 @@ class SubmissionCreateViewTests(TestCase):
         self.assertContains(response, reverse("submissions:extract_metadata"))
         self.assertContains(response, "Уточнить структуру нейросетью")
         self.assertContains(response, 'data-site-loading-title="Создаём материал"')
+        self.assertContains(response, ">Авторы</label>")
+        self.assertNotContains(response, "Ответственный автор")
+        self.assertNotContains(response, "Другие авторы")
         self.assertNotContains(response, 'id="id_organizations"')
         self.assertNotContains(response, "Организации авторов")
         self.assertContains(response, "accounts/global-loading.css")
@@ -687,10 +715,12 @@ class SubmissionCreateViewTests(TestCase):
                 "authors": [
                     "ВОЛКОВ Андрей Андреевич",
                     "НЕИЗВЕСТНЫЙ Николай Николаевич",
+                    "Российская Федерация",
                 ],
                 "document_authors": (
                     "ВОЛКОВ Андрей Андреевич\n"
-                    "НЕИЗВЕСТНЫЙ Николай Николаевич"
+                    "НЕИЗВЕСТНЫЙ Николай Николаевич\n"
+                    "Российская Федерация"
                 ),
                 "abstract": "",
                 "keywords": "",
@@ -752,7 +782,7 @@ class SubmissionCreateViewTests(TestCase):
         response = self.client.post(
             reverse("submissions:create"),
             data={
-                "responsible_author": self.chair_head.id,
+                "authors": [self.chair_head.id],
                 "article_type": self.article_type.id,
                 "journal": self.journal.id,
                 "journal_query": self.journal.name,
@@ -773,7 +803,6 @@ class SubmissionCreateViewTests(TestCase):
             fetch_redirect_response=False,
         )
         self.assertEqual(submission.status, SubmissionStatus.DRAFT)
-        self.assertEqual(submission.responsible_author, self.chair_head)
         self.assertFalse(submission.authors.filter(pk=self.user.pk).exists())
         self.assertTrue(submission.authors.filter(pk=self.chair_head.pk).exists())
         self.assertEqual(template.analysis_status, "pending")
@@ -841,7 +870,7 @@ class SubmissionCreateViewTests(TestCase):
         self.assertEqual(submission.check_runs.count(), 5)
         self.assertNotEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
 
-    def test_create_submission_stores_coauthors(self):
+    def test_create_submission_stores_authors_without_adding_sender(self):
         coauthor = get_user_model().objects.create_user(username="submission_coauthor", password="1234")
 
         submission = create_submission_with_initial_version(
@@ -851,36 +880,40 @@ class SubmissionCreateViewTests(TestCase):
             journal=self.journal,
             article_type=self.article_type,
             file=SimpleUploadedFile("article.txt", b"content"),
-            co_authors=[coauthor],
+            authors=[coauthor],
         )
 
         self.assertQuerySetEqual(
             submission.authors.order_by("id"),
-            [self.user, coauthor],
+            [coauthor],
             transform=lambda user: user,
         )
 
-    def test_sender_can_create_submission_for_another_responsible_author(self):
-        responsible_author = get_user_model().objects.create_user(
-            username="responsible_author",
+    def test_sender_can_create_submission_for_different_authors(self):
+        first_author = get_user_model().objects.create_user(
+            username="first_author",
+            password="1234",
+        )
+        second_author = get_user_model().objects.create_user(
+            username="second_author",
             password="1234",
         )
 
         submission = create_submission_with_initial_version(
             author=self.user,
-            responsible_author=responsible_author,
             title="Статья, отправленная представителем",
             abstract="Аннотация",
             journal=self.journal,
             article_type=self.article_type,
             file=SimpleUploadedFile("article.txt", b"content"),
+            authors=[first_author, second_author],
         )
 
         self.assertEqual(submission.author, self.user)
-        self.assertEqual(submission.responsible_author, responsible_author)
+        self.assertFalse(submission.authors.filter(pk=self.user.pk).exists())
         self.assertQuerySetEqual(
-            submission.authors.all(),
-            [responsible_author],
+            submission.authors.order_by("pk"),
+            [first_author, second_author],
             transform=lambda user: user,
         )
 
@@ -2263,6 +2296,7 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertNotContains(response, "Посмотреть LaTeX")
         self.assertNotContains(response, "Создать DOCX по шаблону")
         rendered = response.content.decode()
+        rendered = rendered[rendered.index("Структура документа") :]
         ordered_labels = [
             "Индекс УДК",
             "Название",

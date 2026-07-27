@@ -6,6 +6,7 @@ from django.test import SimpleTestCase
 
 from apps.submissions.article_extraction import (
     extract_article_structure,
+    is_probable_person_name,
     refine_article_with_model,
 )
 from apps.directory.formatting_templates import _extract_docx_rules
@@ -198,6 +199,17 @@ def _docx_with_embedded_vector_equation():
 
 
 class ArticleExtractionTests(SimpleTestCase):
+    def test_person_name_validation_rejects_country_and_organization_names(self):
+        self.assertTrue(is_probable_person_name("Поляков Дмитрий Вадимович"))
+        self.assertTrue(is_probable_person_name("Петров П.П."))
+        self.assertTrue(is_probable_person_name("Alice Researcher"))
+        self.assertFalse(is_probable_person_name("Российская Федерация"))
+        self.assertFalse(
+            is_probable_person_name(
+                "Тамбовский государственный технический университет"
+            )
+        )
+
     def test_utf8_russian_text_is_not_misread_as_cp1251(self):
         source = (
             "Проверка быстрой загрузки полей\n"
@@ -309,6 +321,37 @@ class ArticleExtractionTests(SimpleTestCase):
             refined["title"]["value"],
             "Надёжное извлечение данных из плохо оформленных статей",
         )
+
+    def test_local_model_cannot_classify_country_as_author(self):
+        snapshot = {
+            "paragraphs": [
+                {
+                    "block_id": "p:0",
+                    "text": "Российская Федерация",
+                    "region": "document",
+                }
+            ]
+        }
+        article = {
+            "authors": {
+                "value": [],
+                "confidence": 0,
+                "block_ids": [],
+                "method": "not_found",
+            },
+            "sections": [],
+            "needs_review": [],
+        }
+
+        refined = refine_article_with_model(
+            snapshot,
+            article,
+            complete_json=lambda _prompt: (
+                '{"authors":{"block_ids":["p:0"],"confidence":0.99}}'
+            ),
+        )
+
+        self.assertEqual(refined["authors"]["value"], [])
 
     def test_local_model_classifies_unlabeled_blocks_and_sections(self):
         texts = [
