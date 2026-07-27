@@ -660,6 +660,76 @@ class SubmissionCreateViewTests(TestCase):
             "completed",
         )
 
+    @patch("apps.submissions.views.analyze_document")
+    def test_metadata_endpoint_uses_directory_full_names_for_matched_authors(
+        self,
+        analyze_document_mock,
+    ):
+        directory_author = get_user_model().objects.create_user(
+            username="volkov_aa_directory",
+            first_name="Андрей Андреевич",
+            last_name="Волков",
+        )
+        analyze_document_mock.return_value = {
+            "file_name": "article.doc",
+            "suffix": ".doc",
+            "parse_error": "",
+            "paragraphs": [{"block_id": "p:0", "text": "Title"}],
+            "tables": [],
+            "formulas": [],
+            "image_count": 0,
+            "article": {"sections": [], "references": []},
+            "metadata": {
+                "title": "Title",
+                "authors": [
+                    "ВОЛКОВ Андрей Андреевич",
+                    "НЕИЗВЕСТНЫЙ Николай Николаевич",
+                ],
+                "document_authors": (
+                    "ВОЛКОВ Андрей Андреевич\n"
+                    "НЕИЗВЕСТНЫЙ Николай Николаевич"
+                ),
+                "abstract": "",
+                "keywords": "",
+            },
+            "semantic_refinement": {
+                "enabled": False,
+                "status": "disabled",
+            },
+        }
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("submissions:extract_metadata"),
+            data={
+                "file": SimpleUploadedFile(
+                    "article.doc",
+                    bytes.fromhex("d0cf11e0a1b11ae1") + b"legacy",
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["metadata"]["authors"],
+            [
+                directory_author.get_full_name(),
+                "НЕИЗВЕСТНЫЙ Николай Николаевич",
+            ],
+        )
+        self.assertEqual(
+            payload["metadata"]["document_authors"],
+            (
+                f"{directory_author.get_full_name()}\n"
+                "НЕИЗВЕСТНЫЙ Николай Николаевич"
+            ),
+        )
+        self.assertEqual(
+            payload["matched_users"][0]["full_name"],
+            directory_author.get_full_name(),
+        )
+
     @override_settings(SUBMISSION_CHECKS_ASYNC=True)
     @patch("apps.submissions.views.queue_submission_template_processing")
     def test_create_with_new_template_redirects_before_template_processing(self, queue_processing):

@@ -934,6 +934,20 @@ def extract_submission_metadata_view(request):
     metadata = snapshot.get("metadata") or {}
     users = list(User.objects.select_related("org_unit").filter(is_active=True))
     matches = match_authors_to_users(metadata.get("authors") or [], users)
+    directory_names = {
+        str(match.get("author") or ""): str(match.get("full_name") or "").strip()
+        for match in matches
+        if str(match.get("full_name") or "").strip()
+    }
+    resolved_authors = [
+        directory_names.get(str(author), str(author))
+        for author in metadata.get("authors") or []
+    ]
+    metadata = {
+        **metadata,
+        "authors": resolved_authors,
+        "document_authors": "\n".join(resolved_authors),
+    }
     for match in matches:
         match["is_current_user"] = match["user_id"] == request.user.id
     return JsonResponse(

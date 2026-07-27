@@ -1957,6 +1957,7 @@ def match_authors_to_users(authors, users):
                     "author": author,
                     "user_id": best.id,
                     "user_name": str(best),
+                    "full_name": normalize_space(best.get_full_name()),
                     "username": best.username,
                 }
             )
