@@ -301,16 +301,18 @@ class CitationSystemTests(TestCase):
         self.assertTrue(passed)
         self.assertEqual(payload["check_code"], "article_recommendations")
         self.assertEqual(payload["metrics"]["claims_needing_citation"], 1)
+        self.assertEqual(payload["metrics"]["minimum_score_percent"], 21)
         self.assertEqual(payload["issues"][0]["location"], "Введение, абзац 2")
         self.assertIn("Свёрточные нейронные сети", payload["issues"][0]["context_highlight"])
         self.assertTrue(payload["citation_claims"][0]["recommendations"])
 
-    def test_zero_percent_and_rejected_sources_are_removed(self):
+    def test_scores_at_or_below_twenty_and_rejected_sources_are_removed(self):
         claims = [
             {
                 "recommendations": [
                     {"title": "Нулевой", "score_percent": 0, "verdict": "partial"},
-                    {"title": "Слабый", "score_percent": 40, "verdict": "partial"},
+                    {"title": "Граница", "score_percent": 20, "verdict": "partial"},
+                    {"title": "Выше границы", "score_percent": 21, "verdict": "partial"},
                     {"title": "Отклонённый", "score_percent": 87, "verdict": "not_supports"},
                     {"title": "Подходящий", "score_percent": 72, "verdict": "supports"},
                 ]
@@ -321,7 +323,7 @@ class CitationSystemTests(TestCase):
 
         self.assertEqual(
             [item["title"] for item in filtered[0]["recommendations"]],
-            ["Подходящий"],
+            ["Выше границы", "Подходящий"],
         )
 
     def test_apply_selected_source_to_docx(self):

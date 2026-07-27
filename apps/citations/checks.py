@@ -90,8 +90,16 @@ def build_citation_coverage_report(
     snapshot=None,
     max_claims=8,
     results_per_claim=4,
-    min_percent=50,
+    min_percent=None,
 ):
+    min_percent = max(
+        21,
+        int(
+            min_percent
+            if min_percent is not None
+            else getattr(settings, "CITATION_MIN_RECOMMENDATION_PERCENT", 21)
+        ),
+    )
     citation_snapshot = _load_citation_snapshot(version, snapshot)
     if len((citation_snapshot.get("text") or "").strip()) < settings.CITATION_CHECK_MIN_TEXT_LENGTH:
         return True, _legacy_fallback(submission, min_percent=min_percent)
