@@ -423,3 +423,73 @@ class ReusableTemplateEngineTests(SimpleTestCase):
         self.assertEqual(result.paragraphs[7].alignment, WD_ALIGN_PARAGRAPH.CENTER)
         self.assertEqual(plan["issues"], [])
         self.assertIn("титульный блок оформлен отдельно от основного текста", changes)
+
+    def test_builder_centers_and_scales_figures_to_the_new_text_width(self):
+        import base64
+        from copy import deepcopy
+
+        from docx import Document
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Cm
+
+        pixel = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNg"
+            "YAAAAAMAASsJTYQAAAAASUVORK5CYII="
+        )
+        document = Document()
+        document.add_paragraph(
+            "Основной научный текст перед рисунком сохраняется без изменений."
+        )
+        figure = document.add_paragraph()
+        figure.paragraph_format.first_line_indent = Cm(1.5)
+        figure.add_run().add_picture(BytesIO(pixel), width=Cm(18), height=Cm(6))
+        caption = document.add_paragraph("Рисунок 1 — Экспериментальная схема.")
+        caption.paragraph_format.first_line_indent = Cm(1.5)
+        source = BytesIO()
+        document.save(source)
+        rules = deepcopy(LEGACY_RULES)
+        rules["page"]["margins_cm"] = {
+            "top": 2,
+            "right": 1.2,
+            "bottom": 2,
+            "left": 5.8,
+        }
+
+        built, changes, _plan = build_docx_from_template(
+            source.getvalue(),
+            rules,
+        )
+        result = Document(BytesIO(built))
+        result_figure = next(
+            paragraph
+            for paragraph in result.paragraphs
+            if paragraph._p.xpath(".//w:drawing")
+        )
+        result_caption = next(
+            paragraph
+            for paragraph in result.paragraphs
+            if paragraph.text.startswith("Рисунок 1")
+        )
+        section = result.sections[0]
+        maximum_width = (
+            section.page_width
+            - section.left_margin
+            - section.right_margin
+            - Cm(0.2)
+        )
+
+        self.assertLessEqual(result.inline_shapes[0].width, maximum_width)
+        self.assertEqual(result_figure.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertAlmostEqual(
+            result_figure.paragraph_format.first_line_indent.cm,
+            0,
+            places=2,
+        )
+        self.assertTrue(result_figure.paragraph_format.keep_with_next)
+        self.assertEqual(result_caption.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertAlmostEqual(
+            result_caption.paragraph_format.first_line_indent.cm,
+            0,
+            places=2,
+        )
+        self.assertIn("рисунки вписаны в рабочую область страницы: 1", changes)

@@ -96,11 +96,104 @@ def _selected_sources(payload, selections):
     return selected, article_numbers
 
 
+def _marker_numbers(marker):
+    match = CITATION_BLOCK_RE.fullmatch(str(marker or "").strip())
+    if match is None:
+        return []
+    return [
+        int(value)
+        for value in re.findall(r"\d+", match.group(1))
+    ]
+
+
+def _merged_marker(existing_numbers, marker):
+    numbers = sorted({*existing_numbers, *_marker_numbers(marker)})
+    return f"[{', '.join(str(value) for value in numbers)}]"
+
+
+def _replace_paragraph_text_range(paragraph, start, end, replacement):
+    runs = list(paragraph.runs)
+    offset = 0
+    first_run = None
+    first_local = 0
+    last_run = None
+    last_local = 0
+    for run in runs:
+        run_start = offset
+        run_end = run_start + len(run.text)
+        if first_run is None and start <= run_end:
+            first_run = run
+            first_local = max(0, start - run_start)
+        if end <= run_end:
+            last_run = run
+            last_local = max(0, end - run_start)
+            break
+        offset = run_end
+    if first_run is None:
+        paragraph.add_run(replacement)
+        return
+    if last_run is None:
+        last_run = runs[-1]
+        last_local = len(last_run.text)
+    if first_run is last_run:
+        first_run.text = (
+            first_run.text[:first_local]
+            + replacement
+            + first_run.text[last_local:]
+        )
+        return
+    first_index = runs.index(first_run)
+    last_index = runs.index(last_run)
+    first_run.text = first_run.text[:first_local] + replacement
+    for run in runs[first_index + 1 : last_index]:
+        run.text = ""
+    last_run.text = last_run.text[last_local:]
+
+
+def _insert_or_merge_marker(paragraph, insertion_at, marker):
+    full_text = "".join(run.text for run in paragraph.runs)
+    insertion_at = max(0, min(int(insertion_at), len(full_text)))
+
+    before_match = re.search(
+        r"\[([\d\s,;]+)\](?P<punct>[.!?…]*)\s*$",
+        full_text[:insertion_at],
+    )
+    if before_match is not None:
+        existing = [int(value) for value in re.findall(r"\d+", before_match.group(1))]
+        bracket_start = before_match.start()
+        bracket_end = bracket_start + before_match.group(0).find("]") + 1
+        _replace_paragraph_text_range(
+            paragraph,
+            bracket_start,
+            bracket_end,
+            _merged_marker(existing, marker),
+        )
+        return
+
+    after_match = re.match(r"\s*\[([\d\s,;]+)\]", full_text[insertion_at:])
+    if after_match is not None:
+        existing = [int(value) for value in re.findall(r"\d+", after_match.group(1))]
+        relative_bracket = after_match.group(0).find("[")
+        bracket_start = insertion_at + relative_bracket
+        bracket_end = insertion_at + after_match.group(0).find("]") + 1
+        _replace_paragraph_text_range(
+            paragraph,
+            bracket_start,
+            bracket_end,
+            _merged_marker(existing, marker),
+        )
+        return
+
+    prefix = "" if insertion_at and full_text[insertion_at - 1].isspace() else " "
+    _replace_paragraph_text_range(
+        paragraph,
+        insertion_at,
+        insertion_at,
+        f"{prefix}{marker}",
+    )
+
+
 def _insert_marker_after_claim(paragraph, claim_text, marker):
-    normalized_paragraph = " ".join(paragraph.text.casefold().replace("ё", "е").split())
-    normalized_claim_text = " ".join(claim_text.casefold().replace("ё", "е").split())
-    if f"{normalized_claim_text} {marker}" in normalized_paragraph:
-        return True
     full_text = "".join(run.text for run in paragraph.runs)
     normalized_chars = []
     source_positions = []
@@ -127,19 +220,8 @@ def _insert_marker_after_claim(paragraph, claim_text, marker):
         return False
     normalized_end = position + len(normalized_claim) - 1
     insertion_at = source_positions[normalized_end] + 1
-    offset = 0
-    for run in paragraph.runs:
-        run_end = offset + len(run.text)
-        if insertion_at <= run_end:
-            local_offset = max(0, insertion_at - offset)
-            run.text = (
-                run.text[:local_offset]
-                + f" {marker}"
-                + run.text[local_offset:]
-            )
-            return True
-        offset = run_end
-    return False
+    _insert_or_merge_marker(paragraph, insertion_at, marker)
+    return True
 
 
 def _has_automatic_numbering(paragraph):
@@ -437,7 +519,11 @@ def apply_to_docx(*, user_id, token, selections):
         marker = f"[{', '.join(str(value) for value in numbers)}]"
         target_text = " ".join(str(claim.get("text") or "").split())
         if not _insert_marker_after_claim(paragraph, target_text, marker):
-            paragraph.add_run(f" {marker}")
+            _insert_or_merge_marker(
+                paragraph,
+                len("".join(run.text for run in paragraph.runs)),
+                marker,
+            )
 
     if bibliography_heading is None:
         try:

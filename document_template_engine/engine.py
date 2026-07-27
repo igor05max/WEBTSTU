@@ -802,6 +802,68 @@ def _insert_paragraph_before(anchor, text: str):
     return paragraph
 
 
+def _looks_like_figure_caption(paragraph) -> bool:
+    text = " ".join(paragraph.text.split())
+    style_name = (
+        (paragraph.style.name or "").casefold()
+        if getattr(paragraph, "style", None)
+        else ""
+    )
+    return (
+        "caption" in style_name
+        or "подпис" in style_name
+        or bool(re.match(r"^(?:рисунок|рис\.|figure)\s*\d+", text, re.I))
+    )
+
+
+def _normalize_inline_figures(document) -> int:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shape import InlineShape
+    from docx.shared import Cm
+
+    sections = list(document.sections)
+    if not sections:
+        return 0
+    section_index = 0
+    changed = 0
+    paragraphs = list(document.paragraphs)
+    for paragraph_index, paragraph in enumerate(paragraphs):
+        section = sections[min(section_index, len(sections) - 1)]
+        inline_elements = paragraph._p.xpath(".//wp:inline")
+        if inline_elements:
+            usable_width = (
+                section.page_width
+                - section.left_margin
+                - section.right_margin
+                - Cm(0.2)
+            )
+            for inline_element in inline_elements:
+                shape = InlineShape(inline_element)
+                if shape.width > usable_width > 0:
+                    scale = usable_width / shape.width
+                    shape.width = int(shape.width * scale)
+                    shape.height = int(shape.height * scale)
+                    changed += 1
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            paragraph.paragraph_format.left_indent = Cm(0)
+            paragraph.paragraph_format.right_indent = Cm(0)
+            paragraph.paragraph_format.first_line_indent = Cm(0)
+            if (
+                paragraph_index + 1 < len(paragraphs)
+                and _looks_like_figure_caption(paragraphs[paragraph_index + 1])
+            ):
+                paragraph.paragraph_format.keep_with_next = True
+                caption = paragraphs[paragraph_index + 1]
+                caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                caption.paragraph_format.left_indent = Cm(0)
+                caption.paragraph_format.right_indent = Cm(0)
+                caption.paragraph_format.first_line_indent = Cm(0)
+                caption.paragraph_format.keep_together = True
+        if paragraph._p.pPr is not None and paragraph._p.pPr.sectPr is not None:
+            section_index += 1
+    return changed
+
+
 def _insert_supplied_metadata(document, rules: dict[str, Any], metadata: dict[str, Any] | None):
     values = _metadata_values(metadata)
     roles = _assign_roles(document, metadata)
@@ -1037,6 +1099,12 @@ def build_docx_from_template(
                 for paragraph in cell.paragraphs:
                     for run in paragraph.runs:
                         _set_run_font(run, font_family=font_family, font_size=font_size)
+
+    resized_figures = _normalize_inline_figures(document)
+    if resized_figures:
+        changes.append(
+            f"рисунки вписаны в рабочую область страницы: {resized_figures}"
+        )
 
     if body_rules.get("line_spacing") not in (None, ""):
         changes.append(f"интервал основного текста: {body_rules['line_spacing']}")

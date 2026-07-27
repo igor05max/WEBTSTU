@@ -613,6 +613,61 @@ class CitationSystemTests(TestCase):
         self.assertEqual(result.paragraphs[-2].text, recommendations[0]["citation"])
         self.assertEqual(result.paragraphs[-1].text, recommendations[1]["citation"])
 
+    def test_new_sources_merge_with_existing_marker_for_same_sentence(self):
+        document = Document()
+        claim_text = (
+            "Среди типовых проблем выделяются галлюцинации, устаревание знаний "
+            "и сложность оценки качества ответа [1]."
+        )
+        document.add_paragraph(claim_text)
+        document.add_paragraph("Список литературы")
+        for number in range(1, 8):
+            document.add_paragraph(f"Источник {number}.", style="List Number")
+        source = BytesIO()
+        document.save(source)
+        recommendations = [
+            {
+                "article_id": "1001",
+                "title": "Первый новый источник",
+                "citation": "Иванов И. И. Первый новый источник. 2024.",
+            },
+            {
+                "article_id": "1002",
+                "title": "Второй новый источник",
+                "citation": "Петров П. П. Второй новый источник. 2025.",
+            },
+        ]
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="existing-marker.docx",
+            snapshot={"text": claim_text},
+            claims=[
+                {
+                    "id": "claim-existing-marker",
+                    "text": claim_text,
+                    "recommendations": recommendations,
+                }
+            ],
+            index_status={"ready": True},
+        )
+
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[
+                {"claim_id": "claim-existing-marker", "article_id": "1001"},
+                {"claim_id": "claim-existing-marker", "article_id": "1002"},
+            ],
+        )
+        result = Document(output)
+
+        self.assertEqual(
+            result.paragraphs[0].text,
+            claim_text.replace("[1].", "[1, 8, 9]."),
+        )
+        self.assertNotIn("[1]. [8, 9]", result.paragraphs[0].text)
+
     def test_saved_paragraph_index_is_used_when_claim_text_no_longer_matches(self):
         document = Document()
         document.add_paragraph("Текст документа уже изменён.")
