@@ -27,7 +27,8 @@ AUTHOR_RE = re.compile(
     r"|[А-ЯЁA-Z][А-ЯЁа-яёA-Za-z'’-]+\s+(?:[А-ЯЁA-Z]\s*\.\s*){1,3}"
 )
 FULL_NAME_RE = re.compile(
-    r"\b[А-ЯЁ][а-яё'’-]+\s+[А-ЯЁ][а-яё'’-]+(?:\s+[А-ЯЁ][а-яё'’-]+)?\b"
+    r"\b[А-ЯЁ][А-ЯЁа-яё'’-]+\s+[А-ЯЁ][А-ЯЁа-яё'’-]+"
+    r"(?:\s+[А-ЯЁ][А-ЯЁа-яё'’-]+)?\b"
 )
 LATIN_FULL_NAME_RE = re.compile(
     r"\b[A-Z][A-Za-z'’-]+\s+[A-Z][A-Za-z'’-]+"
@@ -420,7 +421,40 @@ def _front_matter_end(
 def _author_surname(value: str) -> str:
     tokens = re.findall(r"[А-ЯЁA-Z][А-ЯЁа-яёA-Za-z'’-]+", value)
     non_initials = [token for token in tokens if len(token) > 1]
-    return normalize_for_match(non_initials[-1] if non_initials else value)
+    if not non_initials:
+        return normalize_for_match(value)
+
+    uppercase = [
+        token
+        for token in non_initials
+        if len(token) > 1 and _uppercase_ratio(token) >= 0.9
+    ]
+    if len(uppercase) == 1:
+        return normalize_for_match(uppercase[0])
+
+    cyrillic = [
+        token
+        for token in non_initials
+        if re.search(r"[А-ЯЁа-яё]", token)
+    ]
+    if len(cyrillic) >= 3:
+        normalized = [normalize_for_match(token) for token in cyrillic]
+        patronymic_suffixes = (
+            "вич",
+            "вна",
+            "ична",
+            "инична",
+            "овна",
+            "евна",
+            "оглы",
+            "кызы",
+        )
+        if normalized[-1].endswith(patronymic_suffixes):
+            return normalized[0]
+        if normalized[-2].endswith(patronymic_suffixes):
+            return normalized[-1]
+
+    return normalize_for_match(non_initials[-1])
 
 
 def _extract_authors(

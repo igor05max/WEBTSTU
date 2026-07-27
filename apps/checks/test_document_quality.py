@@ -69,6 +69,26 @@ class DocumentAnalysisTests(TestCase):
         matches = match_authors_to_users(snapshot["metadata"]["authors"], [user])
         self.assertEqual(matches[0]["user_id"], user.id)
 
+    def test_matches_full_author_name_by_surname_name_and_patronymic(self):
+        wrong_user = get_user_model().objects.create_user(
+            username="volkov_ap",
+            first_name="Алексей Петрович",
+            last_name="Волков",
+        )
+        expected_user = get_user_model().objects.create_user(
+            username="volkov_aa",
+            first_name="Андрей Андреевич",
+            last_name="Волков",
+        )
+
+        matches = match_authors_to_users(
+            ["ВОЛКОВ Андрей Андреевич"],
+            [wrong_user, expected_user],
+        )
+
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["user_id"], expected_user.id)
+
     def test_dangerous_docx_member_is_critical(self):
         snapshot = analyze_document_bytes(build_article_docx(dangerous_member=True), "article.docx")
         submission = SimpleNamespace()

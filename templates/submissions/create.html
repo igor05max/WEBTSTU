@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260720a">
-    <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20260727a">
+    <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20260727b">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
 </head>
 <body>
@@ -213,7 +213,7 @@
                             <span class="submission-metadata-spinner" aria-hidden="true"></span>
                             <div>
                                 <strong data-metadata-status>Читаем документ…</strong>
-                                <p data-metadata-summary>Ищем название, авторов, организации, e-mail, аннотацию и ключевые слова.</p>
+                                <p data-metadata-summary>Ищем название, авторов, e-mail, аннотацию и ключевые слова.</p>
                                 <button type="button" class="submission-semantic-retry" data-semantic-retry hidden>
                                     Уточнить структуру нейросетью
                                 </button>
@@ -238,11 +238,6 @@
                                 <label for="{{ form.document_authors.id_for_label }}">{{ form.document_authors.label }}</label>
                                 {{ form.document_authors }}
                                 {% if form.document_authors.errors %}<div class="submission-field-errors">{{ form.document_authors.errors }}</div>{% endif %}
-                            </div>
-                            <div class="submission-field{% if form.organizations.errors %} has-error{% endif %}">
-                                <label for="{{ form.organizations.id_for_label }}">{{ form.organizations.label }}</label>
-                                {{ form.organizations }}
-                                {% if form.organizations.errors %}<div class="submission-field-errors">{{ form.organizations.errors }}</div>{% endif %}
                             </div>
                             <div class="submission-field{% if form.contact_emails.errors %} has-error{% endif %}">
                                 <label for="{{ form.contact_emails.id_for_label }}">{{ form.contact_emails.label }}</label>
@@ -296,6 +291,6 @@
 </div>
 
 <script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
-<script src="{% static 'submissions/create.js' %}?v=20260727a" defer></script>
+<script src="{% static 'submissions/create.js' %}?v=20260727b" defer></script>
 </body>
 </html>

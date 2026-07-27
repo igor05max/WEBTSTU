@@ -42,6 +42,40 @@ def _badly_formatted_article_docx():
     return output.getvalue()
 
 
+def _article_with_uppercase_surnames_docx():
+    from docx import Document
+    from docx.shared import Pt
+
+    document = Document()
+    title = document.add_paragraph(
+        "АЛГОРИТМ АДАПТАЦИИ ВИРТУАЛЬНОЙ СРЕДЫ ДЛЯ РЕАБИЛИТАЦИИ"
+    )
+    title.runs[0].bold = True
+    title.runs[0].font.size = Pt(16)
+    document.add_paragraph("ВОЛКОВ Андрей Андреевич, аспирант,")
+    document.add_paragraph(
+        "ассистент кафедры «Системы автоматизированной поддержки принятия решений»,"
+    )
+    document.add_paragraph("Тамбовский государственный технический университет")
+    document.add_paragraph("ОБУХОВ Артем Дмитриевич, доктор технических наук,")
+    document.add_paragraph(
+        "профессор кафедры «Системы автоматизированной поддержки принятия решений»,"
+    )
+    document.add_paragraph("Тамбовский государственный технический университет")
+    document.add_paragraph(
+        "Аннотация. Рассматривается автоматическая адаптация виртуальной среды."
+    )
+    document.add_paragraph(
+        "Ключевые слова: реабилитация, адаптивное управление."
+    )
+    introduction = document.add_paragraph("Введение")
+    introduction.runs[0].bold = True
+    document.add_paragraph("Основной текст научной статьи.")
+    output = BytesIO()
+    document.save(output)
+    return output.getvalue()
+
+
 def _docx_with_formula_and_figure():
     document_xml = """<?xml version="1.0" encoding="UTF-8"?>
     <w:document
@@ -189,6 +223,24 @@ class ArticleExtractionTests(SimpleTestCase):
         )
         self.assertEqual(len(article["references"]), 1)
         self.assertGreaterEqual(metadata["confidence"]["title"], 0.7)
+
+    def test_preserves_uppercase_surnames_in_full_author_names(self):
+        snapshot = analyze_document_bytes(
+            _article_with_uppercase_surnames_docx(),
+            "uppercase-surnames.docx",
+        )
+
+        self.assertEqual(
+            snapshot["metadata"]["authors"],
+            [
+                "ВОЛКОВ Андрей Андреевич",
+                "ОБУХОВ Артем Дмитриевич",
+            ],
+        )
+        self.assertEqual(
+            snapshot["metadata"]["document_authors"],
+            "ВОЛКОВ Андрей Андреевич\nОБУХОВ Артем Дмитриевич",
+        )
 
     def test_extracts_real_omml_formulas_and_drawing_relationships(self):
         snapshot = analyze_document_bytes(

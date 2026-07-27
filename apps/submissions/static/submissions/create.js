@@ -716,7 +716,6 @@
             title: document.getElementById("id_title"),
             abstract: document.getElementById("id_abstract"),
             document_authors: document.getElementById("id_document_authors"),
-            organizations: document.getElementById("id_organizations"),
             contact_emails: document.getElementById("id_contact_emails"),
             keywords: document.getElementById("id_keywords")
         };
@@ -806,7 +805,7 @@
                 useSemanticModel ? "Нейросеть определяет структуру…" : "Читаем документ…",
                 useSemanticModel
                     ? "Классифицируем извлечённые абзацы с учётом стилей и расположения."
-                    : "Ищем название, авторов, организации, e-mail, аннотацию и ключевые слова."
+                    : "Ищем название, авторов, e-mail, аннотацию и ключевые слова."
             );
             var body = new FormData();
             body.append("file", file, file.name);
@@ -844,7 +843,6 @@
                     var found = [];
                     if (metadata.title) { found.push("название"); }
                     if (authorCount) { found.push("авторов: " + authorCount); }
-                    if (metadata.organizations) { found.push("организацию"); }
                     if (metadata.abstract) { found.push("аннотацию"); }
                     if (metadata.keywords) { found.push("ключевые слова"); }
                     if (metadata.contact_emails) { found.push("e-mail"); }

@@ -69,7 +69,8 @@ COMPACT_AUTHOR_RE = re.compile(
     r"|[А-ЯЁA-Z][А-ЯЁа-яёA-Za-z'’-]+\s+(?:[А-ЯЁA-Z]\s*\.\s*){1,2}"
 )
 FULL_NAME_RE = re.compile(
-    r"\b[А-ЯЁ][а-яё'’-]+\s+[А-ЯЁ][а-яё'’-]+(?:\s+[А-ЯЁ][а-яё'’-]+)?\b"
+    r"\b[А-ЯЁ][А-ЯЁа-яё'’-]+\s+[А-ЯЁ][А-ЯЁа-яё'’-]+"
+    r"(?:\s+[А-ЯЁ][А-ЯЁа-яё'’-]+)?\b"
 )
 SECTION_ALIASES = {
     "Введение": ("введение", "introduction"),
@@ -1769,7 +1770,40 @@ def _author_surname(value):
     if not tokens:
         return normalize_for_match(value)
     non_initials = [token for token in tokens if len(token.replace(".", "")) > 1]
-    return normalize_for_match(non_initials[-1] if non_initials else tokens[-1])
+    if not non_initials:
+        return normalize_for_match(tokens[-1])
+
+    uppercase = [
+        token
+        for token in non_initials
+        if len(token) > 1 and _uppercase_ratio(token) >= 0.9
+    ]
+    if len(uppercase) == 1:
+        return normalize_for_match(uppercase[0])
+
+    cyrillic = [
+        token
+        for token in non_initials
+        if re.search(r"[А-ЯЁа-яё]", token)
+    ]
+    if len(cyrillic) >= 3:
+        normalized = [normalize_for_match(token) for token in cyrillic]
+        patronymic_suffixes = (
+            "вич",
+            "вна",
+            "ична",
+            "инична",
+            "овна",
+            "евна",
+            "оглы",
+            "кызы",
+        )
+        if normalized[-1].endswith(patronymic_suffixes):
+            return normalized[0]
+        if normalized[-2].endswith(patronymic_suffixes):
+            return normalized[-1]
+
+    return normalize_for_match(non_initials[-1])
 
 
 def _extract_authors(paragraphs, title):
@@ -1864,8 +1898,31 @@ def _parse_author_identity(author):
         initials.append(letter.casefold().replace("ё", "е"))
     if not initials:
         tokens = re.findall(r"[а-яёa-z'’-]+", normalized, re.I)
-        if tokens and normalize_for_match(tokens[0]) == surname:
-            initials = [token[0] for token in tokens[1:3] if token]
+        name_tokens = [
+            token
+            for token in tokens
+            if normalize_for_match(token) != surname
+        ]
+        initials = [normalize_for_match(token[0]) for token in name_tokens[:2] if token]
+    return surname, initials
+
+
+def _user_author_identity(user):
+    first_name = normalize_space(getattr(user, "first_name", ""))
+    last_name = normalize_space(getattr(user, "last_name", ""))
+    if last_name:
+        surname = normalize_for_match(last_name)
+        name_tokens = re.findall(r"[А-ЯЁа-яёA-Za-z'’-]+", first_name)
+    else:
+        display = normalize_space(user.get_full_name() or user.username)
+        tokens = re.findall(r"[А-ЯЁа-яёA-Za-z'’-]+", display)
+        surname = normalize_for_match(tokens[0]) if tokens else ""
+        name_tokens = tokens[1:]
+    initials = [
+        normalize_for_match(token[0])
+        for token in name_tokens[:2]
+        if token
+    ]
     return surname, initials
 
 
@@ -1879,20 +1936,17 @@ def match_authors_to_users(authors, users):
         for user in users:
             if user.id in used_ids:
                 continue
-            display = normalize_space(user.get_full_name() or user.username)
-            tokens = re.findall(r"[А-ЯЁа-яёA-Za-z'’-]+", display)
-            if not tokens:
-                continue
-            user_surname = normalize_for_match(user.last_name or tokens[0])
+            user_surname, user_initials = _user_author_identity(user)
             if user_surname != surname:
                 continue
             score = 5
-            user_initials = [normalize_for_match(token[0]) for token in tokens[1:3] if token]
-            if initials:
-                score += sum(
-                    index < len(user_initials) and initial == user_initials[index]
-                    for index, initial in enumerate(initials[:2])
-                )
+            compared = min(len(initials), len(user_initials), 2)
+            if compared and any(
+                initials[index] != user_initials[index]
+                for index in range(compared)
+            ):
+                continue
+            score += compared * 2
             if score > best_score:
                 best = user
                 best_score = score

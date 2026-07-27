@@ -601,6 +601,8 @@ class SubmissionCreateViewTests(TestCase):
         self.assertContains(response, "data-metadata-extraction")
         self.assertContains(response, reverse("submissions:extract_metadata"))
         self.assertContains(response, "Уточнить структуру нейросетью")
+        self.assertNotContains(response, 'id="id_organizations"')
+        self.assertNotContains(response, "Организации авторов")
 
     @patch("apps.submissions.views.analyze_document")
     def test_metadata_endpoint_can_request_grounded_semantic_refinement(
