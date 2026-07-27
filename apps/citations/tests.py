@@ -613,7 +613,7 @@ class CitationSystemTests(TestCase):
         self.assertEqual(result.paragraphs[-2].text, recommendations[0]["citation"])
         self.assertEqual(result.paragraphs[-1].text, recommendations[1]["citation"])
 
-    def test_document_is_not_created_when_claim_marker_cannot_be_inserted(self):
+    def test_saved_paragraph_index_is_used_when_claim_text_no_longer_matches(self):
         document = Document()
         document.add_paragraph("Текст документа уже изменён.")
         source = BytesIO()
@@ -621,6 +621,7 @@ class CitationSystemTests(TestCase):
         claim = {
             "id": "claim-missing",
             "text": "Фрагмент, которого нет в документе.",
+            "paragraph_index": 0,
             "recommendations": [
                 {
                     "article_id": "1001",
@@ -638,12 +639,15 @@ class CitationSystemTests(TestCase):
             index_status={"ready": True},
         )
 
-        with self.assertRaisesRegex(ValueError, "Не удалось поставить ссылку"):
-            apply_to_docx(
-                user_id=self.user.pk,
-                token=payload["token"],
-                selections=[{"claim_id": "claim-missing", "article_id": "1001"}],
-            )
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[{"claim_id": "claim-missing", "article_id": "1001"}],
+        )
+        result = Document(output)
+
+        self.assertEqual(result.paragraphs[0].text, "Текст документа уже изменён. [1]")
+        self.assertIn("Иванов И. И. Новый источник. 2024.", result.paragraphs[-1].text)
 
     def test_added_reference_continues_visible_decimal_bibliography_numbering(self):
         document = Document()

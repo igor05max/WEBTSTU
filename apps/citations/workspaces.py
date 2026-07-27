@@ -344,6 +344,23 @@ def _existing_reference_numbers(document, bibliography_heading):
     return numbers
 
 
+def _claim_target_paragraph(document_paragraphs, claim):
+    target_text = " ".join(str(claim.get("text") or "").split())
+    normalized_target = target_text.casefold().replace("ё", "е")
+    if normalized_target:
+        for paragraph in document_paragraphs:
+            normalized = " ".join(paragraph.text.split()).casefold().replace("ё", "е")
+            if normalized_target in normalized:
+                return paragraph
+    try:
+        paragraph_index = int(claim.get("paragraph_index"))
+    except (TypeError, ValueError):
+        return None
+    if 0 <= paragraph_index < len(document_paragraphs):
+        return document_paragraphs[paragraph_index]
+    return None
+
+
 def apply_to_docx(*, user_id, token, selections):
     payload = load_workspace(user_id=user_id, token=token)
     if payload.get("suffix") != ".docx" or not payload.get("source_name"):
@@ -385,39 +402,42 @@ def apply_to_docx(*, user_id, token, selections):
         for article_id, offset in article_numbers.items()
     }
 
-    selected_by_claim = {}
-    for claim, _result, article_id in selected:
-        claim_id = str(claim.get("id") or "")
-        group = selected_by_claim.setdefault(
-            claim_id,
-            {"claim": claim, "numbers": []},
+    selected_by_placement = {}
+    for claim, result, article_id in selected:
+        target_text = " ".join(str(claim.get("text") or "").split())
+        try:
+            paragraph_index = int(claim.get("paragraph_index"))
+        except (TypeError, ValueError):
+            paragraph_index = -1
+        placement_key = (
+            paragraph_index,
+            target_text.casefold().replace("ё", "е"),
         )
-        number = number_by_article[article_id]
-        if number not in group["numbers"]:
-            group["numbers"].append(number)
+        group = selected_by_placement.setdefault(
+            placement_key,
+            {"claim": claim, "items": []},
+        )
+        group["items"].append((claim, result, article_id))
 
     document_paragraphs = list(_iter_document_paragraphs(document))
-    missing_markers = []
-    for group in selected_by_claim.values():
+    for group in selected_by_placement.values():
         claim = group["claim"]
-        marker = f"[{', '.join(str(value) for value in sorted(group['numbers']))}]"
-        target_text = " ".join(str(claim.get("text") or "").split())
-        inserted = False
-        for paragraph in document_paragraphs:
-            normalized = " ".join(paragraph.text.split())
-            if target_text and target_text in normalized:
-                if not _insert_marker_after_claim(paragraph, target_text, marker):
-                    paragraph.add_run(f" {marker}")
-                inserted = True
-                break
-        if not inserted:
-            missing_markers.append(target_text[:160])
-
-    if missing_markers:
-        raise ValueError(
-            "Не удалось поставить ссылку рядом с выбранным фрагментом: "
-            f"«{missing_markers[0]}». Документ не был сформирован."
+        paragraph = _claim_target_paragraph(document_paragraphs, claim)
+        if paragraph is None:
+            raise ValueError(
+                "Не удалось определить сохранённый абзац для ссылки. "
+                "Исходный DOCX повреждён или его структура изменилась."
+            )
+        numbers = sorted(
+            {
+                number_by_article[article_id]
+                for _claim, _result, article_id in group["items"]
+            }
         )
+        marker = f"[{', '.join(str(value) for value in numbers)}]"
+        target_text = " ".join(str(claim.get("text") or "").split())
+        if not _insert_marker_after_claim(paragraph, target_text, marker):
+            paragraph.add_run(f" {marker}")
 
     if bibliography_heading is None:
         try:
@@ -478,6 +498,7 @@ def prepare_docx_result(*, user_id, token, selections):
         }
         for claim, _result, article_id in selected
     ]
+    payload.pop("citation_insertion_report", None)
     directory = payload.pop("_directory")
     (directory / "workspace.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
