@@ -306,6 +306,28 @@
     opacity: 0.82;
 }
 
+.submission-semantic-retry {
+    margin-top: 9px;
+    padding: 7px 11px;
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    color: inherit;
+    background: rgba(255, 255, 255, 0.72);
+    font: inherit;
+    font-size: 0.66rem;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.submission-semantic-retry[hidden] {
+    display: none;
+}
+
+.submission-semantic-retry:disabled {
+    cursor: wait;
+    opacity: 0.55;
+}
+
 .submission-metadata-spinner {
     width: 17px;
     height: 17px;

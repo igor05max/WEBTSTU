@@ -1,6 +1,7 @@
 import io
 from collections import Counter
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from django.db import models, transaction
 
@@ -30,6 +31,7 @@ from document_template_engine import (
 
 TEMPLATE_EXTENSIONS = {
     ".docx",
+    ".dotx",
     ".doc",
     ".pdf",
     ".tex",
@@ -73,7 +75,34 @@ def _extract_docx_rules(data):
     except ImportError:
         return {}
 
-    document = Document(io.BytesIO(data))
+    source = io.BytesIO(data)
+    try:
+        document = Document(source)
+    except ValueError:
+        source = io.BytesIO()
+        try:
+            with ZipFile(io.BytesIO(data)) as input_archive, ZipFile(
+                source,
+                "w",
+                ZIP_DEFLATED,
+            ) as output_archive:
+                for info in input_archive.infolist():
+                    value = input_archive.read(info)
+                    if info.filename == "[Content_Types].xml":
+                        value = value.replace(
+                            b"application/vnd.openxmlformats-officedocument."
+                            b"wordprocessingml.template.main+xml",
+                            b"application/vnd.openxmlformats-officedocument."
+                            b"wordprocessingml.document.main+xml",
+                        )
+                    output_archive.writestr(info, value)
+        except (OSError, BadZipFile, KeyError):
+            return {}
+        source.seek(0)
+        try:
+            document = Document(source)
+        except (OSError, ValueError):
+            return {}
     page_rules = {}
     if document.sections:
         section = document.sections[0]
@@ -107,7 +136,18 @@ def _extract_docx_rules(data):
                 font_sizes.append(_round_pt(run.font.size))
         formatting = paragraph.paragraph_format
         spacing = formatting.line_spacing
-        if isinstance(spacing, (int, float)):
+        if hasattr(spacing, "pt"):
+            paragraph_sizes = [
+                _round_pt(run.font.size)
+                for run in paragraph.runs
+                if run.text.strip() and run.font.size is not None
+            ]
+            reference_size = _dominant(paragraph_sizes)
+            if reference_size:
+                line_spacings.append(
+                    round(float(spacing.pt) / reference_size, 2)
+                )
+        elif isinstance(spacing, (int, float)):
             line_spacings.append(round(float(spacing), 2))
         first_line_indents.append(_round_cm(formatting.first_line_indent))
         if paragraph.alignment is not None:
@@ -132,7 +172,7 @@ def _extract_template_content(template):
     snapshot = analyze_document_bytes(data, template.file.name)
     text = snapshot.get("text") or ""
     parse_warning = snapshot.get("parse_error") or ""
-    if suffix == ".docx":
+    if suffix in {".docx", ".dotx"}:
         deterministic_rules = _extract_docx_rules(data)
     elif suffix == ".tex":
         deterministic_rules = extract_latex_template_rules(data)

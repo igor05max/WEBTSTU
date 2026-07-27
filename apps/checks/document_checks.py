@@ -295,6 +295,13 @@ def build_document_quality_report(submission, version, *, snapshot=None):
     references = []
     if reference_index is not None:
         references = [item["text"] for item in paragraphs[reference_index + 1 :] if len(item["text"]) > 20]
+    structured_references = (snapshot.get("article") or {}).get("references") or []
+    if structured_references:
+        references = [
+            item.get("text", "")
+            for item in structured_references
+            if normalize_space(item.get("text", ""))
+        ]
     reference_policy = _journal_policy(submission)
     references_required = bool(
         reference_policy.get("references_required")
@@ -413,7 +420,10 @@ def build_document_quality_report(submission, version, *, snapshot=None):
         "figure_captions": len(figure_captions),
         "tables": len(data_tables),
         "table_captions": len(table_captions),
-        "formulas": len(equation_labels),
+        "formulas": max(
+            len(equation_labels),
+            len(snapshot.get("formulas") or []),
+        ),
         "references": len(references),
         "citations": len(cited_numbers),
     }
@@ -443,7 +453,7 @@ def build_file_safety_report(submission, version, *, snapshot=None):
         issues.append(_issue("file_too_large", "Превышен размер файла", "critical", f"Размер файла {round(size / 1024 / 1024, 1)} МБ, лимит — {round(maximum_size / 1024 / 1024)} МБ.", location="Файл"))
 
     signature_valid = True
-    if suffix == ".docx":
+    if suffix in {".docx", ".dotx"}:
         signature_valid = magic_hex.startswith("504b")
     elif suffix == ".pdf":
         signature_valid = magic_hex.startswith("25504446")
@@ -461,7 +471,7 @@ def build_file_safety_report(submission, version, *, snapshot=None):
             )
         )
 
-    if suffix == ".docx":
+    if suffix in {".docx", ".dotx"}:
         if snapshot.get("dangerous_members"):
             for member in snapshot["dangerous_members"][:20]:
                 issues.append(_issue("dangerous_archive_member", "Потенциально опасное вложение", "critical", f"В контейнере DOCX найден объект «{member}».", location="Внутри DOCX", context=member, highlight=member, suggestion="Удалите макрос, OLE-объект или исполняемое вложение."))

@@ -50,11 +50,8 @@ from apps.submissions.document_preview import (
     read_docx_preview,
     read_text_preview,
 )
-from apps.submissions.document_analysis import (
-    analyze_document_bytes,
-    match_authors_to_users,
-    read_file_bytes,
-)
+from apps.submissions.document_ai import analyze_document
+from apps.submissions.document_analysis import match_authors_to_users, read_file_bytes
 from apps.submissions.models import Submission, SubmissionAppeal, SubmissionStatus, SubmissionVersion
 from apps.submissions.template_processing import (
     prepare_submission_template_by_id,
@@ -867,7 +864,7 @@ def submission_create(request):
                 journal=journal,
             )
             uploaded_material = form.cleaned_data["file"]
-            document_snapshot = analyze_document_bytes(
+            document_snapshot = analyze_document(
                 read_file_bytes(uploaded_material),
                 uploaded_material.name,
             )
@@ -928,7 +925,12 @@ def extract_submission_metadata_view(request):
             {"error": f"Файл превышает лимит {round(maximum_size / 1024 / 1024)} МБ."},
             status=400,
         )
-    snapshot = analyze_document_bytes(read_file_bytes(uploaded_file), uploaded_file.name)
+    semantic_requested = request.POST.get("semantic") == "1"
+    snapshot = analyze_document(
+        read_file_bytes(uploaded_file),
+        uploaded_file.name,
+        use_ai=True if semantic_requested else None,
+    )
     metadata = snapshot.get("metadata") or {}
     users = list(User.objects.select_related("org_unit").filter(is_active=True))
     matches = match_authors_to_users(metadata.get("authors") or [], users)
@@ -939,10 +941,19 @@ def extract_submission_metadata_view(request):
             "metadata": metadata,
             "matched_users": matches,
             "analysis": {
+                "parser_version": "2.1",
                 "file_name": snapshot.get("file_name"),
+                "source_format": snapshot.get("suffix"),
                 "parse_error": snapshot.get("parse_error"),
+                "text_blocks": len(snapshot.get("paragraphs") or []),
+                "conversion": snapshot.get("conversion") or {},
                 "images": snapshot.get("image_count", 0),
                 "tables": len(snapshot.get("tables") or []),
+                "formulas": len(snapshot.get("formulas") or []),
+                "sections": len((snapshot.get("article") or {}).get("sections") or []),
+                "references": len((snapshot.get("article") or {}).get("references") or []),
+                "needs_review": metadata.get("needs_review") or [],
+                "semantic_refinement": snapshot.get("semantic_refinement") or {},
             },
         }
     )

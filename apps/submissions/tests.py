@@ -600,6 +600,63 @@ class SubmissionCreateViewTests(TestCase):
         self.assertContains(response, "Данные из материала")
         self.assertContains(response, "data-metadata-extraction")
         self.assertContains(response, reverse("submissions:extract_metadata"))
+        self.assertContains(response, "Уточнить структуру нейросетью")
+
+    @patch("apps.submissions.views.analyze_document")
+    def test_metadata_endpoint_can_request_grounded_semantic_refinement(
+        self,
+        analyze_document_mock,
+    ):
+        analyze_document_mock.return_value = {
+            "file_name": "article.doc",
+            "suffix": ".doc",
+            "parse_error": "",
+            "paragraphs": [{"block_id": "p:0", "text": "Title"}],
+            "tables": [],
+            "formulas": [],
+            "image_count": 0,
+            "article": {"sections": [], "references": []},
+            "metadata": {
+                "title": "Title",
+                "authors": [],
+                "organizations": "",
+                "abstract": "",
+                "keywords": "",
+                "needs_review": [{"field": "authors"}],
+            },
+            "semantic_refinement": {
+                "enabled": True,
+                "status": "completed",
+            },
+            "conversion": {
+                "status": "completed",
+                "target_format": "docx",
+            },
+        }
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("submissions:extract_metadata"),
+            data={
+                "file": SimpleUploadedFile(
+                    "article.doc",
+                    bytes.fromhex("d0cf11e0a1b11ae1") + b"legacy",
+                ),
+                "semantic": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        analyze_document_mock.assert_called_once()
+        self.assertTrue(analyze_document_mock.call_args.kwargs["use_ai"])
+        payload = response.json()
+        self.assertEqual(payload["metadata"]["title"], "Title")
+        self.assertEqual(payload["analysis"]["parser_version"], "2.1")
+        self.assertEqual(payload["analysis"]["text_blocks"], 1)
+        self.assertEqual(
+            payload["analysis"]["conversion"]["status"],
+            "completed",
+        )
 
     @override_settings(SUBMISSION_CHECKS_ASYNC=True)
     @patch("apps.submissions.views.queue_submission_template_processing")

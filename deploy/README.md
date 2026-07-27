@@ -44,6 +44,25 @@ sudo -u webtstu /opt/webtstu/venv/bin/python manage.py collectstatic --noinput
 systemctl restart webtstu
 ```
 
+Для извлечения данных из старых `.doc` и семантического уточнения структуры
+проверьте production-настройки:
+
+```bash
+sudo -u webtstu /usr/bin/libreoffice --version
+grep -E '^(LIBREOFFICE_BINARY|AI_PROVIDER|AI_BASE_URL|AI_MODEL|SUBMISSION_DOCUMENT_EXTRACTION_AI_ENABLED)=' \
+  /opt/webtstu/shared/.env
+```
+
+Ожидаемые значения:
+
+```dotenv
+LIBREOFFICE_BINARY=/usr/bin/libreoffice
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=http://192.168.92.20:8088/v1
+AI_MODEL=Qwen3.6-27B-IQ4_XS.gguf
+SUBMISSION_DOCUMENT_EXTRACTION_AI_ENABLED=1
+```
+
 ## HTTPS без домена
 
 Сертификат для IP хранится в `/etc/letsencrypt/live/185.221.154.185/`.
