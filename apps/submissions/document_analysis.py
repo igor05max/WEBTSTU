@@ -124,22 +124,20 @@ def read_file_bytes(uploaded_file):
 
 
 def _decode_text(data):
-    variants = []
-    for encoding in ("utf-8", "utf-8-sig", "cp1251", "utf-16le"):
+    # Prefer valid Unicode encodings. CP1251 can decode almost any byte
+    # sequence and otherwise wins the Cyrillic heuristic even for valid UTF-8,
+    # producing mojibake such as "РџСЂРѕРІ...".
+    for encoding in ("utf-8-sig", "utf-8"):
         try:
-            text = data.decode(encoding)
+            return data.decode(encoding)
         except UnicodeDecodeError:
             continue
-        variants.append(text)
-    if not variants:
-        return data.decode("utf-8", errors="ignore")
-    return max(
-        variants,
-        key=lambda value: (
-            sum("А" <= char <= "я" or char in "Ёё" for char in value),
-            sum(char.isalpha() for char in value),
-        ),
-    )
+    for encoding in ("cp1251", "utf-16le"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="ignore")
 
 
 def _latex_command_values(source):

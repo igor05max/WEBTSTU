@@ -198,6 +198,17 @@ def _docx_with_embedded_vector_equation():
 
 
 class ArticleExtractionTests(SimpleTestCase):
+    def test_utf8_russian_text_is_not_misread_as_cp1251(self):
+        source = (
+            "Проверка быстрой загрузки полей\n"
+            "Аннотация. Технический текст для проверки интерфейса."
+        ).encode("utf-8")
+
+        snapshot = analyze_document_bytes(source, "article.txt")
+
+        self.assertIn("Проверка быстрой загрузки полей", snapshot["text"])
+        self.assertNotIn("РџСЂ", snapshot["text"])
+
     def test_extracts_structure_when_word_styles_and_labels_are_inconsistent(self):
         snapshot = analyze_document_bytes(
             _badly_formatted_article_docx(),
