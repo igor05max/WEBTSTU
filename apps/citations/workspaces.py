@@ -161,16 +161,24 @@ def _copy_paragraph_format(source, target):
     target._p.insert(0, deepcopy(source_properties))
 
 
-def _prefix_paragraph(paragraph, prefix):
-    if paragraph.runs:
-        paragraph.runs[0].text = prefix + paragraph.runs[0].text
-    else:
-        paragraph.add_run(prefix)
+def _copy_run_format(source, target):
+    if source is None or source._r.rPr is None:
+        return
+    if target._r.rPr is not None:
+        target._r.remove(target._r.rPr)
+    target._r.insert(0, deepcopy(source._r.rPr))
 
 
-def _bibliography_layout(document, heading):
-    if heading is None:
-        return {"prototype": None, "mode": "bracket", "delimiter": "]"}
+def _is_section_heading(paragraph):
+    style_name = (
+        (paragraph.style.name or "").casefold()
+        if paragraph.style is not None
+        else ""
+    )
+    return "heading" in style_name or "заголов" in style_name
+
+
+def _bibliography_references(document, heading):
     paragraphs = document.paragraphs
     heading_index = next(
         (
@@ -180,29 +188,66 @@ def _bibliography_layout(document, heading):
         ),
         len(paragraphs) - 1,
     )
-    references = [
-        paragraph
-        for paragraph in paragraphs[heading_index + 1 :]
-        if paragraph.text.strip()
-    ]
+    references = []
+    for paragraph in paragraphs[heading_index + 1 :]:
+        if not paragraph.text.strip():
+            continue
+        if _is_section_heading(paragraph):
+            break
+        references.append(paragraph)
+    return references
+
+
+def _prefix_paragraph(paragraph, prefix):
+    if paragraph.runs:
+        paragraph.runs[0].text = prefix + paragraph.runs[0].text
+    else:
+        paragraph.add_run(prefix)
+
+
+def _bibliography_layout(document, heading):
+    if heading is None:
+        return {
+            "prototype": None,
+            "anchor": None,
+            "mode": "bracket",
+            "delimiter": "]",
+        }
+    references = _bibliography_references(document, heading)
     if not references:
-        return {"prototype": None, "mode": "bracket", "delimiter": "]"}
+        return {
+            "prototype": None,
+            "anchor": heading,
+            "mode": "bracket",
+            "delimiter": "]",
+        }
 
     prototype = references[-1]
     if any(_has_automatic_numbering(paragraph) for paragraph in references):
         numbered_prototype = next(
             paragraph for paragraph in reversed(references) if _has_automatic_numbering(paragraph)
         )
-        return {"prototype": numbered_prototype, "mode": "automatic", "delimiter": ""}
+        return {
+            "prototype": numbered_prototype,
+            "anchor": prototype,
+            "mode": "automatic",
+            "delimiter": "",
+        }
 
     bracketed = [BRACKETED_REFERENCE_RE.match(paragraph.text) for paragraph in references]
     if all(match is not None for match in bracketed):
-        return {"prototype": prototype, "mode": "bracket", "delimiter": "]"}
+        return {
+            "prototype": prototype,
+            "anchor": prototype,
+            "mode": "bracket",
+            "delimiter": "]",
+        }
 
     decimal = [DECIMAL_REFERENCE_RE.match(paragraph.text) for paragraph in references]
     if all(match is not None for match in decimal):
         return {
             "prototype": prototype,
+            "anchor": prototype,
             "mode": "decimal",
             "delimiter": decimal[-1].group(2),
         }
@@ -213,9 +258,19 @@ def _bibliography_layout(document, heading):
     if all(match is None for match in bracketed) and all(match is None for match in decimal):
         for number, paragraph in enumerate(references, start=1):
             _prefix_paragraph(paragraph, f"[{number}] ")
-        return {"prototype": prototype, "mode": "bracket", "delimiter": "]"}
+        return {
+            "prototype": prototype,
+            "anchor": prototype,
+            "mode": "bracket",
+            "delimiter": "]",
+        }
 
-    return {"prototype": prototype, "mode": "bracket", "delimiter": "]"}
+    return {
+        "prototype": prototype,
+        "anchor": prototype,
+        "mode": "bracket",
+        "delimiter": "]",
+    }
 
 
 def _append_bibliography_entry(document, layout, number, citation):
@@ -226,11 +281,20 @@ def _append_bibliography_entry(document, layout, number, citation):
 
     mode = layout.get("mode")
     if mode == "automatic":
-        paragraph.add_run(citation)
+        text = citation
     elif mode == "decimal":
-        paragraph.add_run(f"{number}{layout.get('delimiter') or '.'} {citation}")
+        text = f"{number}{layout.get('delimiter') or '.'} {citation}"
     else:
-        paragraph.add_run(f"[{number}] {citation}")
+        text = f"[{number}] {citation}"
+    run = paragraph.add_run(text)
+    if prototype is not None and prototype.runs:
+        _copy_run_format(prototype.runs[0], run)
+
+    anchor = layout.get("anchor")
+    if anchor is not None:
+        anchor._p.addnext(paragraph._p)
+    layout["anchor"] = paragraph
+    layout["prototype"] = paragraph
     return paragraph
 
 

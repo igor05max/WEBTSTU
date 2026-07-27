@@ -83,13 +83,14 @@
     const copyButton = plan.querySelector("[data-copy-plan]");
     const applyForm = plan.querySelector("[data-apply-form]");
     const selectionInput = plan.querySelector("[data-selection-input]");
+    const planCount = plan.querySelector("[data-plan-count]");
 
     const setButtonState = (button, isAdded) => {
         button.classList.toggle("is-added", isAdded);
         button.setAttribute("aria-pressed", isAdded ? "true" : "false");
         button.innerHTML = isAdded
             ? "<span>−</span> Убрать"
-            : "<span>+</span> Добавить";
+            : "<span>+</span> Выбрать источник";
     };
 
     const render = () => {
@@ -111,13 +112,15 @@
             const entry = document.createElement("li");
             entry.innerHTML = `
                 <div><span>[${number}]</span><strong></strong></div>
+                <small></small>
                 <p></p>
                 <button type="button" aria-label="Удалить источник">×</button>
             `;
             entry.querySelector("strong").textContent = group.title;
-            entry.querySelector("p").textContent = group.items.length > 1
-                ? `Для ${group.items.length} фрагментов · ${group.citation}`
-                : group.citation;
+            entry.querySelector("small").textContent = group.items.length > 1
+                ? `Будет поставлен у ${group.items.length} фрагментов`
+                : "Будет поставлен у одного фрагмента";
+            entry.querySelector("p").textContent = group.citation;
             entry.querySelector("button").addEventListener("click", () => {
                 group.items.forEach((item) => {
                     selected.delete(item.key);
@@ -128,6 +131,7 @@
             list.append(entry);
         });
         const hasItems = selected.size > 0;
+        if (planCount) planCount.textContent = String(grouped.size);
         empty.hidden = hasItems;
         copyButton.hidden = !hasItems;
         if (applyForm) applyForm.hidden = !hasItems;
@@ -181,7 +185,9 @@
         const text = `ССЫЛКИ В ТЕКСТЕ\n${placements.join("\n\n")}\n\nСПИСОК ЛИТЕРАТУРЫ\n${references.join("\n")}`;
         await navigator.clipboard.writeText(text);
         copyButton.textContent = "Скопировано";
-        window.setTimeout(() => { copyButton.textContent = "Скопировать список"; }, 1800);
+        window.setTimeout(() => {
+            copyButton.textContent = "Скопировать оформленный список";
+        }, 1800);
     });
 
     render();

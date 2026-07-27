@@ -3,7 +3,7 @@
 
 {% block title %}Материал с источниками — {{ submission.title }}{% endblock %}
 {% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/version-preview.css' %}?v=20260724c">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/version-preview.css' %}?v=20260728b">{% endblock %}
 
 {% block content %}
 <header class="document-preview-header corrected-document-header">
@@ -48,8 +48,32 @@
         </div>
         <span class="document-preview-format">DOCX</span>
     </div>
-    <div class="document-preview-pdf">
-        <iframe title="Предпросмотр материала с источниками" src="{% url 'citations:submission_result_content' workspace_token %}"></iframe>
+    <div class="document-preview-pdf" data-corrected-preview-shell>
+        <div class="document-preview-loading" data-corrected-preview-loading role="status">
+            <span class="document-preview-loading-spinner" aria-hidden="true"></span>
+            <strong>Документ с источниками формируется</strong>
+            <span>Страница уже доступна. Настоящий PDF появится здесь автоматически.</span>
+        </div>
+        <iframe
+            title="Предпросмотр материала с источниками"
+            data-corrected-preview-frame
+            src="{% url 'citations:submission_result_content' workspace_token %}#toolbar=1&amp;navpanes=0"
+        ></iframe>
     </div>
 </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const frame = document.querySelector("[data-corrected-preview-frame]");
+    const loading = document.querySelector("[data-corrected-preview-loading]");
+    if (!frame || !loading) {
+        return;
+    }
+    frame.addEventListener("load", () => {
+        loading.hidden = true;
+    }, {once: true});
+});
+</script>
 {% endblock %}

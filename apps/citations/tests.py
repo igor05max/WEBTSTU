@@ -11,7 +11,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Cm
+from docx.shared import Cm, Pt
 
 from apps.citations.analysis import analyze_claims, text_snapshot
 from apps.citations.checks import build_citation_coverage_report
@@ -117,9 +117,9 @@ class CitationSystemTests(TestCase):
         self.assertContains(response, "10.1000/test.1")
         self.assertContains(response, "Фрагмент из вашей статьи")
         self.assertContains(response, "поставим сразу после этого фрагмента")
-        self.assertContains(response, "Почему на источник можно сослаться")
-        self.assertContains(response, "Найденная статья")
-        self.assertContains(response, "Фрагмент из рекомендованной статьи")
+        self.assertContains(response, "Заключение локальной модели")
+        self.assertContains(response, "Вариант 1")
+        self.assertContains(response, "Показать подтверждающий фрагмент источника")
         self.assertContains(
             response,
             "Свёрточные нейронные сети применяются для классификации",
@@ -593,6 +593,68 @@ class CitationSystemTests(TestCase):
             "4. Обухов А. Д. Система компьютерного зрения. 2023.",
         )
 
+    def test_added_reference_stays_inside_bibliography_and_copies_run_format(self):
+        document = Document()
+        claim_text = "Нейронные сети применяются для анализа движений человека."
+        document.add_paragraph(claim_text)
+        document.add_paragraph("Список литературы", style="Heading 1")
+        reference = document.add_paragraph()
+        reference_run = reference.add_run("[1] Первый источник.")
+        reference_run.font.name = "Times New Roman"
+        reference_run.font.size = Pt(9)
+        reference_run.italic = True
+        reference.paragraph_format.first_line_indent = Cm(-0.5)
+        document.add_paragraph("Приложение А", style="Heading 1")
+        document.add_paragraph("Материалы приложения.")
+        source = BytesIO()
+        document.save(source)
+        claim = {
+            "id": "claim-before-appendix",
+            "text": claim_text,
+            "recommendations": [
+                {
+                    "article_id": "1001",
+                    "title": "Система компьютерного зрения",
+                    "citation": "Обухов А. Д. Система компьютерного зрения. 2023.",
+                }
+            ],
+        }
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="bibliography-before-appendix.docx",
+            snapshot={"text": claim_text},
+            claims=[claim],
+            index_status={"ready": True},
+        )
+
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[
+                {
+                    "claim_id": claim["id"],
+                    "article_id": "1001",
+                }
+            ],
+        )
+        result = Document(output)
+        texts = [paragraph.text for paragraph in result.paragraphs]
+        added_index = texts.index(
+            "[2] Обухов А. Д. Система компьютерного зрения. 2023."
+        )
+
+        self.assertLess(added_index, texts.index("Приложение А"))
+        added = result.paragraphs[added_index]
+        self.assertEqual(added.runs[0].font.name, "Times New Roman")
+        self.assertEqual(added.runs[0].font.size.pt, 9)
+        self.assertTrue(added.runs[0].italic)
+        self.assertAlmostEqual(
+            added.paragraph_format.first_line_indent.cm,
+            -0.5,
+            places=2,
+        )
+
     def test_marker_can_be_inserted_into_table_without_losing_media(self):
         import base64
 
@@ -758,11 +820,20 @@ class CitationSystemTests(TestCase):
             preview_page,
             'data-site-loading-title="Сохраняем документ"',
         )
-        preview_content = self.client.get(
-            reverse("citations:submission_result_content", args=[result["token"]])
-        )
+        with patch(
+            "apps.citations.views.build_docx_bytes_pdf",
+            return_value=b"%PDF-1.4\n" + (b"0" * 120),
+        ):
+            preview_content = self.client.get(
+                reverse(
+                    "citations:submission_result_content",
+                    args=[result["token"]],
+                )
+            )
         self.assertEqual(preview_content.status_code, 200)
-        self.assertContains(preview_content, "Тестовый журнал. 2024. № 1")
+        self.assertEqual(preview_content["Content-Type"], "application/pdf")
+        self.assertIn("inline", preview_content["Content-Disposition"])
+        self.assertEqual(preview_content.content[:5], b"%PDF-")
 
         with patch("apps.checks.services.queue_submission_checks") as mocked_queue:
             applied = self.client.post(

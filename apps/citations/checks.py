@@ -114,7 +114,7 @@ def build_citation_coverage_report(
             claim,
             limit=results_per_claim,
         )
-    rerank_claims(claims, best_available_limit=8)
+    rerank_claims(claims)
     for claim in claims:
         claim["recommendations"] = _filter_recommendations(
             claim.get("recommendations"),

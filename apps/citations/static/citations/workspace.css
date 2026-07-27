@@ -559,24 +559,22 @@
 
 .citation-source-evidence {
     margin-top: 14px;
-    padding: 13px 15px;
     border-left: 3px solid var(--citation-green);
     border-radius: 0 10px 10px 0;
     background: var(--citation-green-soft);
 }
 
-.citation-source-evidence > span {
-    display: block;
-    margin-bottom: 7px;
+.citation-source-evidence summary {
+    padding: 11px 14px;
     color: var(--citation-green);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: .08em;
-    text-transform: uppercase;
+    cursor: pointer;
 }
 
 .citation-source-evidence blockquote {
     margin: 0;
+    padding: 0 14px 14px;
     color: var(--citation-ink);
     font-size: 13px;
     line-height: 1.55;
@@ -603,6 +601,7 @@
 }
 
 .citation-source {
+    padding: 17px;
     border: 1px solid var(--citation-line);
     border-radius: 14px;
     background: var(--citation-paper);
@@ -704,6 +703,29 @@
     box-shadow: 0 12px 34px rgba(24, 55, 44, .07);
 }
 
+.citation-plan-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.citation-plan-title h2 {
+    margin: 0;
+}
+
+.citation-plan-title > span {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    background: var(--citation-green);
+    font-size: 12px;
+    font-weight: 800;
+}
+
 .citation-plan-empty {
     display: grid;
     gap: 5px;
@@ -751,9 +773,21 @@
 
 .citation-plan-list li p {
     margin: 6px 0 0;
+    display: -webkit-box;
+    overflow: hidden;
     color: #4d5d56;
     font-size: 10px;
     line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+.citation-plan-list li small {
+    display: block;
+    margin-top: 5px;
+    color: var(--citation-muted);
+    font-size: 10px;
+    font-weight: 700;
 }
 
 .citation-plan-list li > button {
@@ -797,9 +831,7 @@
 
 .citation-common-topic {
     display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 8px 12px;
-    align-items: baseline;
+    gap: 6px;
     margin-top: 13px;
     padding: 11px 13px;
     border-radius: 10px;

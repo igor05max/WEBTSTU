@@ -6,9 +6,9 @@ from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.clickjacking import xframe_options_sameorigin
-from docx import Document
 
 from apps.citations.analysis import analyze_claims, document_snapshot, text_snapshot
 from apps.citations.forms import CitationSearchForm
@@ -28,6 +28,10 @@ from apps.citations.workspaces import (
     read_prepared_result,
 )
 from apps.submissions.models import Submission, SubmissionStatus
+from apps.submissions.document_preview import (
+    DocumentPreviewError,
+    build_docx_bytes_pdf,
+)
 from apps.submissions.services import add_submission_version
 from apps.submissions.template_processing import prepare_submission_template_by_id
 
@@ -129,7 +133,10 @@ def workspace(request):
                 analyzed_claim_count = len(claims)
                 for claim in claims:
                     claim["recommendations"] = search_claim(claim)
-                rerank_claims(claims, best_available_limit=8)
+                # Never offer an unrelated publication merely to fill the list.
+                # The local model may reject every candidate, which is a useful
+                # and safer result for scientific citation work.
+                rerank_claims(claims)
                 remove_source_article(
                     claims,
                     build_source_identity(
@@ -293,28 +300,23 @@ def submission_result_content(request, token):
             token=token,
         )
         _workspace_submission(request, payload)
-        document = Document(BytesIO(result_bytes))
-        paragraphs = [
-            paragraph.text
-            for paragraph in document.paragraphs
-            if paragraph.text.strip()
-        ]
-        tables = [
-            [[cell.text for cell in row.cells] for row in table.rows]
-            for table in document.tables
-        ]
+        preview_bytes = build_docx_bytes_pdf(result_bytes)
     except (ValueError, PermissionError, FileNotFoundError) as exc:
         return HttpResponse(str(exc), status=404)
-    except Exception:
+    except (DocumentPreviewError, OSError):
         return HttpResponse(
             "Не удалось показать DOCX. Скачайте подготовленный файл для просмотра.",
             status=422,
         )
-    return render(
-        request,
-        "citations/submission_result_content.html",
-        {"paragraphs": paragraphs, "tables": tables},
+    response = HttpResponse(
+        preview_bytes,
+        content_type="application/pdf",
     )
+    response["Content-Disposition"] = (
+        f'inline; filename="submission-{payload.get("submission_id")}-with-sources.pdf"'
+    )
+    patch_cache_control(response, private=True, no_store=True)
+    return response
 
 
 @login_required
