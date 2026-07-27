@@ -481,12 +481,20 @@ def _build_check_entries(submission, check_runs):
         run = latest_runs_by_code.get(definition.code)
         if run is None:
             status = CheckRunStatus.PENDING
-            status_display = "Ожидает"
             payload = {}
+            if submission.status == SubmissionStatus.DRAFT:
+                status_display = "Не запущена"
+                message = "Проверка ещё не запускалась."
+            else:
+                status_display = "Ожидает"
+                message = default_messages[CheckRunStatus.PENDING]
         else:
             status = run.status
             status_display = run.get_status_display()
             payload = run.result_payload or {}
+            message = str(
+                payload.get("message") or default_messages.get(status, "")
+            ).strip()
 
         issues = payload.get("issues") if isinstance(payload.get("issues"), list) else []
         severity_labels = {
@@ -535,7 +543,7 @@ def _build_check_entries(submission, check_runs):
                 "status": status,
                 "status_display": status_display,
                 "tone": tone,
-                "message": str(payload.get("message") or default_messages.get(status, "")).strip(),
+                "message": message,
                 "issues": issues,
                 "summary": summary,
                 "metrics": metrics,

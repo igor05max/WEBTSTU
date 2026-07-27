@@ -5,14 +5,14 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727j">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727k">
 {% endblock %}
 
 {% block content %}
 <header class="citation-hero">
     <div>
         <h1>{% if selected_submission %}Проверьте данные и источники{% else %}Умный поиск источников{% endif %}</h1>
-        <p>{% if selected_submission %}Система извлекла сведения из загруженного файла. Теперь локальная RAG-система предложит публикации, которыми можно подтвердить утверждения.{% else %}Система находит утверждения без ссылок, понимает, что именно нужно подтвердить, и ищет доказательные фрагменты в локальном корпусе научных публикаций.{% endif %}</p>
+        <p>{% if selected_submission %}Система использует сведения, указанные в заявке, и данные из загруженного файла. Теперь локальная RAG-система предложит публикации, которыми можно подтвердить утверждения.{% else %}Система находит утверждения без ссылок, понимает, что именно нужно подтвердить, и ищет доказательные фрагменты в локальном корпусе научных публикаций.{% endif %}</p>
     </div>
 </header>
 
@@ -20,19 +20,25 @@
 <section class="citation-search-card citation-metadata-card">
     <div class="citation-card-heading">
         <div>
-            <span>Распознано из документа</span>
+            <span>Данные материала</span>
             <h2>{{ selected_submission.title }}</h2>
         </div>
         <a href="{% url 'submissions:version_preview' selected_submission.pk selected_submission.current_version_id %}" target="_blank">Посмотреть исходный файл ↗</a>
     </div>
     <dl class="citation-metadata-grid">
-        <div><dt>Авторы</dt><dd>{{ selected_submission.document_authors|default:"Не удалось распознать" }}</dd></div>
+        <div>
+            <dt>Авторы</dt>
+            <dd>
+                {{ selected_submission.author }}
+                <small class="citation-metadata-note">Отправитель материала; изменить здесь нельзя.</small>
+            </dd>
+        </div>
         {% if selected_submission.organizations %}
             <div><dt>Организация</dt><dd>{{ selected_submission.organizations }}</dd></div>
         {% endif %}
-        <div><dt>Аннотация</dt><dd>{{ selected_submission.abstract|default:"Не удалось распознать" }}</dd></div>
-        <div><dt>Ключевые слова</dt><dd>{{ selected_submission.keywords|default:"Не удалось распознать" }}</dd></div>
-        <div><dt>E-mail</dt><dd>{{ selected_submission.contact_emails|default:"Не удалось распознать" }}</dd></div>
+        <div><dt>Аннотация</dt><dd>{{ selected_submission.abstract|default:"Не указана" }}</dd></div>
+        <div><dt>Ключевые слова</dt><dd>{{ selected_submission.keywords|default:"Не указаны" }}</dd></div>
+        <div><dt>E-mail</dt><dd>{{ selected_submission.contact_emails|default:"Не указан" }}</dd></div>
     </dl>
 </section>
 {% endif %}
@@ -129,7 +135,7 @@
         <div>
             <h2>{{ result.source_title }}</h2>
             {% if result.claims %}
-                <p>Фрагмент статьи, публикация и процент соответствия. Источников: {{ result.total_recommendations }}.</p>
+                <p>Фрагмент вашей статьи, основание для ссылки и подтверждающий фрагмент источника. Источников: {{ result.total_recommendations }}.</p>
             {% else %}
                 <p>Файл успешно загружен и обработан. Проверено фрагментов: {{ result.analyzed_claim_count }}.</p>
             {% endif %}
@@ -144,7 +150,7 @@
                 {% for article in claim.recommendations %}
                 <article class="citation-recommendation citation-claim citation-source" data-claim-id="{{ claim.id }}" data-article-id="{{ article.article_id }}">
                     <div class="citation-fragment-block">
-                        <span class="citation-block-label">Кусок текста из вашей статьи</span>
+                        <span class="citation-block-label">Фрагмент из вашей статьи</span>
                         <div class="citation-location">{{ claim.section|default:"Текст статьи" }} · абзац {{ claim.paragraph_index|add:"1" }}</div>
                         <h3>{{ claim.text }}</h3>
                         <div class="citation-placement"><strong>[n]</strong><span>поставим сразу после этого фрагмента</span></div>
@@ -152,7 +158,7 @@
 
                     {% if article.reason %}
                     <div class="citation-common-topic">
-                        <span>Общая тема</span>
+                        <span>Почему на источник можно сослаться</span>
                         <p>{{ article.reason }}</p>
                     </div>
                     {% endif %}
@@ -170,6 +176,12 @@
                             {% if article.year %}<span>{{ article.year }}</span>{% endif %}
                             {% if article.doi %}<span>DOI {{ article.doi }}</span>{% elif article.edn %}<span>EDN {{ article.edn }}</span>{% endif %}
                         </div>
+                        {% if article.evidence %}
+                            <div class="citation-source-evidence">
+                                <span>Фрагмент из рекомендованной статьи</span>
+                                <blockquote>{{ article.evidence }}</blockquote>
+                            </div>
+                        {% endif %}
                     </div>
 
                     <span class="citation-text" hidden>{{ article.citation }}</span>

@@ -124,7 +124,7 @@ def build_citation_coverage_report(
         build_source_identity(
             citation_snapshot,
             source_title=getattr(submission, "title", ""),
-            source_authors=getattr(submission, "document_authors", ""),
+            source_authors=str(getattr(submission, "author", "") or ""),
         ),
     )
     claims = claims_with_recommendations(claims)

@@ -45,8 +45,11 @@ class CitationSearchForm(forms.Form):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         if user is not None:
+            submissions = Submission.objects.filter(current_version__isnull=False)
+            if not user.is_superuser:
+                submissions = submissions.filter(author=user)
             self.fields["submission"].queryset = (
-                Submission.objects.filter(author=user, current_version__isnull=False)
+                submissions
                 .select_related("current_version")
                 .order_by("-updated_at")
             )

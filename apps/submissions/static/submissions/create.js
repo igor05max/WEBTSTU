@@ -766,7 +766,6 @@
         var endpoint = fileInput.getAttribute("data-metadata-extract-url");
         var status = panel.querySelector("[data-metadata-status]");
         var summary = panel.querySelector("[data-metadata-summary]");
-        var semanticRetry = panel.querySelector("[data-semantic-retry]");
         var requestNumber = 0;
         var fieldMap = {
             title: document.getElementById("id_title"),
@@ -853,7 +852,7 @@
             return matchedIds.length;
         }
 
-        function runExtraction(useSemanticModel) {
+        function runExtraction() {
             var file = fileInput.files && fileInput.files[0];
             if (!file || !endpoint) {
                 panel.hidden = true;
@@ -862,22 +861,13 @@
             requestNumber += 1;
             var currentRequest = requestNumber;
             revealEditableFields();
-            if (semanticRetry) {
-                semanticRetry.hidden = true;
-                semanticRetry.disabled = true;
-            }
             setPanel(
                 "",
-                useSemanticModel ? "Нейросеть определяет структуру…" : "Читаем документ…",
-                useSemanticModel
-                    ? "Классифицируем извлечённые абзацы с учётом стилей и расположения."
-                    : "Ищем название, авторов, e-mail, аннотацию и ключевые слова."
+                "Читаем документ…",
+                "Ищем название, авторов, e-mail, аннотацию и ключевые слова."
             );
             var body = new FormData();
             body.append("file", file, file.name);
-            if (useSemanticModel) {
-                body.append("semantic", "1");
-            }
             fetch(endpoint, {
                 method: "POST",
                 body: body,
@@ -914,8 +904,6 @@
                     if (metadata.keywords) { found.push("ключевые слова"); }
                     if (metadata.contact_emails) { found.push("e-mail"); }
                     var parserWarning = payload.analysis && payload.analysis.parse_error;
-                    var semantic = payload.analysis && payload.analysis.semantic_refinement || {};
-                    var reviewItems = payload.analysis && payload.analysis.needs_review || [];
                     var textBlockCount = payload.analysis && payload.analysis.text_blocks || 0;
                     var text = found.length ? "Распознано: " + found.join(", ") + "." : "Автоматически заполнить поля не удалось.";
                     if (matchedCount) {
@@ -927,19 +915,6 @@
                     if (!parserWarning && !textBlockCount) {
                         text += " Парсер не получил текстовых абзацев.";
                     }
-                    if (useSemanticModel && semantic.status === "completed") {
-                        text += " Структура уточнена локальной моделью.";
-                    } else if (useSemanticModel && semantic.error) {
-                        text += " Нейросеть не использована: " + semantic.error;
-                    }
-                    if (semanticRetry) {
-                        semanticRetry.disabled = false;
-                        semanticRetry.hidden = !(
-                            reviewItems.length
-                            && textBlockCount
-                            && semantic.status !== "completed"
-                        );
-                    }
                     setPanel(found.length ? "success" : "warning", found.length ? "Данные из файла добавлены — проверьте их" : "Нужна ручная проверка", text);
                 })
                 .catch(function (error) {
@@ -947,24 +922,15 @@
                         return;
                     }
                     revealEditableFields();
-                    if (semanticRetry) {
-                        semanticRetry.disabled = false;
-                        semanticRetry.hidden = true;
-                    }
                     setPanel("warning", "Не удалось прочитать данные из файла", error.message === "metadata-extraction-failed" ? "Заполните поля вручную; файл всё равно можно отправить." : error.message);
                 });
         }
 
         fileInput.addEventListener("change", function () {
-            runExtraction(false);
+            runExtraction();
         });
-        if (semanticRetry) {
-            semanticRetry.addEventListener("click", function () {
-                runExtraction(true);
-            });
-        }
         if (fileInput.files && fileInput.files.length) {
-            runExtraction(false);
+            runExtraction();
         }
     }
 

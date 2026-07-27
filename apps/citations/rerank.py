@@ -232,7 +232,9 @@ def rerank_claims(claims, *, best_available_limit=0):
 Для каждого id верни:
 - verdict: supports, partial или not_supports;
 - score: целое 0..100 (насколько источник подходит именно для цитирования утверждения);
-- reason: одно конкретное предложение о связи;
+- reason: 2–3 конкретных предложения по-русски: какую часть утверждения подтверждает
+  источник, за счёт каких общих фактов или метода на него можно сослаться и есть ли
+  ограничение у такого подтверждения;
 - evidence: самая доказательная короткая фраза только из переданного evidence, без выдумывания.
 
 Верни только JSON:
@@ -281,7 +283,7 @@ def rerank_claims(claims, *, best_available_limit=0):
         result["verdict"] = verdict
         result["score_percent"] = max(0, min(100, score))
         result["score"] = round(result["score_percent"] / 100, 4)
-        result["reason"] = str(raw.get("reason") or result["reason"]).strip()[:600]
+        result["reason"] = str(raw.get("reason") or result["reason"]).strip()[:900]
         quoted_evidence = str(raw.get("evidence") or "").strip()
         if quoted_evidence and quoted_evidence.casefold() in result["evidence"].casefold():
             result["evidence"] = quoted_evidence

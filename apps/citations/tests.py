@@ -115,10 +115,15 @@ class CitationSystemTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "НЕЙРОННЫЕ СЕТИ ДЛЯ АНАЛИЗА ИЗОБРАЖЕНИЙ")
         self.assertContains(response, "10.1000/test.1")
-        self.assertContains(response, "Кусок текста из вашей статьи")
+        self.assertContains(response, "Фрагмент из вашей статьи")
         self.assertContains(response, "поставим сразу после этого фрагмента")
-        self.assertContains(response, "Общая тема")
+        self.assertContains(response, "Почему на источник можно сослаться")
         self.assertContains(response, "Найденная статья")
+        self.assertContains(response, "Фрагмент из рекомендованной статьи")
+        self.assertContains(
+            response,
+            "Свёрточные нейронные сети применяются для классификации",
+        )
         self.assertContains(response, "абзац 1")
         self.assertNotContains(response, "Почему рекомендуется")
         self.assertNotContains(response, "Поисковые запросы")
@@ -710,8 +715,10 @@ class CitationSystemTests(TestCase):
         page = self.client.get(
             f"{reverse('citations:workspace')}?submission={submission.pk}"
         )
-        self.assertContains(page, "Распознано из документа")
-        self.assertContains(page, "Иванов И. И.")
+        self.assertContains(page, "Данные материала")
+        self.assertContains(page, str(self.user))
+        self.assertContains(page, "Отправитель материала; изменить здесь нельзя.")
+        self.assertNotContains(page, "Иванов И. И.")
         self.assertContains(page, 'name="max_claims" value="6"')
         self.assertContains(page, "Подбираем источники по тексту материала")
         self.assertNotContains(page, "Проанализировать и найти")
@@ -770,3 +777,59 @@ class CitationSystemTests(TestCase):
         self.assertEqual(submission.status, SubmissionStatus.DRAFT)
         self.assertEqual(submission.versions.count(), 2)
         mocked_queue.assert_called_once()
+
+    def test_superuser_sees_sender_as_author_and_can_search_submission(self):
+        coauthor = get_user_model().objects.create_user(
+            username="manual_coauthor",
+            first_name="Артём",
+            last_name="Обухов",
+            password="1234",
+        )
+        admin = get_user_model().objects.create_superuser(
+            username="citation_admin",
+            password="1234",
+        )
+        journal = Journal.objects.create(name="Журнал ручных авторов")
+        article_type = ArticleType.objects.create(
+            code="manual-authors-article",
+            name="Статья с ручными авторами",
+        )
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Материал с выбранными авторами",
+            abstract="Нейронные сети для классификации изображений.",
+            document_authors="",
+            keywords="нейронные сети; изображения",
+            journal=journal,
+            article_type=article_type,
+            authors=[self.user, coauthor],
+            file=SimpleUploadedFile(
+                "article.txt",
+                (
+                    "Нейронные сети широко используются для классификации медицинских "
+                    "изображений и позволяют повысить точность распознавания."
+                ).encode(),
+            ),
+            defer_checks=True,
+            mark_as_checking=False,
+        )
+        self.client.force_login(admin)
+
+        page = self.client.get(
+            f"{reverse('citations:workspace')}?submission={submission.pk}"
+        )
+
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, str(self.user))
+        self.assertNotContains(page, str(coauthor))
+        self.assertContains(page, "Отправитель материала; изменить здесь нельзя.")
+        self.assertNotContains(page, "Не удалось распознать")
+
+        search = self.client.post(
+            reverse("citations:workspace"),
+            {"submission": submission.pk, "max_claims": 3},
+        )
+
+        self.assertEqual(search.status_code, 200)
+        self.assertIsNotNone(search.context["result"])
+        self.assertFalse(search.context["form"].errors)

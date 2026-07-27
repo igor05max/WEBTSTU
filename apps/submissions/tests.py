@@ -625,7 +625,7 @@ class SubmissionCreateViewTests(TestCase):
         self.assertContains(response, "Данные из материала")
         self.assertContains(response, "data-metadata-extraction")
         self.assertContains(response, reverse("submissions:extract_metadata"))
-        self.assertContains(response, "Уточнить структуру нейросетью")
+        self.assertNotContains(response, "Уточнить структуру нейросетью")
         self.assertContains(response, 'data-site-loading-title="Создаём материал"')
         self.assertContains(response, ">Авторы</label>")
         self.assertNotContains(response, "Ответственный автор")
@@ -813,6 +813,36 @@ class SubmissionCreateViewTests(TestCase):
         self.assertEqual(queued_submission.pk, submission.pk)
         self.assertEqual(queued_template.pk, template.pk)
         self.assertFalse(queue_processing.call_args.kwargs["start_checks"])
+
+    def test_draft_detail_explains_checks_are_not_started_and_offers_direct_start(self):
+        from apps.checks.services import ensure_default_check_definitions
+
+        ensure_default_check_definitions()
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Материал перед автопроверками",
+            abstract="Аннотация",
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("article.txt", b"content"),
+            defer_checks=True,
+            mark_as_checking=False,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("submissions:detail", args=[submission.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Проверка ещё не запускалась.")
+        self.assertContains(response, "Не запущена", count=5)
+        self.assertContains(
+            response,
+            f'action="{reverse("submissions:start_checks", args=[submission.pk])}"',
+        )
+        self.assertContains(response, "Начать проверки без добавления источников")
+        self.assertNotContains(response, "Ожидает запуска.")
 
     def test_create_submission_runs_checks_immediately(self):
         submission = create_submission_with_initial_version(

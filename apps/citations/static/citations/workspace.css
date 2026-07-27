@@ -77,6 +77,14 @@
     white-space: pre-wrap;
 }
 
+.citation-metadata-note {
+    display: block;
+    margin-top: 5px;
+    color: var(--citation-green);
+    font-size: 11px;
+    font-weight: 700;
+}
+
 .citation-form-notice {
     padding: 14px 16px;
     border-radius: 12px;
@@ -547,6 +555,31 @@
     color: #7b8782;
     font-size: 11px;
     font-weight: 700;
+}
+
+.citation-source-evidence {
+    margin-top: 14px;
+    padding: 13px 15px;
+    border-left: 3px solid var(--citation-green);
+    border-radius: 0 10px 10px 0;
+    background: var(--citation-green-soft);
+}
+
+.citation-source-evidence > span {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--citation-green);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.citation-source-evidence blockquote {
+    margin: 0;
+    color: var(--citation-ink);
+    font-size: 13px;
+    line-height: 1.55;
 }
 
 .citation-claim h3 {

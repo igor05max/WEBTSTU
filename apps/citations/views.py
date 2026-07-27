@@ -127,7 +127,7 @@ def workspace(request):
                             else ""
                         ),
                         source_authors=(
-                            selected_submission.document_authors
+                            str(selected_submission.author)
                             if selected_submission is not None
                             else ""
                         ),
