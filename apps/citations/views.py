@@ -133,10 +133,10 @@ def workspace(request):
                 analyzed_claim_count = len(claims)
                 for claim in claims:
                     claim["recommendations"] = search_claim(claim)
-                # Never offer an unrelated publication merely to fill the list.
-                # The local model may reject every candidate, which is a useful
-                # and safer result for scientific citation work.
-                rerank_claims(claims)
+                # Keep several nearest topical results available for manual
+                # selection even when the local model finds no direct support.
+                # Such candidates are explicitly marked in the interface.
+                rerank_claims(claims, best_available_limit=8)
                 remove_source_article(
                     claims,
                     build_source_identity(

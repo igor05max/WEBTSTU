@@ -152,6 +152,12 @@
     </div>
 
     {% if result.claims %}
+    {% if result.best_available %}
+    <div class="citation-best-available-notice" role="status">
+        <strong>Показаны ближайшие публикации по тематике</strong>
+        <span>Локальная модель не считает отмеченные варианты прямым подтверждением утверждения. Они оставлены для ручного выбора и расположены от более близких к менее близким.</span>
+    </div>
+    {% endif %}
     <div class="citation-result-layout">
         <div class="citation-recommendation-list">
             {% for claim in result.claims %}
@@ -173,7 +179,9 @@
                                 </div>
                                 <strong class="citation-score">
                                     <span>
-                                        {% if article.verdict == "supports" %}
+                                        {% if article.best_available %}
+                                            близость темы
+                                        {% elif article.verdict == "supports" %}
                                             подтверждает
                                         {% elif article.verdict == "partial" %}
                                             частично
@@ -190,9 +198,16 @@
                                 {% if article.doi %}<span>DOI {{ article.doi }}</span>{% elif article.edn %}<span>EDN {{ article.edn }}</span>{% endif %}
                             </div>
 
+                            {% if article.best_available %}
+                            <div class="citation-best-available-hint">
+                                <strong>Ближайший по теме вариант</strong>
+                                <span>Прямое подтверждение не установлено — перед добавлением проверьте фрагмент источника.</span>
+                            </div>
+                            {% endif %}
+
                             {% if article.reason %}
                             <div class="citation-common-topic">
-                                <span>Заключение локальной модели</span>
+                                <span>{% if article.best_available %}Тематическое совпадение{% else %}Заключение локальной модели{% endif %}</span>
                                 <p>{{ article.reason }}</p>
                             </div>
                             {% endif %}
@@ -253,7 +268,7 @@
         <span class="citation-empty-source-icon" aria-hidden="true">✓</span>
         <div>
             <h3>Анализ выполнен</h3>
-            <p>Текст документа прочитан, но локальная модель не нашла публикаций, которые действительно подтверждают выбранные утверждения. Слабые тематические совпадения намеренно не показаны.</p>
+            <p>Текст документа прочитан, но в локальном корпусе не найдено даже тематически близких публикаций для выбранных утверждений.</p>
             <a class="citation-primary-action" href="{% url 'citations:workspace' %}">Проверить другой файл</a>
         </div>
     </div>

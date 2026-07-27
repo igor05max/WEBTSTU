@@ -242,6 +242,24 @@
     line-height: 1.55;
 }
 
+.citation-best-available-notice {
+    display: grid;
+    gap: 4px;
+    margin-top: 18px;
+    padding: 13px 15px;
+    border: 1px solid #ead7a4;
+    border-radius: 12px;
+    background: #fff9e9;
+    color: #6d5721;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.citation-best-available-notice strong {
+    color: #5c4715;
+    font-size: 13px;
+}
+
 .citation-search-form {
     margin-top: 24px;
 }
@@ -645,6 +663,23 @@
     font-size: 8px;
     letter-spacing: .03em;
     text-transform: uppercase;
+}
+
+.citation-best-available-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+    margin-top: 12px;
+    padding: 9px 11px;
+    border-radius: 9px;
+    background: #fff9e9;
+    color: #735d29;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.citation-best-available-hint strong {
+    color: #5c4715;
 }
 
 .citation-source-body {

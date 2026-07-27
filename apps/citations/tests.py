@@ -117,7 +117,10 @@ class CitationSystemTests(TestCase):
         self.assertContains(response, "10.1000/test.1")
         self.assertContains(response, "Фрагмент из вашей статьи")
         self.assertContains(response, "поставим сразу после этого фрагмента")
-        self.assertContains(response, "Заключение локальной модели")
+        self.assertContains(response, "Показаны ближайшие публикации по тематике")
+        self.assertContains(response, "Ближайший по теме вариант")
+        self.assertContains(response, "близость темы")
+        self.assertContains(response, "Тематическое совпадение")
         self.assertContains(response, "Вариант 1")
         self.assertContains(response, "Показать подтверждающий фрагмент источника")
         self.assertContains(
@@ -285,7 +288,7 @@ class CitationSystemTests(TestCase):
         self.assertEqual(response.context["result"]["analyzed_claim_count"], 1)
         self.assertContains(response, "Анализ выполнен")
         self.assertContains(response, "Файл успешно загружен и обработан")
-        self.assertContains(response, "Слабые тематические совпадения")
+        self.assertContains(response, "не найдено даже тематически близких публикаций")
         self.assertContains(response, "Подходящие новые источники не найдены")
         self.assertNotContains(response, "data-citation-source-form")
 
@@ -399,6 +402,13 @@ class CitationSystemTests(TestCase):
         self.assertEqual(len(restored), 8)
         self.assertTrue(all(item["score_percent"] > 20 for item in restored))
         self.assertEqual(sum(bool(item.get("best_available")) for item in restored), 4)
+        self.assertTrue(
+            all(
+                item["score_percent"] == 30
+                for item in restored
+                if item.get("best_available")
+            )
+        )
         self.assertEqual(
             sum(item.get("verdict") == "supports" for item in restored),
             4,

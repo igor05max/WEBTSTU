@@ -46,6 +46,22 @@ def _minimum_score_percent():
     )
 
 
+def _best_available_score_percent(item):
+    """Show topical proximity without presenting it as evidence strength."""
+    minimum = _minimum_score_percent()
+    try:
+        hybrid = float(item.get("hybrid_score") or 0.0)
+    except (TypeError, ValueError):
+        hybrid = 0.0
+    if hybrid > 0:
+        return max(minimum, min(69, round(hybrid * 100)))
+    try:
+        fallback_score = int(item.get("score_percent") or minimum)
+    except (TypeError, ValueError):
+        fallback_score = minimum
+    return max(minimum, min(69, fallback_score))
+
+
 def _best_available_candidates(claims):
     return {
         str(claim.get("id") or ""): [
@@ -64,7 +80,7 @@ def _restore_best_available(claims, candidates_by_claim, *, limit):
     for claim_index, claim in enumerate(claims):
         claim_id = str(claim.get("id") or "")
         for candidate_index, item in enumerate(candidates_by_claim.get(claim_id) or []):
-            score = int(item.get("score_percent") or 0)
+            score = _best_available_score_percent(item)
             if score < minimum:
                 continue
             identity = str(
@@ -107,6 +123,8 @@ def _restore_best_available(claims, candidates_by_claim, *, limit):
             continue
         seen_articles.add(identity)
         restored = dict(item)
+        restored["score_percent"] = _best_available_score_percent(restored)
+        restored["score"] = round(restored["score_percent"] / 100, 4)
         restored["best_available"] = True
         restored["verdict"] = "possible"
         restored["rerank_source"] = "hybrid_local:best_available"
@@ -161,6 +179,8 @@ def _limit_unique_results(claims, *, limit):
 def _mark_best_available(claims):
     for claim in claims:
         for item in claim.get("recommendations") or []:
+            item["score_percent"] = _best_available_score_percent(item)
+            item["score"] = round(item["score_percent"] / 100, 4)
             item["best_available"] = True
             item["verdict"] = "possible"
             item["rerank_source"] = "hybrid_local:best_available"
