@@ -5,6 +5,8 @@
         const file = sourceForm.querySelector("[name='file']");
         const text = sourceForm.querySelector("[name='text']");
         const fileStatus = sourceForm.querySelector("[data-citation-file-status]");
+        const fileStatusName = sourceForm.querySelector("[data-citation-file-name]");
+        const fileStatusSize = sourceForm.querySelector("[data-citation-file-size]");
         const submitButton = sourceForm.querySelector("[data-citation-search-submit]");
         const localLoading = sourceForm.querySelector("[data-citation-local-loading]");
 
@@ -12,8 +14,12 @@
             if (file) file.value = "";
             if (fileStatus) {
                 fileStatus.hidden = true;
-                fileStatus.textContent = "";
             }
+            if (fileStatusName) {
+                fileStatusName.textContent = "";
+                fileStatusName.removeAttribute("title");
+            }
+            if (fileStatusSize) fileStatusSize.textContent = "";
         };
 
         file?.addEventListener("change", () => {
@@ -26,7 +32,13 @@
             if (text) text.value = "";
             if (fileStatus) {
                 const megabytes = Math.max(0.01, selectedFile.size / 1024 / 1024);
-                fileStatus.textContent = `Выбран файл: ${selectedFile.name} · ${megabytes.toFixed(2)} МБ`;
+                if (fileStatusName) {
+                    fileStatusName.textContent = selectedFile.name;
+                    fileStatusName.title = selectedFile.name;
+                }
+                if (fileStatusSize) {
+                    fileStatusSize.textContent = `${megabytes.toFixed(2)} МБ`;
+                }
                 fileStatus.hidden = false;
             }
         });

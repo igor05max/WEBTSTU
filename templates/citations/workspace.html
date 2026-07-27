@@ -5,23 +5,14 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727h">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727j">
 {% endblock %}
 
 {% block content %}
 <header class="citation-hero">
     <div>
-        <span class="citation-kicker">{% if selected_submission %}Шаг 5 · Источники{% else %}Research evidence retrieval{% endif %}</span>
         <h1>{% if selected_submission %}Проверьте данные и источники{% else %}Умный поиск источников{% endif %}</h1>
         <p>{% if selected_submission %}Система извлекла сведения из загруженного файла. Теперь локальная RAG-система предложит публикации, которыми можно подтвердить утверждения.{% else %}Система находит утверждения без ссылок, понимает, что именно нужно подтвердить, и ищет доказательные фрагменты в локальном корпусе научных публикаций.{% endif %}</p>
-    </div>
-    <div class="citation-index-badge{% if index_status.ready %} is-ready{% endif %}">
-        <span></span>
-        {% if index_status.ready %}
-            {{ index_status.article_count }} статей · {{ index_status.chunk_count }} фрагментов
-        {% else %}
-            Индекс создастся при первом поиске
-        {% endif %}
     </div>
 </header>
 
@@ -74,7 +65,6 @@
 <section class="citation-search-card">
     <div class="citation-card-heading">
         <div>
-            <span>01 · Исходный материал</span>
             <h2>Что нужно проанализировать</h2>
         </div>
         <p>Выберите один вариант. DOC будет преобразован в DOCX, после подбора файл можно скачать с уже добавленными ссылками.</p>
@@ -94,7 +84,11 @@
                 <span>{{ form.file.label }}</span>
                 {{ form.file }}
                 <small>{{ form.file.help_text }}</small>
-                <strong class="citation-file-status" data-citation-file-status hidden></strong>
+                <strong class="citation-file-status" data-citation-file-status hidden>
+                    <span class="citation-file-status-label">Файл выбран</span>
+                    <span class="citation-file-status-size" data-citation-file-size></span>
+                    <span class="citation-file-status-name" data-citation-file-name></span>
+                </strong>
                 {% for error in form.file.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
             </label>
         </div>
@@ -133,7 +127,6 @@
 <section class="citation-results{% if not result.claims %} is-empty{% endif %}" id="citation-results">
     <div class="citation-results-heading">
         <div>
-            <span>02 · Анализ завершён</span>
             <h2>{{ result.source_title }}</h2>
             {% if result.claims %}
                 <p>Фрагмент статьи, публикация и процент соответствия. Источников: {{ result.total_recommendations }}.</p>
@@ -141,15 +134,10 @@
                 <p>Файл успешно загружен и обработан. Проверено фрагментов: {{ result.analyzed_claim_count }}.</p>
             {% endif %}
         </div>
+        <a class="citation-secondary-action" href="{% url 'citations:workspace' %}">Проверить другой материал</a>
     </div>
 
     {% if result.claims %}
-    {% if result.best_available %}
-    <div class="citation-best-available" role="status">
-        <strong>Список дополнен наиболее близкими статьями.</strong>
-        <span>Сначала показаны подтверждённые совпадения, затем — лучшие тематические кандидаты: всего до 8 статей с соответствием выше 20%. Для кандидатов с пометкой «Наиболее близкая статья» проверьте содержание перед добавлением ссылки.</span>
-    </div>
-    {% endif %}
     <div class="citation-result-layout">
         <div class="citation-recommendation-list">
             {% for claim in result.claims %}
@@ -201,7 +189,6 @@
         </div>
 
         <aside class="citation-plan" data-citation-plan>
-            <span class="citation-plan-caption">03 · Выбрано</span>
             <h2>Выбранные источники</h2>
             <p>Одна статья может использоваться для нескольких фрагментов, но в списке литературы появится только один раз.</p>
             <div class="citation-plan-empty" data-plan-empty>
@@ -216,7 +203,6 @@
                 <input type="hidden" name="workspace_token" value="{{ result.token }}">
                 <input type="hidden" name="selections" value="[]" data-selection-input>
                 <button class="citation-primary-action" type="submit">{% if result.submission_id %}Добавить и посмотреть документ{% else %}Скачать DOCX со ссылками{% endif %}</button>
-                <small>Маркеры [n] добавятся к утверждениям, источники — в список литературы. Исходный файл останется без изменений.</small>
             </form>
             {% else %}
             <div class="citation-docx-hint">Автоматическая вставка в файл доступна при анализе DOCX. Для этого материала можно скопировать готовый план.</div>
@@ -252,5 +238,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260727e" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20260727f" defer></script>
 {% endblock %}

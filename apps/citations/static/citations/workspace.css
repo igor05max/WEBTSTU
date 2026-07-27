@@ -16,17 +16,11 @@
 }
 
 .citation-hero {
-    display: flex;
-    justify-content: space-between;
-    gap: 32px;
-    align-items: flex-end;
     padding: 14px 4px 30px;
 }
 
 .citation-kicker,
-.citation-card-heading span,
-.citation-results-heading > div > span,
-.citation-plan-caption {
+.citation-card-heading span {
     color: var(--citation-green);
     font-size: 11px;
     font-weight: 800;
@@ -48,32 +42,6 @@
     color: var(--citation-muted);
     font-size: 16px;
     line-height: 1.65;
-}
-
-.citation-index-badge {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    flex: 0 0 auto;
-    padding: 10px 14px;
-    border: 1px solid var(--citation-line);
-    border-radius: 999px;
-    background: #fff;
-    color: var(--citation-muted);
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.citation-index-badge span {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #c2cbc7;
-}
-
-.citation-index-badge.is-ready span {
-    background: #20a36f;
-    box-shadow: 0 0 0 4px #ddf5ea;
 }
 
 .citation-metadata-card {
@@ -248,6 +216,14 @@
     letter-spacing: -.025em;
 }
 
+.citation-results-heading > div {
+    min-width: 0;
+}
+
+.citation-results-heading h2 {
+    overflow-wrap: anywhere;
+}
+
 .citation-card-heading > p,
 .citation-results-heading p,
 .citation-plan > p {
@@ -270,10 +246,15 @@
 
 .citation-field {
     display: grid;
+    min-width: 0;
     gap: 8px;
     color: var(--citation-ink);
     font-size: 13px;
     font-weight: 700;
+}
+
+.citation-file-field {
+    min-width: 0;
 }
 
 .citation-field select,
@@ -315,13 +296,36 @@
 }
 
 .citation-file-status {
-    padding: 9px 11px;
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    padding: 10px 12px;
     border-radius: 9px;
     background: var(--citation-green-soft);
     color: var(--citation-green);
     font-size: 11px;
     line-height: 1.4;
-    overflow-wrap: anywhere;
+}
+
+.citation-file-status-label,
+.citation-file-status-size {
+    white-space: nowrap;
+}
+
+.citation-file-status-size {
+    color: var(--citation-muted);
+    font-weight: 700;
+}
+
+.citation-file-status-name {
+    min-width: 0;
+    grid-column: 1 / -1;
+    overflow: hidden;
+    color: var(--citation-ink);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .citation-primary-action:disabled {
@@ -397,6 +401,27 @@
     fill: none;
     stroke: currentColor;
     stroke-width: 1.8;
+}
+
+.citation-secondary-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    flex: 0 0 auto;
+    padding: 0 16px;
+    border: 1px solid #bad4ca;
+    border-radius: 11px;
+    background: #fff;
+    color: var(--citation-green);
+    font-size: 12px;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.citation-secondary-action:hover {
+    border-color: var(--citation-green);
+    background: var(--citation-green-soft);
 }
 
 .citation-results {
@@ -663,8 +688,7 @@
 }
 
 .citation-plan-empty span,
-.citation-docx-hint,
-.citation-plan form small {
+.citation-docx-hint {
     color: var(--citation-muted);
     font-size: 11px;
     line-height: 1.5;
@@ -738,27 +762,6 @@
     background: var(--citation-green-soft);
 }
 
-.citation-best-available {
-    display: grid;
-    gap: 5px;
-    margin: 22px 0;
-    padding: 16px 18px;
-    border: 1px solid #ead7a7;
-    border-radius: 14px;
-    background: #fff8e7;
-    color: #725616;
-}
-
-.citation-best-available strong {
-    color: #513c0c;
-    font-size: 14px;
-}
-
-.citation-best-available span {
-    font-size: 13px;
-    line-height: 1.5;
-}
-
 .citation-common-topic {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -826,14 +829,12 @@
 }
 
 @media (max-width: 720px) {
-    .citation-hero,
     .citation-card-heading,
     .citation-results-heading,
     .citation-form-footer {
         align-items: stretch;
         flex-direction: column;
     }
-    .citation-index-badge { align-self: flex-start; }
     .citation-source-grid { grid-template-columns: 1fr; }
     .citation-search-card,
     .citation-claim { padding: 18px; }
