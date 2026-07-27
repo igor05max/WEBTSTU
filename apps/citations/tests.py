@@ -327,7 +327,7 @@ class CitationSystemTests(TestCase):
             ["Выше границы", "Подходящий"],
         )
 
-    def test_eight_best_candidates_are_restored_when_llm_rejects_everything(self):
+    def test_verified_results_are_topped_up_to_eight_best_candidates(self):
         claims = []
         rejected = []
         for claim_number in range(2):
@@ -365,6 +365,10 @@ class CitationSystemTests(TestCase):
                 }
             )
 
+        for accepted in rejected[:4]:
+            accepted["verdict"] = "supports"
+            accepted["score"] = 70
+
         with (
             override_settings(CITATION_LLM_RERANK_ENABLED=True),
             patch("apps.citations.rerank.is_ai_configured", return_value=True),
@@ -386,8 +390,11 @@ class CitationSystemTests(TestCase):
         ]
         self.assertEqual(len(restored), 8)
         self.assertTrue(all(item["score_percent"] > 20 for item in restored))
-        self.assertTrue(all(item["best_available"] for item in restored))
-        self.assertTrue(all(item["verdict"] == "possible" for item in restored))
+        self.assertEqual(sum(bool(item.get("best_available")) for item in restored), 4)
+        self.assertEqual(
+            sum(item.get("verdict") == "supports" for item in restored),
+            4,
+        )
 
     def test_apply_selected_source_to_docx(self):
         document = Document()

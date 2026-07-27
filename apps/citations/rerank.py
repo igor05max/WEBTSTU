@@ -56,7 +56,7 @@ def _best_available_candidates(claims):
 
 
 def _restore_best_available(claims, candidates_by_claim, *, limit):
-    if limit <= 0 or any(claim.get("recommendations") for claim in claims):
+    if limit <= 0:
         return claims
 
     minimum = _minimum_score_percent()
@@ -88,8 +88,20 @@ def _restore_best_available(claims, candidates_by_claim, *, limit):
             )
 
     ranked.sort(key=lambda row: row[:3])
-    seen_articles = set()
-    restored_count = 0
+    seen_articles = {
+        str(
+            item.get("article_id")
+            or item.get("doi")
+            or item.get("edn")
+            or item.get("title")
+            or ""
+        ).casefold()
+        for claim in claims
+        for item in (claim.get("recommendations") or [])
+    }
+    restored_count = len(seen_articles)
+    if restored_count >= limit:
+        return claims
     for _, _, _, identity, claim, item in ranked:
         if identity in seen_articles:
             continue

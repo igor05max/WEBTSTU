@@ -133,6 +133,11 @@ def build_citation_coverage_report(
         for claim in claims
         for item in (claim.get("recommendations") or [])
     )
+    has_confirmed_sources = any(
+        not item.get("best_available")
+        for claim in claims
+        for item in (claim.get("recommendations") or [])
+    )
 
     issues = []
     unique_recommendations = {}
@@ -190,7 +195,12 @@ def build_citation_coverage_report(
         key=lambda item: (-int(item.get("score_percent") or 0), item.get("title", "")),
     )
     claims_with_sources = sum(bool(claim.get("recommendations")) for claim in claims)
-    if has_best_available:
+    if has_best_available and has_confirmed_sources:
+        message = (
+            "Найдены подтверждающие источники. Список дополнен наиболее близкими "
+            f"публикациями; всего показано {len(recommendations)}."
+        )
+    elif has_best_available:
         message = (
             f"Точных подтверждений не найдено. Показано {len(recommendations)} "
             "наиболее близких публикаций из локальной базы."
