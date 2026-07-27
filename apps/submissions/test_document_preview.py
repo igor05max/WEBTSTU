@@ -7,6 +7,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from django.test import SimpleTestCase, override_settings
 
 from apps.submissions.document_preview import (
+    DocumentPreviewError,
+    _build_formula_fallback_docx,
     _build_preview_safe_docx,
     build_docx_bytes_pdf,
 )
@@ -34,6 +36,18 @@ RELATIONSHIPS_XML = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   Target="embeddings/equation.bin"/>
 </Relationships>"""
 
+FORMULA_XML = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document
+ xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+ xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+ <w:body>
+  <w:p><m:oMath><m:r><m:t>x</m:t></m:r><m:sSup>
+   <m:e><m:r><m:t>2</m:t></m:r></m:e>
+   <m:sup><m:r><m:t>3</m:t></m:r></m:sup>
+  </m:sSup></m:oMath></w:p>
+ </w:body>
+</w:document>"""
+
 
 def _ole_docx():
     output = io.BytesIO()
@@ -42,6 +56,13 @@ def _ole_docx():
         archive.writestr("word/_rels/document.xml.rels", RELATIONSHIPS_XML)
         archive.writestr("word/media/equation.wmf", b"preview-image")
         archive.writestr("word/embeddings/equation.bin", b"ole-payload")
+    return output.getvalue()
+
+
+def _formula_docx():
+    output = io.BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", FORMULA_XML)
     return output.getvalue()
 
 
@@ -59,6 +80,15 @@ class CorrectedDocumentPreviewTests(SimpleTestCase):
         self.assertNotIn(b"OLEObject", document_xml)
         self.assertNotIn(b"rIdOle", relationships_xml)
         self.assertIn(b"rIdImage", relationships_xml)
+
+    def test_formula_fallback_keeps_equation_text(self):
+        result = _build_formula_fallback_docx(_formula_docx())
+
+        with ZipFile(io.BytesIO(result)) as archive:
+            document_xml = archive.read("word/document.xml")
+
+        self.assertNotIn(b"oMath", document_xml)
+        self.assertIn(b"x23", document_xml)
 
     def test_pdf_conversion_uses_preview_safe_copy_and_caches_result(self):
         converted_sources = []
@@ -80,3 +110,27 @@ class CorrectedDocumentPreviewTests(SimpleTestCase):
         self.assertEqual(len(converted_sources), 1)
         with ZipFile(io.BytesIO(converted_sources[0])) as archive:
             self.assertNotIn("word/embeddings/equation.bin", archive.namelist())
+
+    def test_pdf_conversion_retries_with_linear_formula_fallback(self):
+        converted_sources = []
+
+        def fake_conversion(source_path, output_path, **_kwargs):
+            converted_sources.append(Path(source_path).read_bytes())
+            if len(converted_sources) == 1:
+                raise DocumentPreviewError("LibreOffice failed")
+            Path(output_path).write_bytes(b"%PDF-1.4\n" + (b"0" * 120))
+
+        with tempfile.TemporaryDirectory() as media_root, override_settings(
+            MEDIA_ROOT=media_root
+        ), patch(
+            "apps.submissions.document_preview.convert_word_path_to_pdf",
+            side_effect=fake_conversion,
+        ):
+            result = build_docx_bytes_pdf(_formula_docx())
+
+        self.assertTrue(result.startswith(b"%PDF-"))
+        self.assertEqual(len(converted_sources), 2)
+        with ZipFile(io.BytesIO(converted_sources[1])) as archive:
+            document_xml = archive.read("word/document.xml")
+        self.assertNotIn(b"oMath", document_xml)
+        self.assertIn(b"x23", document_xml)

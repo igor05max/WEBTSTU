@@ -36,6 +36,8 @@ RELATIONSHIP_NAMESPACE = (
 PACKAGE_RELATIONSHIP_NAMESPACE = (
     "http://schemas.openxmlformats.org/package/2006/relationships"
 )
+MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace"
 
 
 class DocumentPreviewError(ValueError):
@@ -279,11 +281,23 @@ def build_docx_bytes_pdf(document_bytes):
         source_path = temporary_directory / "corrected-document.docx"
         output_path = temporary_directory / "corrected-document.pdf"
         source_path.write_bytes(preview_bytes)
-        convert_word_path_to_pdf(
-            source_path,
-            output_path,
-            format_name="DOCX",
-        )
+        try:
+            convert_word_path_to_pdf(
+                source_path,
+                output_path,
+                format_name="DOCX",
+            )
+        except DocumentPreviewError:
+            formula_fallback_bytes = _build_formula_fallback_docx(preview_bytes)
+            if formula_fallback_bytes == preview_bytes:
+                raise
+            source_path.write_bytes(formula_fallback_bytes)
+            output_path.unlink(missing_ok=True)
+            convert_word_path_to_pdf(
+                source_path,
+                output_path,
+                format_name="DOCX",
+            )
         if not _is_valid_pdf(output_path):
             raise DocumentPreviewError("Не удалось подготовить исправленный DOCX для просмотра.")
         preview_pdf = output_path.read_bytes()
@@ -375,6 +389,79 @@ def _build_preview_safe_docx(document_bytes):
                     elif info.filename == "word/_rels/document.xml.rels":
                         value = ElementTree.tostring(
                             relationships_root,
+                            encoding="utf-8",
+                            xml_declaration=True,
+                        )
+                    output_archive.writestr(info, value)
+            return output.getvalue()
+    except (BadZipFile, ElementTree.ParseError, OSError):
+        return document_bytes
+
+
+def _build_formula_fallback_docx(document_bytes):
+    """
+    Replace OMML equations with readable linear text in the preview copy.
+
+    LibreOffice can abort on some Word equation collections even when the DOCX
+    opens correctly in Microsoft Word. This fallback runs only after the normal
+    conversion fails. The corrected DOCX itself keeps every native equation.
+    """
+
+    try:
+        with ZipFile(io.BytesIO(document_bytes)) as input_archive:
+            try:
+                document_xml = input_archive.read("word/document.xml")
+            except KeyError:
+                return document_bytes
+            document_root = ElementTree.fromstring(document_xml)
+
+            math_paragraph_tag = f"{{{MATH_NAMESPACE}}}oMathPara"
+            math_tag = f"{{{MATH_NAMESPACE}}}oMath"
+            math_text_tag = f"{{{MATH_NAMESPACE}}}t"
+            math_character_tag = f"{{{MATH_NAMESPACE}}}chr"
+            math_value_attribute = f"{{{MATH_NAMESPACE}}}val"
+
+            def replace_nodes(tag):
+                parent_map = {
+                    child: parent
+                    for parent in document_root.iter()
+                    for child in parent
+                }
+                replaced = 0
+                for node in list(document_root.iter(tag)):
+                    parent = parent_map.get(node)
+                    if parent is None:
+                        continue
+                    pieces = []
+                    for element in node.iter():
+                        if element.tag == math_text_tag and element.text:
+                            pieces.append(element.text)
+                        elif element.tag == math_character_tag:
+                            value = element.get(math_value_attribute)
+                            if value:
+                                pieces.append(value)
+                    run = ElementTree.Element(f"{WORD}r")
+                    text = ElementTree.SubElement(run, f"{WORD}t")
+                    text.set(f"{{{XML_NAMESPACE}}}space", "preserve")
+                    text.text = "".join(pieces) or "[формула]"
+                    index = list(parent).index(node)
+                    parent.remove(node)
+                    parent.insert(index, run)
+                    replaced += 1
+                return replaced
+
+            replaced = replace_nodes(math_paragraph_tag)
+            replaced += replace_nodes(math_tag)
+            if not replaced:
+                return document_bytes
+
+            output = io.BytesIO()
+            with ZipFile(output, "w", ZIP_DEFLATED) as output_archive:
+                for info in input_archive.infolist():
+                    value = input_archive.read(info)
+                    if info.filename == "word/document.xml":
+                        value = ElementTree.tostring(
+                            document_root,
                             encoding="utf-8",
                             xml_declaration=True,
                         )
