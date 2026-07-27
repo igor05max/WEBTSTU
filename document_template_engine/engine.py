@@ -909,13 +909,18 @@ def build_docx_from_template(
     try:
         from docx.enum.section import WD_ORIENT
         from docx.oxml.ns import qn
-        from docx.shared import Cm, Pt
+        from docx.shared import Cm, Pt, RGBColor
     except ImportError as exc:
         raise DocumentTemplateEngineError("Для обработки DOCX требуется python-docx.") from exc
 
     page_rules = normalized_rules.get("page") or {}
     margins = page_rules.get("margins_cm") or {}
     for section in document.sections:
+        page_size = str(page_rules.get("size") or "").strip().casefold()
+        if page_size == "a4":
+            section.page_width = Cm(21)
+            section.page_height = Cm(29.7)
+            changes.append("размер страницы: A4")
         for key, attribute, label in (
             ("top", "top_margin", "верхнее поле"),
             ("right", "right_margin", "правое поле"),
@@ -937,6 +942,7 @@ def build_docx_from_template(
             section.orientation = WD_ORIENT.PORTRAIT
 
     body_rules = normalized_rules.get("body") or {}
+    heading_rules = normalized_rules.get("headings") or {}
     font_family = str(body_rules.get("font_family") or "").strip()
     font_size = _as_float(body_rules.get("font_size_pt"))
     normal_style = document.styles["Normal"]
@@ -959,6 +965,38 @@ def build_docx_from_template(
         if not paragraph.text.strip():
             continue
         role = roles.get(index, "")
+        style_name = (
+            (paragraph.style.name or "").casefold()
+            if getattr(paragraph, "style", None)
+            else ""
+        )
+        is_heading = "heading" in style_name or "заголов" in style_name
+        if is_heading and heading_rules:
+            is_title = bool(re.search(r"(?:heading|заголовок)\s*1\b", style_name))
+            heading_size = _as_float(
+                heading_rules.get("title_font_size_pt")
+                if is_title
+                else heading_rules.get("font_size_pt")
+            )
+            _apply_paragraph_style(
+                paragraph,
+                {
+                    "alignment": "center" if is_title else "left",
+                    "first_line_indent_cm": 0,
+                    "bold": True,
+                    "font_family": (
+                        heading_rules.get("font_family") or font_family
+                    ),
+                    "font_size_pt": heading_size or font_size,
+                    "line_spacing": body_rules.get("line_spacing"),
+                },
+                body_rules={},
+            )
+            color_hex = str(heading_rules.get("color_hex") or "").strip().lstrip("#")
+            if re.fullmatch(r"[0-9a-fA-F]{6}", color_hex):
+                for run in paragraph.runs:
+                    run.font.color.rgb = RGBColor.from_string(color_hex.upper())
+            continue
         if role == "references_heading":
             role_style = {
                 "alignment": "center",

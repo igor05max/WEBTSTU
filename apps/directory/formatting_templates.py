@@ -1,6 +1,8 @@
 import io
 from collections import Counter
 from pathlib import Path
+import re
+from statistics import median
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from django.db import models, transaction
@@ -67,6 +69,175 @@ def _dominant(values):
     if not cleaned:
         return None
     return Counter(cleaned).most_common(1)[0][0]
+
+
+def _pdf_font_family(base_font):
+    name = str(base_font or "").split("+")[-1].casefold()
+    if "palladio" in name or "palatino" in name:
+        return "Palatino Linotype"
+    if "times" in name or "nimbusroman" in name:
+        return "Times New Roman"
+    if "helvetica" in name or "arial" in name:
+        return "Arial"
+    if "computer-modern" in name or "latinmodern" in name:
+        return "Latin Modern Roman"
+    return ""
+
+
+def _percentile(values, fraction):
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, round((len(ordered) - 1) * fraction)))
+    return ordered[index]
+
+
+def _extract_pdf_rules(data):
+    """Extract visual page and body rules which plain PDF text cannot retain."""
+    try:
+        from pypdf import PdfReader
+        from pypdf._text_extraction import mult
+    except ImportError:
+        return {}
+
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception:
+        return {}
+    if not reader.pages:
+        return {}
+
+    first_page = reader.pages[0]
+    width_pt = float(first_page.mediabox.width)
+    height_pt = float(first_page.mediabox.height)
+    fragments = []
+    # The title page is often deliberately different. Later pages provide a
+    # much more reliable sample of the article's main typography.
+    page_indexes = range(1, min(len(reader.pages), 16)) if len(reader.pages) > 1 else range(1)
+    for page_index in page_indexes:
+        page = reader.pages[page_index]
+
+        def collect(text, cm, tm, font_dict, font_size):
+            clean = " ".join(str(text or "").split())
+            if not clean or font_dict is None or not (7 <= float(font_size or 0) <= 13):
+                return
+            x, y = mult(tm, cm)[4:]
+            if x <= 0 or y <= 35 or y >= height_pt - 25:
+                return
+            if re.fullmatch(r"\d+", clean) and float(font_size) < 7:
+                return
+            fragments.append(
+                {
+                    "page": page_index,
+                    "text": clean,
+                    "x": float(x),
+                    "y": float(y),
+                    "size": round(float(font_size), 2),
+                    "base_font": str(font_dict.get("/BaseFont") or ""),
+                }
+            )
+
+        try:
+            page.extract_text(visitor_text=collect)
+        except Exception:
+            continue
+
+    page_width_cm = width_pt / 72 * 2.54
+    page_height_cm = height_pt / 72 * 2.54
+    is_a4 = (
+        abs(min(page_width_cm, page_height_cm) - 21.0) <= 0.35
+        and abs(max(page_width_cm, page_height_cm) - 29.7) <= 0.35
+    )
+    page_rules = {
+        "size": "A4" if is_a4 else "",
+        "orientation": "landscape" if width_pt > height_pt else "portrait",
+    }
+    if not fragments:
+        return {"page": page_rules}
+
+    font_weights = Counter()
+    for item in fragments:
+        if 8 <= item["size"] <= 12:
+            font_weights[(item["base_font"], item["size"])] += len(item["text"])
+    if not font_weights:
+        return {"page": page_rules}
+    (body_base_font, body_size), _weight = font_weights.most_common(1)[0]
+    body_fragments = [
+        item
+        for item in fragments
+        if item["base_font"] == body_base_font and abs(item["size"] - body_size) <= 0.15
+    ]
+
+    x_counts = Counter(round(item["x"]) for item in body_fragments)
+    body_left_pt = float(x_counts.most_common(1)[0][0])
+    indent_candidates = Counter(
+        round(item["x"]) - round(body_left_pt)
+        for item in body_fragments
+        if 10 <= round(item["x"]) - round(body_left_pt) <= 40
+    )
+    first_line_indent_pt = (
+        float(indent_candidates.most_common(1)[0][0])
+        if indent_candidates
+        else 0.0
+    )
+
+    baselines = {}
+    for item in body_fragments:
+        baselines.setdefault(item["page"], set()).add(round(item["y"], 1))
+    line_gaps = []
+    for page_values in baselines.values():
+        ordered = sorted(page_values, reverse=True)
+        for first, second in zip(ordered, ordered[1:]):
+            gap = first - second
+            if body_size * 1.05 <= gap <= body_size * 1.8:
+                line_gaps.append(gap)
+    baseline_gap = median(line_gaps) if line_gaps else body_size
+    line_spacing = round(baseline_gap / body_size, 2) if body_size else None
+
+    page_tops = []
+    page_bottoms = []
+    for page_index in set(item["page"] for item in body_fragments):
+        ys = [item["y"] for item in body_fragments if item["page"] == page_index]
+        if ys:
+            page_tops.append(max(ys))
+            page_bottoms.append(min(ys))
+    top_baseline = _percentile(page_tops, 0.75)
+    bottom_baseline = _percentile(page_bottoms, 0.25)
+    margins = {
+        "left": round(body_left_pt / 72 * 2.54, 2),
+        # PDF text coordinates do not expose a dependable right edge for every
+        # embedded font. A narrow journal margin is inferred from the available
+        # line width after the dominant left boundary.
+        "right": round(max(0.8, min(2.5, (width_pt - body_left_pt) / 72 * 2.54 * 0.08)), 2),
+        "top": round((height_pt - top_baseline + body_size * 0.2) / 72 * 2.54, 2),
+        "bottom": round(max(1.5, bottom_baseline / 72 * 2.54), 2),
+    }
+    page_rules["margins_cm"] = margins
+    bold_sizes = Counter()
+    for item in fragments:
+        if "bold" in item["base_font"].casefold() and item["size"] >= body_size:
+            bold_sizes[item["size"]] += len(item["text"])
+    title_size = max(
+        max(bold_sizes, default=0),
+        round(body_size * 1.8, 1),
+    )
+
+    return {
+        "page": page_rules,
+        "body": {
+            "font_family": _pdf_font_family(body_base_font),
+            "font_size_pt": round(body_size, 1),
+            "line_spacing": line_spacing,
+            "first_line_indent_cm": round(first_line_indent_pt / 72 * 2.54, 2),
+            "alignment": "justify",
+        },
+        "headings": {
+            "font_family": _pdf_font_family(body_base_font),
+            "font_size_pt": round(body_size, 1),
+            "title_font_size_pt": round(title_size, 1),
+            "color_hex": "000000",
+        },
+    }
 
 
 def _extract_docx_rules(data):
@@ -174,6 +345,8 @@ def _extract_template_content(template):
     parse_warning = snapshot.get("parse_error") or ""
     if suffix in {".docx", ".dotx"}:
         deterministic_rules = _extract_docx_rules(data)
+    elif suffix == ".pdf":
+        deterministic_rules = _extract_pdf_rules(data)
     elif suffix == ".tex":
         deterministic_rules = extract_latex_template_rules(data)
     else:

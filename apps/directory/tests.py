@@ -6,6 +6,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.directory.formatting_templates import (
+    _extract_pdf_rules,
     create_formatting_template,
     get_latest_formatting_template,
     process_formatting_template,
@@ -16,6 +17,7 @@ from apps.directory.publication_topics import (
     resolve_or_create_publication_topic,
     search_publication_topics,
 )
+from document_template_engine import build_docx_from_template
 
 
 class JournalSearchViewTests(TestCase):
@@ -143,3 +145,83 @@ class PublicationTopicAndTemplateTests(TestCase):
         self.assertContains(preview, "Предпросмотр исходного кода")
         self.assertContains(preview, "Скачать .tex")
         self.assertContains(preview, r"\documentclass", html=False)
+
+    def test_pdf_template_visual_rules_are_extracted(self):
+        from io import BytesIO
+
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen.canvas import Canvas
+
+        output = BytesIO()
+        canvas = Canvas(output, pagesize=A4)
+        canvas.setFont("Times-Roman", 10)
+        y = A4[1] - 84
+        for paragraph_number in range(8):
+            canvas.drawString(
+                93,
+                y,
+                f"Paragraph {paragraph_number} first line with indentation.",
+            )
+            y -= 14
+            for line_number in range(5):
+                canvas.drawString(
+                    72,
+                    y,
+                    f"Continuation line {line_number} with enough ordinary body text."
+                )
+                y -= 14
+        canvas.save()
+
+        rules = _extract_pdf_rules(output.getvalue())
+
+        self.assertEqual(rules["page"]["size"], "A4")
+        self.assertEqual(rules["page"]["orientation"], "portrait")
+        self.assertEqual(rules["body"]["font_family"], "Times New Roman")
+        self.assertAlmostEqual(rules["body"]["font_size_pt"], 10, places=1)
+        self.assertAlmostEqual(rules["body"]["line_spacing"], 1.4, places=1)
+        self.assertAlmostEqual(rules["body"]["first_line_indent_cm"], 0.74, places=1)
+        self.assertEqual(rules["body"]["alignment"], "justify")
+        self.assertEqual(rules["headings"]["color_hex"], "000000")
+        self.assertAlmostEqual(rules["headings"]["title_font_size_pt"], 18, places=1)
+
+    def test_docx_builder_really_changes_page_size_to_a4(self):
+        from io import BytesIO
+
+        from docx import Document
+        from docx.shared import Inches
+
+        document = Document()
+        document.sections[0].page_width = Inches(8.5)
+        document.sections[0].page_height = Inches(11)
+        document.add_heading("Scientific article title", level=1)
+        document.add_paragraph("Scientific article body.")
+        source = BytesIO()
+        document.save(source)
+
+        corrected_bytes, changes, _plan = build_docx_from_template(
+            source.getvalue(),
+            {
+                "page": {"size": "A4", "orientation": "portrait"},
+                "body": {
+                    "font_family": "Times New Roman",
+                    "font_size_pt": 10,
+                    "line_spacing": 1.4,
+                    "first_line_indent_cm": 0.75,
+                    "alignment": "justify",
+                },
+                "headings": {
+                    "font_family": "Times New Roman",
+                    "font_size_pt": 10,
+                    "title_font_size_pt": 18,
+                    "color_hex": "000000",
+                },
+            },
+        )
+
+        corrected = Document(BytesIO(corrected_bytes))
+        section = corrected.sections[0]
+        self.assertAlmostEqual(section.page_width.cm, 21, places=1)
+        self.assertAlmostEqual(section.page_height.cm, 29.7, places=1)
+        self.assertIn("размер страницы: A4", changes)
+        self.assertAlmostEqual(corrected.paragraphs[0].runs[0].font.size.pt, 18, places=1)
+        self.assertEqual(str(corrected.paragraphs[0].runs[0].font.color.rgb), "000000")
