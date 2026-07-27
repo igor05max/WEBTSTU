@@ -2,7 +2,7 @@ import io
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from django.test import SimpleTestCase, override_settings
 
@@ -10,6 +10,7 @@ from apps.submissions.document_preview import (
     DocumentPreviewError,
     _build_formula_fallback_docx,
     _build_preview_safe_docx,
+    _stable_docx_digest,
     build_docx_bytes_pdf,
 )
 
@@ -67,6 +68,20 @@ def _formula_docx():
 
 
 class CorrectedDocumentPreviewTests(SimpleTestCase):
+    def test_stable_digest_ignores_zip_timestamps(self):
+        def build_archive(timestamp):
+            output = io.BytesIO()
+            with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+                info = ZipInfo("word/document.xml", date_time=timestamp)
+                archive.writestr(info, FORMULA_XML)
+            return output.getvalue()
+
+        first = build_archive((2025, 1, 1, 0, 0, 0))
+        second = build_archive((2026, 7, 27, 12, 0, 0))
+
+        self.assertNotEqual(first, second)
+        self.assertEqual(_stable_docx_digest(first), _stable_docx_digest(second))
+
     def test_preview_copy_keeps_equation_image_and_removes_ole_payload(self):
         result = _build_preview_safe_docx(_ole_docx())
 

@@ -1692,12 +1692,6 @@ def corrected_document_preview_view(request, pk, version_pk):
         )
         return redirect("submissions:detail", pk=submission.pk)
 
-    try:
-        _corrected_bytes, _changes = build_corrected_docx(submission)
-    except FormattingCorrectionError as exc:
-        messages.error(request, str(exc))
-        return redirect("submissions:detail", pk=submission.pk)
-
     return render(
         request,
         "submissions/corrected_document_preview.html",

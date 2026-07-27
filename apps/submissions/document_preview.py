@@ -270,7 +270,7 @@ def build_docx_bytes_pdf(document_bytes):
 
     cache_directory = Path(settings.MEDIA_ROOT) / "document_previews" / "corrected_documents"
     cache_directory.mkdir(parents=True, exist_ok=True)
-    cache_key = hashlib.sha256(document_bytes).hexdigest()
+    cache_key = _stable_docx_digest(document_bytes)
     cached_path = cache_directory / f"{cache_key}.pdf"
     if _is_valid_pdf(cached_path):
         return cached_path.read_bytes()
@@ -309,6 +309,29 @@ def build_docx_bytes_pdf(document_bytes):
     finally:
         temporary_cache_path.unlink(missing_ok=True)
     return preview_pdf
+
+
+def _stable_docx_digest(document_bytes):
+    """Hash DOCX contents without volatile ZIP member timestamps."""
+
+    try:
+        with ZipFile(io.BytesIO(document_bytes)) as archive:
+            members = archive.infolist()
+            if len(members) > DOCX_MAX_MEMBERS:
+                raise DocumentPreviewError("В документе слишком много внутренних файлов.")
+            if sum(member.file_size for member in members) > DOCX_MAX_UNCOMPRESSED_BYTES:
+                raise DocumentPreviewError("Исправленный DOCX слишком большой для просмотра.")
+            digest = hashlib.sha256()
+            for member in sorted(members, key=lambda item: item.filename):
+                digest.update(member.filename.encode("utf-8", errors="surrogatepass"))
+                digest.update(b"\0")
+                with archive.open(member) as source:
+                    while chunk := source.read(1024 * 1024):
+                        digest.update(chunk)
+                digest.update(b"\0")
+            return digest.hexdigest()
+    except BadZipFile:
+        return hashlib.sha256(document_bytes).hexdigest()
 
 
 def _build_preview_safe_docx(document_bytes):

@@ -242,10 +242,56 @@
 }
 
 .document-preview-pdf {
+    position: relative;
     height: calc(100vh - 300px);
     min-height: 620px;
     padding: 12px;
     background: #e8edf4;
+}
+
+.document-preview-loading {
+    position: absolute;
+    z-index: 2;
+    inset: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border-radius: 10px;
+    color: #53647d;
+    background: #fff;
+    text-align: center;
+}
+
+.document-preview-loading[hidden] {
+    display: none;
+}
+
+.document-preview-loading strong {
+    color: #243249;
+    font-size: 0.9rem;
+}
+
+.document-preview-loading span:last-child {
+    max-width: 430px;
+    font-size: 0.76rem;
+    line-height: 1.55;
+}
+
+.document-preview-loading-spinner {
+    width: 34px;
+    height: 34px;
+    border: 3px solid #dce7fb;
+    border-top-color: #2f67ef;
+    border-radius: 50%;
+    animation: corrected-preview-spin 0.8s linear infinite;
+}
+
+@keyframes corrected-preview-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .document-preview-pdf iframe {

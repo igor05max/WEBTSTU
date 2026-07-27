@@ -63,11 +63,32 @@
             <span class="document-preview-format">DOCX</span>
         </div>
 
-        <div class="document-preview-pdf">
+        <div class="document-preview-pdf" data-corrected-preview-shell>
+            <div class="document-preview-loading" data-corrected-preview-loading role="status">
+                <span class="document-preview-loading-spinner" aria-hidden="true"></span>
+                <strong>Страница уже готова</strong>
+                <span>Исправленный документ формируется и появится здесь автоматически.</span>
+            </div>
             <iframe
                 title="Предпросмотр исправленного документа"
+                data-corrected-preview-frame
                 src="{% url 'submissions:corrected_document_preview_content' submission.pk source_version.pk %}#toolbar=1&amp;navpanes=0"
             ></iframe>
         </div>
     </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const frame = document.querySelector("[data-corrected-preview-frame]");
+    const loading = document.querySelector("[data-corrected-preview-loading]");
+    if (!frame || !loading) {
+        return;
+    }
+    frame.addEventListener("load", () => {
+        loading.hidden = true;
+    }, {once: true});
+});
+</script>
 {% endblock %}

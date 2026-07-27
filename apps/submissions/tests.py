@@ -2426,7 +2426,11 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertEqual(report["metrics"]["source_format"], "latex")
         self.assertEqual(report["issues"], [])
 
-    def test_corrected_document_preview_does_not_create_a_version(self):
+    @patch("apps.submissions.views.build_corrected_docx")
+    def test_corrected_document_preview_does_not_create_a_version(
+        self,
+        mocked_build_corrected_docx,
+    ):
         submission, source_version = self._create_correctable_submission()
         self.client.force_login(self.user)
 
@@ -2438,11 +2442,13 @@ class SubmissionFormattingTemplateTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        mocked_build_corrected_docx.assert_not_called()
         self.assertEqual(submission.versions.count(), 1)
         self.assertContains(response, "Проверьте документ перед отправкой")
         self.assertContains(response, "Назад, не отправлять")
         self.assertContains(response, "Отправить на проверку")
         self.assertContains(response, 'data-site-loading-title="Создаём новую версию"')
+        self.assertContains(response, "Страница уже готова")
         self.assertContains(
             response,
             reverse(
