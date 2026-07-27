@@ -16,7 +16,12 @@ from apps.submissions.models import SubmissionStatus
 from apps.submissions.services import create_submission_with_initial_version
 
 
-def build_article_docx(*, dangerous_member=False, reference_heading="Список литературы"):
+def build_article_docx(
+    *,
+    dangerous_member=False,
+    reference_heading="Список литературы",
+    ole_prog_ids=(),
+):
     paragraphs = [
         "УДК 004.9",
         "author-header@example.ru",
@@ -39,14 +44,46 @@ def build_article_docx(*, dangerous_member=False, reference_heading="Списо�
     body = "".join(
         f"<w:p><w:r><w:t>{value}</w:t></w:r></w:p>" for value in paragraphs
     )
+    body += "".join(
+        (
+            "<w:p><w:r><w:object>"
+            f'<o:OLEObject Type="Embed" ProgID="{prog_id}" r:id="rId{index}"/>'
+            "</w:object></w:r></w:p>"
+        )
+        for index, prog_id in enumerate(ole_prog_ids, start=1)
+    )
     document_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
-        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:o="urn:schemas-microsoft-com:office:office" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
         f"<w:body>{body}<w:sectPr/></w:body></w:document>"
     )
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
         archive.writestr("word/document.xml", document_xml)
+        if ole_prog_ids:
+            relationships = "".join(
+                (
+                    f'<Relationship Id="rId{index}" '
+                    'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" '
+                    f'Target="embeddings/oleObject{index}.bin"/>'
+                )
+                for index, _prog_id in enumerate(ole_prog_ids, start=1)
+            )
+            archive.writestr(
+                "word/_rels/document.xml.rels",
+                (
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    f"{relationships}</Relationships>"
+                ),
+            )
+            for index, _prog_id in enumerate(ole_prog_ids, start=1):
+                archive.writestr(
+                    f"word/embeddings/oleObject{index}.bin",
+                    b"embedded-object",
+                )
         if dangerous_member:
             archive.writestr("word/vbaProject.bin", b"macro")
     return buffer.getvalue()
@@ -114,6 +151,54 @@ class DocumentAnalysisTests(TestCase):
             any(issue["code"] == "dangerous_archive_member" for issue in payload["issues"])
         )
         self.assertEqual(payload["summary"]["critical"], 1)
+
+    def test_equation_ole_objects_are_not_reported_as_dangerous(self):
+        snapshot = analyze_document_bytes(
+            build_article_docx(
+                ole_prog_ids=("Equation.DSMT4", "Equation.3", "MathType.7"),
+            ),
+            "article.docx",
+        )
+        submission = SimpleNamespace()
+        version = SimpleNamespace(file=True)
+
+        passed, payload = build_file_safety_report(
+            submission,
+            version,
+            snapshot=snapshot,
+        )
+
+        self.assertTrue(passed)
+        self.assertEqual(snapshot["dangerous_members"], [])
+        self.assertEqual(snapshot["embedded_objects"], [])
+        self.assertEqual(len(snapshot["equation_embeddings"]), 3)
+        self.assertEqual(payload["summary"]["total"], 0)
+        self.assertEqual(payload["metrics"]["embedded_equations"], 3)
+
+    def test_unknown_ole_objects_are_aggregated_as_one_warning(self):
+        snapshot = analyze_document_bytes(
+            build_article_docx(
+                ole_prog_ids=("Package", "Excel.Sheet.12"),
+            ),
+            "article.docx",
+        )
+        submission = SimpleNamespace()
+        version = SimpleNamespace(file=True)
+
+        passed, payload = build_file_safety_report(
+            submission,
+            version,
+            snapshot=snapshot,
+        )
+
+        self.assertTrue(passed)
+        self.assertEqual(payload["summary"]["critical"], 0)
+        self.assertEqual(payload["summary"]["warning"], 1)
+        self.assertEqual(
+            [issue["code"] for issue in payload["issues"]],
+            ["unrecognized_ole_embeddings"],
+        )
+        self.assertIn("OLE-объектов: 2", payload["issues"][0]["message"])
 
     def test_recognizes_list_of_used_literature_heading(self):
         snapshot = analyze_document_bytes(

@@ -327,6 +327,7 @@
         {% endif %}
     </section>
 
+    {% if can_view_route_details %}
     <section class="surface submission-route-card" id="submission-route" aria-labelledby="submission-route-title">
         <div class="section-head submission-compact-head">
             <div>
@@ -334,15 +335,7 @@
             </div>
         </div>
 
-        {% if not can_view_route_details %}
-            <div class="empty">
-                {% if can_submit or is_route_approval_pending %}
-                    Маршрут станет доступен автору после проверки и одобрения заведующим кафедрой.
-                {% else %}
-                    Маршрут пока недоступен.
-                {% endif %}
-            </div>
-        {% elif primary_workflow_run %}
+        {% if primary_workflow_run %}
                 <div class="submission-run-block">
                     {% if is_route_approval_pending and selected_route_preview_template %}
                         <div id="route-review-preview-panel" class="submission-comments-panel submission-comments-panel-preview">
@@ -446,6 +439,7 @@
             <div class="empty">Маршрут ещё не запущен.</div>
         {% endif %}
     </section>
+    {% endif %}
 
     {% if conclusion_document %}
         <section class="surface submission-form-panel" id="submission-conclusion">

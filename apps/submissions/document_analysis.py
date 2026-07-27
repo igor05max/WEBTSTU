@@ -1,4 +1,5 @@
 import io
+import posixpath
 import re
 import statistics
 import unicodedata
@@ -518,9 +519,46 @@ def _relationships(archive):
     return sorted(external), sorted(image_targets), sorted(dangerous_targets)
 
 
-def _inspect_archive_members(archive):
+def _ole_embedding_records(root, relationship_targets):
+    records = []
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != "OLEObject":
+            continue
+        relationship_id = element.attrib.get(DR + "id", "")
+        target = str(relationship_targets.get(relationship_id) or "")
+        normalized_target = posixpath.normpath(
+            target.lstrip("/")
+            if target.startswith("/word/")
+            else f"word/{target}"
+        ).lstrip("/")
+        prog_id = str(element.attrib.get("ProgID") or "").strip()
+        object_type = str(element.attrib.get("Type") or "").strip()
+        is_equation = (
+            object_type.casefold() == "embed"
+            and prog_id.casefold().startswith(("equation.", "mathtype"))
+            and normalized_target.casefold().startswith("word/embeddings/")
+        )
+        records.append(
+            {
+                "relationship_id": relationship_id,
+                "member": normalized_target,
+                "prog_id": prog_id,
+                "object_type": object_type,
+                "is_equation": is_equation,
+            }
+        )
+    return records
+
+
+def _inspect_archive_members(archive, *, equation_members=None):
     members = []
     dangerous = []
+    embedded_objects = []
+    equation_members = {
+        str(value).casefold()
+        for value in (equation_members or [])
+        if value
+    }
     compressed_total = 0
     uncompressed_total = 0
     for info in archive.infolist():
@@ -529,15 +567,15 @@ def _inspect_archive_members(archive):
         uncompressed_total += max(0, info.file_size)
         suffix = Path(info.filename).suffix.casefold()
         lowered = info.filename.casefold()
-        if (
-            suffix in DANGEROUS_EXTENSIONS
-            or "vbaproject.bin" in lowered
-            or lowered.startswith("word/embeddings/")
-            or lowered.startswith("embeddings/")
-        ):
+        if suffix in DANGEROUS_EXTENSIONS or "vbaproject.bin" in lowered:
             dangerous.append(info.filename)
+        elif (
+            lowered.startswith("word/embeddings/")
+            or lowered.startswith("embeddings/")
+        ) and lowered not in equation_members:
+            embedded_objects.append(info.filename)
     ratio = round(uncompressed_total / max(compressed_total, 1), 2)
-    return members, dangerous, ratio, uncompressed_total
+    return members, dangerous, embedded_objects, ratio, uncompressed_total
 
 
 def _parse_docx(data):
@@ -554,11 +592,16 @@ def _parse_docx(data):
             info.filename: info.file_size
             for info in archive.infolist()
         }
+        relationship_targets = _document_relationship_targets(archive)
         figures = _figure_records(
             root,
-            _document_relationship_targets(archive),
+            relationship_targets,
             member_sizes,
         )
+        ole_embeddings = _ole_embedding_records(root, relationship_targets)
+        equation_embeddings = [
+            item for item in ole_embeddings if item["is_equation"]
+        ]
         embedded_equations = [
             figure for figure in figures if figure.get("kind") == "embedded_equation"
         ]
@@ -597,7 +640,23 @@ def _parse_docx(data):
                 _paragraph_records(auxiliary_root, styles, region=region)
             )
         external, image_targets, dangerous_targets = _relationships(archive)
-        members, dangerous_members, compression_ratio, unpacked_size = _inspect_archive_members(archive)
+        (
+            members,
+            dangerous_members,
+            embedded_object_members,
+            compression_ratio,
+            unpacked_size,
+        ) = _inspect_archive_members(
+            archive,
+            equation_members={
+                item["member"]
+                for item in equation_embeddings
+            },
+        )
+        ole_embeddings_by_member = {
+            item["member"]: item
+            for item in ole_embeddings
+        }
 
     all_text = "\n".join(record["text"] for record in paragraphs)
     return {
@@ -613,6 +672,20 @@ def _parse_docx(data):
         "dangerous_relationships": dangerous_targets,
         "archive_members": members,
         "dangerous_members": dangerous_members,
+        "embedded_objects": [
+            ole_embeddings_by_member.get(
+                member,
+                {
+                    "relationship_id": "",
+                    "member": member,
+                    "prog_id": "",
+                    "object_type": "",
+                    "is_equation": False,
+                },
+            )
+            for member in embedded_object_members
+        ],
+        "equation_embeddings": equation_embeddings,
         "compression_ratio": compression_ratio,
         "unpacked_size": unpacked_size,
         "parse_error": "",
@@ -1429,6 +1502,8 @@ def analyze_document_bytes(data, file_name, *, semantic_complete=None):
         "dangerous_relationships": [],
         "archive_members": [],
         "dangerous_members": [],
+        "embedded_objects": [],
+        "equation_embeddings": [],
         "compression_ratio": 1.0,
         "unpacked_size": len(data),
         "parse_error": "",

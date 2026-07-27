@@ -356,7 +356,7 @@ class SubmissionRouteSelectionTests(TestCase):
         response = self.client.get(reverse("submissions:detail", args=[submission.pk]))
 
         self.assertFalse(response.context["can_view_route_details"])
-        self.assertContains(response, "Маршрут станет доступен автору после проверки и одобрения заведующим кафедрой.")
+        self.assertNotContains(response, "Маршрут согласования")
         self.assertNotContains(response, "route-picker")
         self.assertNotContains(response, "Первичная проверка")
 
@@ -1115,7 +1115,7 @@ class SubmissionCreateViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context["can_view_route_details"])
-        self.assertContains(response, "Маршрут станет доступен автору после проверки и одобрения заведующим кафедрой.")
+        self.assertNotContains(response, "Маршрут согласования")
         self.assertNotContains(response, "Основной эксперт")
 
     def test_chair_head_detail_contains_preview_payload_for_direction_switching(self):

@@ -473,8 +473,40 @@ def build_file_safety_report(submission, version, *, snapshot=None):
 
     if suffix in {".docx", ".dotx"}:
         if snapshot.get("dangerous_members"):
-            for member in snapshot["dangerous_members"][:20]:
-                issues.append(_issue("dangerous_archive_member", "Потенциально опасное вложение", "critical", f"В контейнере DOCX найден объект «{member}».", location="Внутри DOCX", context=member, highlight=member, suggestion="Удалите макрос, OLE-объект или исполняемое вложение."))
+            dangerous_members = snapshot["dangerous_members"]
+            preview = ", ".join(dangerous_members[:3])
+            remainder = len(dangerous_members) - 3
+            if remainder > 0:
+                preview += f" и ещё {remainder}"
+            issues.append(
+                _issue(
+                    "dangerous_archive_member",
+                    "Опасное содержимое DOCX",
+                    "critical",
+                    f"Найдены макросы или исполняемые вложения: {preview}.",
+                    location="Внутри DOCX",
+                    context="\n".join(dangerous_members[:20]),
+                    suggestion="Удалите макросы и исполняемые вложения или пересохраните документ как обычный DOCX.",
+                )
+            )
+        if snapshot.get("embedded_objects"):
+            embedded_objects = snapshot["embedded_objects"]
+            prog_ids = sorted(
+                {
+                    str(item.get("prog_id") or "тип не указан")
+                    for item in embedded_objects
+                }
+            )
+            issues.append(
+                _issue(
+                    "unrecognized_ole_embeddings",
+                    "Встроенные объекты требуют внимания",
+                    "warning",
+                    f"Найдено встроенных OLE-объектов: {len(embedded_objects)}. Типы: {', '.join(prog_ids[:5])}.",
+                    location="Внутри DOCX",
+                    suggestion="Если эти объекты не нужны для статьи, удалите их. Формулы Word и MathType считаются допустимыми.",
+                )
+            )
         if snapshot.get("dangerous_relationships"):
             for target in snapshot["dangerous_relationships"][:20]:
                 issues.append(_issue("dangerous_external_link", "Опасная внешняя связь", "critical", f"Документ ссылается на локальный или исполняемый ресурс: «{target}».", location="Связи DOCX", context=target, highlight=target))
@@ -491,7 +523,11 @@ def build_file_safety_report(submission, version, *, snapshot=None):
     summary = _summarize(issues)
     message = (
         "Формат, размер и внутренние вложения проверены. "
-        + ("Опасных объектов не найдено." if not any(item["severity"] == "critical" for item in issues) else "Найдены потенциально опасные объекты.")
+        + (
+            "Макросов и исполняемых вложений не найдено."
+            if not any(item["severity"] == "critical" for item in issues)
+            else "Найдены потенциально опасные объекты."
+        )
     )
     payload = _build_payload(
         "file_uploaded",
@@ -504,6 +540,8 @@ def build_file_safety_report(submission, version, *, snapshot=None):
             "signature_valid": signature_valid,
             "maximum_size_bytes": maximum_size,
             "archive_members": len(snapshot.get("archive_members") or []),
+            "embedded_equations": len(snapshot.get("equation_embeddings") or []),
+            "unrecognized_ole_objects": len(snapshot.get("embedded_objects") or []),
             "external_relationships": len(snapshot.get("external_relationships") or []),
         },
         details={"external_relationships": snapshot.get("external_relationships") or []},
