@@ -250,6 +250,8 @@
                                     <span class="submission-template-block-status">
                                         {% if block.found %}
                                             Найден
+                                        {% elif block.can_fill %}
+                                            Будет заполнен
                                         {% elif block.required %}
                                             Нужно заполнить
                                         {% else %}

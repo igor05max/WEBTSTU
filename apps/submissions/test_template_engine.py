@@ -283,6 +283,98 @@ class ReusableTemplateEngineTests(SimpleTestCase):
         self.assertEqual(labels["body"], "Основной текст")
         self.assertEqual(labels["references"], "Список литературы")
 
+    def test_affiliation_is_a_real_required_organization_block(self):
+        normalized = normalize_template_rules(
+            {"structure": {"required_sections": ["Affiliation"]}}
+        )
+        blocks = {
+            block["role"]: block
+            for block in normalized["document"]["blocks"]
+        }
+
+        self.assertTrue(blocks["institution"]["required"])
+        self.assertEqual(blocks["institution"]["label"], "Организация")
+        self.assertEqual(normalized["structure"]["required_sections"], [])
+
+    def test_institutional_review_statement_is_not_an_organization(self):
+        normalized = normalize_template_rules(
+            {
+                "structure": {
+                    "required_sections": ["Institutional Review Board Statement"]
+                }
+            }
+        )
+
+        roles = {
+            block["role"]
+            for block in normalized["document"]["blocks"]
+        }
+        self.assertNotIn("institution", roles)
+        self.assertEqual(
+            normalized["structure"]["required_sections"],
+            ["Institutional Review Board Statement"],
+        )
+
+    def test_saved_false_institution_block_is_migrated_to_required_section(self):
+        normalized = normalize_template_rules(
+            {
+                "document": {
+                    "blocks": [
+                        {
+                            "role": "institution",
+                            "label": "Организация",
+                            "source_label": "Institutional Review Board Statement",
+                            "required": True,
+                        }
+                    ]
+                }
+            }
+        )
+
+        roles = {
+            block["role"]
+            for block in normalized["document"]["blocks"]
+        }
+        self.assertNotIn("institution", roles)
+        self.assertEqual(
+            normalized["structure"]["required_sections"],
+            ["Institutional Review Board Statement"],
+        )
+
+    def test_required_organization_from_metadata_is_ready_to_fill(self):
+        from docx import Document
+
+        document = Document()
+        document.add_paragraph("НАЗВАНИЕ ИССЛЕДОВАНИЯ")
+        document.add_paragraph(
+            "Основной текст исследования содержит достаточно слов для распознавания."
+        )
+        source = BytesIO()
+        document.save(source)
+        plan = build_docx_plan(
+            source.getvalue(),
+            {
+                "document": {
+                    "blocks": [
+                        {
+                            "role": "institution",
+                            "label": "Affiliation",
+                            "required": True,
+                        }
+                    ]
+                }
+            },
+            metadata={"organizations": "Тамбовский государственный университет"},
+        )
+        organization = next(
+            block for block in plan["blocks"] if block["role"] == "institution"
+        )
+
+        self.assertFalse(organization["found"])
+        self.assertTrue(organization["can_fill"])
+        self.assertEqual(organization["status"], "ready_to_fill")
+        self.assertNotIn(organization, plan["missing_blocks"])
+
     def test_plan_recognizes_title_block_without_false_missing_sections(self):
         plan = build_docx_plan(_sample_docx(), LEGACY_RULES)
 

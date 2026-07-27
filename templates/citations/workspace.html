@@ -5,7 +5,7 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727d">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727f">
 {% endblock %}
 
 {% block content %}
@@ -36,7 +36,9 @@
     </div>
     <dl class="citation-metadata-grid">
         <div><dt>Авторы</dt><dd>{{ selected_submission.document_authors|default:"Не удалось распознать" }}</dd></div>
-        <div><dt>Организация</dt><dd>{{ selected_submission.organizations|default:"Не удалось распознать" }}</dd></div>
+        {% if selected_submission.organizations %}
+            <div><dt>Организация</dt><dd>{{ selected_submission.organizations }}</dd></div>
+        {% endif %}
         <div><dt>Аннотация</dt><dd>{{ selected_submission.abstract|default:"Не удалось распознать" }}</dd></div>
         <div><dt>Ключевые слова</dt><dd>{{ selected_submission.keywords|default:"Не удалось распознать" }}</dd></div>
         <div><dt>E-mail</dt><dd>{{ selected_submission.contact_emails|default:"Не удалось распознать" }}</dd></div>
@@ -53,7 +55,7 @@
         </div>
         <p>Система разберёт до 6 утверждений и покажет результаты сразу после завершения.</p>
     </div>
-    <form method="post" class="citation-search-form"{% if auto_analyze %} data-auto-analyze{% endif %}>
+    <form method="post" class="citation-search-form" data-no-site-loading{% if auto_analyze %} data-auto-analyze{% endif %}>
         {% csrf_token %}
         <input type="hidden" name="submission" value="{{ selected_submission.pk }}">
         <input type="hidden" name="max_claims" value="6">
@@ -77,7 +79,7 @@
         </div>
         <p>Выберите один вариант. DOC будет преобразован в DOCX, после подбора файл можно скачать с уже добавленными ссылками.</p>
     </div>
-    <form method="post" enctype="multipart/form-data" class="citation-search-form" data-citation-source-form>
+    <form method="post" enctype="multipart/form-data" class="citation-search-form" data-citation-source-form data-no-site-loading>
         {% csrf_token %}
         {% if form.non_field_errors %}
             <div class="citation-form-error">{{ form.non_field_errors }}</div>
@@ -111,6 +113,17 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M10.5 7v7M7 10.5h7"/></svg>
                 Проанализировать и найти
             </button>
+        </div>
+        <div class="citation-local-loading" data-citation-local-loading hidden role="status" aria-live="polite">
+            <div class="citation-local-loading-title">
+                <span aria-hidden="true"></span>
+                <strong>Анализируем материал и ищем похожие статьи…</strong>
+            </div>
+            <div class="citation-local-loading-skeleton" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
         </div>
     </form>
 </section>
@@ -231,5 +244,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260727c" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20260727d" defer></script>
 {% endblock %}

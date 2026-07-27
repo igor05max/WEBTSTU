@@ -24,16 +24,12 @@
         root.setAttribute("aria-live", "polite");
         root.setAttribute("aria-atomic", "true");
         root.innerHTML = [
-            '<div class="site-loading-scrim" aria-hidden="true"></div>',
             '<div class="site-loading-progress" aria-hidden="true"></div>',
             '<div class="site-loading-panel">',
             '<span class="site-loading-spinner" aria-hidden="true"></span>',
             '<div class="site-loading-copy">',
             '<strong class="site-loading-title">Загружаем данные</strong>',
             '<p class="site-loading-message">Пожалуйста, подождите — результат появится на этой странице.</p>',
-            "</div>",
-            '<div class="site-loading-skeleton" aria-hidden="true">',
-            "<span></span><span></span><span></span>",
             "</div>",
             "</div>",
         ].join("");
@@ -100,7 +96,6 @@
         root.dataset.mode = navigationTask ? "navigation" : "background";
         titleNode.textContent = current.title;
         messageNode.textContent = current.message;
-        document.body.setAttribute("aria-busy", "true");
         window.requestAnimationFrame(function () {
             root.classList.add("is-visible");
         });
@@ -133,7 +128,7 @@
             }
             task.visible = true;
             render();
-        }, mode === "navigation" ? 0 : 280);
+        }, mode === "navigation" ? 420 : 280);
         return token;
     }
 
@@ -187,6 +182,18 @@
         return label
             ? "Выполняем действие «" + label + "». Результат появится здесь."
             : "Сервер обрабатывает запрос. Результат появится на текущей странице.";
+    }
+
+    function isDownloadAction(element, targetUrl) {
+        if (element && element.hasAttribute && element.hasAttribute("download")) {
+            return true;
+        }
+        var label = actionText(element);
+        var url = String(targetUrl || "");
+        return (
+            /скач|download/i.test(label)
+            || /(?:\/download(?:\/|$)|\.(?:docx?|pdf|tex|zip|rar|7z|xlsx?|csv)(?:$|[?#]))/i.test(url)
+        );
     }
 
     var originalFetch = window.fetch;
@@ -257,14 +264,18 @@
             || event.ctrlKey
             || event.shiftKey
             || event.altKey
-            || link.hasAttribute("download")
             || link.dataset.noSiteLoading !== undefined
             || (link.target && link.target !== "_self")
         ) {
             return false;
         }
         var href = link.getAttribute("href") || "";
-        if (!href || href[0] === "#" || /^(?:mailto|tel|javascript):/i.test(href)) {
+        if (
+            !href
+            || href[0] === "#"
+            || /^(?:mailto|tel|javascript):/i.test(href)
+            || isDownloadAction(link, href)
+        ) {
             return false;
         }
         try {
@@ -304,6 +315,7 @@
                 message: label
                     ? "Переходим к разделу «" + label + "»."
                     : "Подготавливаем содержимое новой страницы.",
+                element: link,
             });
         }, 0);
     }, true);
@@ -317,12 +329,15 @@
         ) {
             return;
         }
+        var submitter = event.submitter || recentButton();
+        if (isDownloadAction(submitter, form.getAttribute("action") || "")) {
+            return;
+        }
         window.setTimeout(function () {
             if (event.defaultPrevented || form.dataset.siteNavigationStarted === "true") {
                 return;
             }
             form.dataset.siteNavigationStarted = "true";
-            var submitter = event.submitter || recentButton();
             var label = actionText(submitter);
             start({
                 mode: "navigation",

@@ -353,9 +353,15 @@ def _configured_block_map(rules: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {item["role"]: item for item in get_document_blocks(rules)}
 
 
-def _block_entries(document, roles: dict[int, str], rules: dict[str, Any]) -> list[dict[str, Any]]:
+def _block_entries(
+    document,
+    roles: dict[int, str],
+    rules: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     entries = []
     by_role = _configured_block_map(rules)
+    supplied_values = _metadata_values(metadata)
     for role, block in by_role.items():
         paragraph_numbers = [
             index + 1
@@ -363,17 +369,29 @@ def _block_entries(document, roles: dict[int, str], rules: dict[str, Any]) -> li
             if assigned_role == role
             or (role == "references" and assigned_role == "references_heading")
         ]
+        can_fill = (
+            not paragraph_numbers
+            and bool(block.get("required"))
+            and role not in {"body", "references"}
+            and bool(supplied_values.get(role))
+        )
         entries.append(
             {
                 "role": role,
                 "label": block.get("label") or BLOCK_CATALOG[role]["label"],
                 "required": bool(block.get("required")),
                 "found": bool(paragraph_numbers),
+                "found_in_document": bool(paragraph_numbers),
+                "can_fill": can_fill,
                 "paragraph_numbers": paragraph_numbers[:20],
                 "status": (
                     "found"
                     if paragraph_numbers
-                    else ("missing" if block.get("required") else "optional_missing")
+                    else (
+                        "ready_to_fill"
+                        if block.get("required") and can_fill
+                        else ("missing" if block.get("required") else "optional_missing")
+                    )
                 ),
             }
         )
@@ -462,7 +480,7 @@ def check_docx_against_template(
     roles = _assign_roles(document, metadata)
     metrics = _document_metrics(document, roles)
     block_map = _configured_block_map(normalized_rules)
-    block_entries = _block_entries(document, roles, normalized_rules)
+    block_entries = _block_entries(document, roles, normalized_rules, metadata)
     metadata_values = _metadata_values(metadata)
     issues: list[dict[str, Any]] = []
 

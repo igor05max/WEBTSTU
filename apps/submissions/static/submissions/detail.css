@@ -954,6 +954,17 @@
     background: #dff3e6;
 }
 
+.workspace-page-main .submission-template-block.is-ready_to_fill {
+    border-color: #b9d4f6;
+    background: #f1f7ff;
+}
+
+.workspace-page-main .submission-template-block.is-ready_to_fill .submission-template-block-order,
+.workspace-page-main .submission-template-block.is-ready_to_fill .submission-template-block-status {
+    color: #245ea8;
+    background: #dcecff;
+}
+
 .workspace-page-main .submission-template-block.is-missing {
     border-color: #efc7a4;
     background: #fff7ed;

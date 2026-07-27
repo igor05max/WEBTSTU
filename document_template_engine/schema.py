@@ -47,6 +47,8 @@ BLOCK_CATALOG = {
             "Название учреждения",
             "Institution",
             "Institution name",
+            "Affiliation",
+            "Author affiliation",
         ],
         "default_style": {"alignment": "center", "first_line_indent_cm": 0},
     },
@@ -133,7 +135,10 @@ def role_from_label(value: Any) -> str:
     if normalized in _ROLE_ALIASES:
         return _ROLE_ALIASES[normalized]
     for alias, role in sorted(_ROLE_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
-        if len(alias) >= 5 and (normalized.startswith(alias) or alias.startswith(normalized)):
+        if len(alias) >= 5 and (
+            normalized.startswith(f"{alias} ")
+            or alias.startswith(f"{normalized} ")
+        ):
             return role
     return ""
 
@@ -141,6 +146,17 @@ def role_from_label(value: Any) -> str:
 def _is_optional_label(value: Any) -> bool:
     normalized = str(value or "").casefold()
     return "optional" in normalized or "необяз" in normalized or "при необходимости" in normalized
+
+
+def _is_institutional_review_label(value: Any) -> bool:
+    """Distinguish an ethics/IRB section from an author's affiliation."""
+
+    normalized = _normalize_label(value)
+    return (
+        normalized.startswith("institutional review")
+        or normalized.startswith("institution review board")
+        or normalized.startswith("irb statement")
+    )
 
 
 def _as_blocks(value: Any) -> list[dict[str, Any]]:
@@ -205,14 +221,20 @@ def normalize_template_rules(rules: Any) -> dict[str, Any]:
 
     blocks_by_role: dict[str, dict[str, Any]] = {}
     block_order: list[str] = []
+    migrated_required_sections: list[str] = []
     for item in _as_blocks(document_rules.get("blocks")):
         role = item["role"]
+        source_label = item.get("source_label") or item.get("label")
+        if role == "institution" and _is_institutional_review_label(source_label):
+            if item.get("required") and source_label:
+                migrated_required_sections.append(str(source_label))
+            continue
         existing = blocks_by_role.get(role, {})
         blocks_by_role[role] = {**existing, **item}
         if role not in block_order:
             block_order.append(role)
 
-    real_required_sections = []
+    real_required_sections = list(migrated_required_sections)
     for label in structure.get("required_sections") or []:
         role = role_from_label(label)
         if role:

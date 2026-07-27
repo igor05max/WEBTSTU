@@ -157,7 +157,10 @@
                 return;
             }
             fetch(pattern.replace("{id}", encodeURIComponent(templateHidden.value)), {
-                headers: {"X-Requested-With": "XMLHttpRequest"}
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-Site-Loading": "silent"
+                }
             })
                 .then(function (response) {
                     if (!response.ok) {
@@ -238,7 +241,10 @@
                 requestNumber += 1;
                 var currentRequest = requestNumber;
                 fetch(url + "?q=" + encodeURIComponent(query) + "&article_type=" + encodeURIComponent(articleType.value), {
-                    headers: {"X-Requested-With": "XMLHttpRequest"}
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                        "X-Site-Loading": "silent"
+                    }
                 })
                     .then(function (response) {
                         if (!response.ok) {
@@ -817,7 +823,8 @@
                 body: body,
                 headers: {
                     "X-CSRFToken": csrfToken(),
-                    "X-Requested-With": "XMLHttpRequest"
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-Site-Loading": "silent"
                 },
                 credentials: "same-origin"
             })

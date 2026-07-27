@@ -6,6 +6,7 @@
         const text = sourceForm.querySelector("[name='text']");
         const fileStatus = sourceForm.querySelector("[data-citation-file-status]");
         const submitButton = sourceForm.querySelector("[data-citation-search-submit]");
+        const localLoading = sourceForm.querySelector("[data-citation-local-loading]");
 
         const clearFile = () => {
             if (file) file.value = "";
@@ -42,11 +43,17 @@
             clearFile();
         });
 
-        sourceForm.addEventListener("submit", () => {
+        sourceForm.addEventListener("submit", (event) => {
+            if (event.defaultPrevented || !sourceForm.checkValidity()) return;
             const selectedFile = file?.files?.[0];
-            if (!selectedFile || !submitButton) return;
-            submitButton.disabled = true;
-            submitButton.textContent = "Файл загружен · ищем источники…";
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.textContent = selectedFile
+                    ? "Файл загружен · ищем источники…"
+                    : "Анализируем · ищем источники…";
+            }
+            if (localLoading) localLoading.hidden = false;
+            sourceForm.setAttribute("aria-busy", "true");
         });
     }
 
