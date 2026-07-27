@@ -145,18 +145,12 @@
         }
     };
 
-    const citationButtons = [...document.querySelectorAll("[data-add-citation]")];
-    citationButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-            const source = button.closest(".citation-source");
-            const claim = button.closest(".citation-claim");
-            const key = `${button.dataset.claimId}::${button.dataset.articleId}`;
-            if (selected.has(key)) {
-                selected.delete(key);
-                setButtonState(button, false);
-                render();
-                return;
-            }
+    const updateSelection = (button, shouldAdd) => {
+        const source = button.closest(".citation-source");
+        const claim = button.closest(".citation-claim");
+        const key = `${button.dataset.claimId}::${button.dataset.articleId}`;
+        const add = shouldAdd ?? !selected.has(key);
+        if (add) {
             selected.set(key, {
                 key,
                 claimId: button.dataset.claimId,
@@ -167,6 +161,16 @@
                 button,
             });
             setButtonState(button, true);
+        } else {
+            selected.delete(key);
+            setButtonState(button, false);
+        }
+    };
+
+    const citationButtons = [...document.querySelectorAll("[data-add-citation]")];
+    citationButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            updateSelection(button);
             render();
         });
     });
@@ -187,7 +191,7 @@
             citationButtons.forEach((button) => {
                 const key = `${button.dataset.claimId}::${button.dataset.articleId}`;
                 if (initialKeys.has(key)) {
-                    button.click();
+                    updateSelection(button, true);
                 }
             });
         } catch (_error) {
