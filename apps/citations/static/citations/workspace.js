@@ -145,7 +145,8 @@
         }
     };
 
-    document.querySelectorAll("[data-add-citation]").forEach((button) => {
+    const citationButtons = [...document.querySelectorAll("[data-add-citation]")];
+    citationButtons.forEach((button) => {
         button.addEventListener("click", () => {
             const source = button.closest(".citation-source");
             const claim = button.closest(".citation-claim");
@@ -169,6 +170,30 @@
             render();
         });
     });
+
+    const initialSelectionsElement = document.getElementById(
+        "citation-initial-selections"
+    );
+    if (initialSelectionsElement) {
+        try {
+            const initialSelections = JSON.parse(
+                initialSelectionsElement.textContent || "[]"
+            );
+            const initialKeys = new Set(
+                initialSelections.map(
+                    (item) => `${item.claim_id}::${item.article_id}`
+                )
+            );
+            citationButtons.forEach((button) => {
+                const key = `${button.dataset.claimId}::${button.dataset.articleId}`;
+                if (initialKeys.has(key)) {
+                    button.click();
+                }
+            });
+        } catch (_error) {
+            // A stale saved selection must not break the recommendations page.
+        }
+    }
 
     copyButton?.addEventListener("click", async () => {
         const articleNumbers = new Map();

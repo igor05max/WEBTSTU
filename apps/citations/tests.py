@@ -560,6 +560,91 @@ class CitationSystemTests(TestCase):
         self.assertAlmostEqual(reference.paragraph_format.first_line_indent.cm, -1, places=2)
         self.assertEqual(reference.paragraph_format.line_spacing, 1)
 
+    def test_two_sources_continue_full_automatic_list_with_one_grouped_marker(self):
+        document = Document()
+        claim_text = (
+            "Система включает поиск релевантных фрагментов и генерацию ответа "
+            "на их основе."
+        )
+        document.add_paragraph(f"{claim_text} Ранее использовались ссылки [1] и [3, 4].")
+        document.add_paragraph("Список литературы")
+        for number in range(1, 8):
+            document.add_paragraph(f"Источник {number}.", style="List Number")
+        source = BytesIO()
+        document.save(source)
+        recommendations = [
+            {
+                "article_id": "1001",
+                "title": "Первый новый источник",
+                "citation": "Иванов И. И. Первый новый источник. 2024.",
+            },
+            {
+                "article_id": "1002",
+                "title": "Второй новый источник",
+                "citation": "Петров П. П. Второй новый источник. 2025.",
+            },
+        ]
+        claim = {
+            "id": "claim-grouped",
+            "text": claim_text,
+            "recommendations": recommendations,
+        }
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="seven-references.docx",
+            snapshot={"text": claim_text},
+            claims=[claim],
+            index_status={"ready": True},
+        )
+
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[
+                {"claim_id": "claim-grouped", "article_id": "1001"},
+                {"claim_id": "claim-grouped", "article_id": "1002"},
+            ],
+        )
+        result = Document(output)
+
+        self.assertIn(f"{claim_text} [8, 9] Ранее", result.paragraphs[0].text)
+        self.assertNotIn("[9] [8]", result.paragraphs[0].text)
+        self.assertEqual(result.paragraphs[-2].text, recommendations[0]["citation"])
+        self.assertEqual(result.paragraphs[-1].text, recommendations[1]["citation"])
+
+    def test_document_is_not_created_when_claim_marker_cannot_be_inserted(self):
+        document = Document()
+        document.add_paragraph("Текст документа уже изменён.")
+        source = BytesIO()
+        document.save(source)
+        claim = {
+            "id": "claim-missing",
+            "text": "Фрагмент, которого нет в документе.",
+            "recommendations": [
+                {
+                    "article_id": "1001",
+                    "title": "Новый источник",
+                    "citation": "Иванов И. И. Новый источник. 2024.",
+                }
+            ],
+        }
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="changed.docx",
+            snapshot={"text": claim["text"]},
+            claims=[claim],
+            index_status={"ready": True},
+        )
+
+        with self.assertRaisesRegex(ValueError, "Не удалось поставить ссылку"):
+            apply_to_docx(
+                user_id=self.user.pk,
+                token=payload["token"],
+                selections=[{"claim_id": "claim-missing", "article_id": "1001"}],
+            )
+
     def test_added_reference_continues_visible_decimal_bibliography_numbering(self):
         document = Document()
         claim_text = "Нейронные сети применяются для анализа движений человека."
@@ -798,10 +883,13 @@ class CitationSystemTests(TestCase):
         search = self.client.post(
             reverse("citations:workspace"),
             {"submission": submission.pk, "max_claims": 3},
+            follow=True,
         )
         self.assertEqual(search.status_code, 200)
         result = search.context["result"]
         self.assertEqual(result["submission_id"], submission.pk)
+        self.assertIn(f"submission={submission.pk}", search.request["QUERY_STRING"])
+        self.assertIn(f"workspace={result['token']}", search.request["QUERY_STRING"])
         self.assertContains(search, 'data-site-loading-title="Добавляем источники"')
         claim = next(
             item for item in result["claims"] if item.get("recommendations")
@@ -826,10 +914,31 @@ class CitationSystemTests(TestCase):
         preview_page = self.client.get(
             reverse("citations:submission_result_preview", args=[result["token"]])
         )
+        cached_workspace_url = (
+            f"{reverse('citations:workspace')}?submission={submission.pk}"
+            f"&workspace={result['token']}"
+        )
+        self.assertContains(preview_page, cached_workspace_url.replace("&", "&amp;"))
         self.assertContains(
             preview_page,
             'data-site-loading-title="Сохраняем документ"',
         )
+        with patch("apps.citations.views.rerank_claims") as mocked_rerank:
+            cached_page = self.client.get(cached_workspace_url)
+        self.assertEqual(cached_page.status_code, 200)
+        self.assertEqual(cached_page.context["result"]["token"], result["token"])
+        self.assertEqual(
+            cached_page.context["result"]["selections"],
+            [
+                {
+                    "claim_id": claim["id"],
+                    "article_id": str(article["article_id"]),
+                }
+            ],
+        )
+        self.assertContains(cached_page, "citation-initial-selections")
+        self.assertFalse(cached_page.context["auto_analyze"])
+        mocked_rerank.assert_not_called()
         with patch(
             "apps.citations.views.build_docx_bytes_pdf",
             return_value=b"%PDF-1.4\n" + (b"0" * 120),
@@ -913,6 +1022,7 @@ class CitationSystemTests(TestCase):
         search = self.client.post(
             reverse("citations:workspace"),
             {"submission": submission.pk, "max_claims": 3},
+            follow=True,
         )
 
         self.assertEqual(search.status_code, 200)

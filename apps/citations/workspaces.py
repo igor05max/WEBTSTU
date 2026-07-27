@@ -14,7 +14,7 @@ from document_template_engine import (
 
 
 TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
-CITATION_NUMBER_RE = re.compile(r"\[(\d+)\]")
+CITATION_BLOCK_RE = re.compile(r"\[([\d\s,;]+)\]")
 BRACKETED_REFERENCE_RE = re.compile(r"^\s*\[(\d+)\]\s*")
 DECIMAL_REFERENCE_RE = re.compile(r"^\s*(\d+)([.)])\s+")
 
@@ -320,7 +320,8 @@ def _existing_reference_numbers(document, bibliography_heading):
     numbers = [
         int(value)
         for paragraph in _iter_document_paragraphs(document)
-        for value in CITATION_NUMBER_RE.findall(paragraph.text)
+        for block in CITATION_BLOCK_RE.findall(paragraph.text)
+        for value in re.findall(r"\d+", block)
     ]
     if bibliography_heading is None:
         return numbers
@@ -370,22 +371,53 @@ def apply_to_docx(*, user_id, token, selections):
         None,
     )
     existing_numbers = _existing_reference_numbers(document, bibliography_heading)
-    start_number = max(existing_numbers, default=0) + 1
+    bibliography_reference_count = (
+        len(_bibliography_references(document, bibliography_heading))
+        if bibliography_heading is not None
+        else 0
+    )
+    start_number = max(
+        [*existing_numbers, bibliography_reference_count],
+        default=0,
+    ) + 1
     number_by_article = {
         article_id: start_number + offset
         for article_id, offset in article_numbers.items()
     }
 
-    document_paragraphs = list(_iter_document_paragraphs(document))
+    selected_by_claim = {}
     for claim, _result, article_id in selected:
-        marker = f"[{number_by_article[article_id]}]"
+        claim_id = str(claim.get("id") or "")
+        group = selected_by_claim.setdefault(
+            claim_id,
+            {"claim": claim, "numbers": []},
+        )
+        number = number_by_article[article_id]
+        if number not in group["numbers"]:
+            group["numbers"].append(number)
+
+    document_paragraphs = list(_iter_document_paragraphs(document))
+    missing_markers = []
+    for group in selected_by_claim.values():
+        claim = group["claim"]
+        marker = f"[{', '.join(str(value) for value in sorted(group['numbers']))}]"
         target_text = " ".join(str(claim.get("text") or "").split())
+        inserted = False
         for paragraph in document_paragraphs:
             normalized = " ".join(paragraph.text.split())
             if target_text and target_text in normalized:
                 if not _insert_marker_after_claim(paragraph, target_text, marker):
                     paragraph.add_run(f" {marker}")
+                inserted = True
                 break
+        if not inserted:
+            missing_markers.append(target_text[:160])
+
+    if missing_markers:
+        raise ValueError(
+            "Не удалось поставить ссылку рядом с выбранным фрагментом: "
+            f"«{missing_markers[0]}». Документ не был сформирован."
+        )
 
     if bibliography_heading is None:
         try:
@@ -434,10 +466,18 @@ def prepare_docx_result(*, user_id, token, selections):
         selections=selections,
     )
     payload = load_workspace(user_id=user_id, token=token)
+    selected, _article_numbers = _selected_sources(payload, selections)
     result_name = "result.docx"
     (payload["_directory"] / result_name).write_bytes(output.getvalue())
     payload["result_name"] = result_name
     payload["result_file_name"] = file_name
+    payload["selections"] = [
+        {
+            "claim_id": str(claim.get("id") or ""),
+            "article_id": article_id,
+        }
+        for claim, _result, article_id in selected
+    ]
     directory = payload.pop("_directory")
     (directory / "workspace.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),

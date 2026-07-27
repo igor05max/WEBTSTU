@@ -248,6 +248,7 @@
                 <span>Нажмите «Выбрать источник» у подходящей публикации.</span>
             </div>
             <ol class="citation-plan-list" data-plan-list></ol>
+            {{ result.selections|json_script:"citation-initial-selections" }}
             <button class="citation-copy-button" type="button" data-copy-plan hidden>Скопировать оформленный список</button>
             {% if result.can_apply_docx %}
             <form method="post" action="{% if result.submission_id %}{% url 'citations:prepare_submission_result' %}{% else %}{% url 'citations:apply' %}{% endif %}"
@@ -292,5 +293,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260728a" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20260728b" defer></script>
 {% endblock %}

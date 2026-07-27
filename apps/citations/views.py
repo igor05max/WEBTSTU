@@ -1,11 +1,13 @@
 import json
 from io import BytesIO
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.clickjacking import xframe_options_sameorigin
@@ -84,6 +86,30 @@ def _workspace_submission(request, payload):
     return submission
 
 
+def _workspace_result(payload, *, source_title):
+    claims = payload.get("claims") or []
+    return {
+        "source_title": source_title,
+        "file_name": payload.get("file_name") or "",
+        "token": payload["token"],
+        "can_apply_docx": payload.get("suffix") == ".docx",
+        "claims": claims,
+        "analyzed_claim_count": payload.get("analyzed_claim_count", len(claims)),
+        "analysis": payload.get("analysis") or {},
+        "index": payload.get("index_status") or {},
+        "submission_id": payload.get("submission_id"),
+        "selections": payload.get("selections") or [],
+        "total_recommendations": sum(
+            len(claim.get("recommendations") or []) for claim in claims
+        ),
+        "best_available": any(
+            item.get("best_available")
+            for claim in claims
+            for item in (claim.get("recommendations") or [])
+        ),
+    }
+
+
 @login_required
 def workspace(request):
     result = None
@@ -110,6 +136,41 @@ def workspace(request):
             )
         except (PermissionError, Submission.DoesNotExist):
             selected_submission = None
+    requested_workspace_token = (
+        str(request.GET.get("workspace") or "")
+        if request.method == "GET"
+        else ""
+    )
+    if requested_workspace_token:
+        try:
+            workspace_payload = load_workspace(
+                user_id=request.user.pk,
+                token=requested_workspace_token,
+            )
+            if workspace_payload.get("submission_id"):
+                workspace_submission = _workspace_submission(
+                    request,
+                    workspace_payload,
+                )
+                if (
+                    selected_submission is not None
+                    and selected_submission.pk != workspace_submission.pk
+                ):
+                    raise ValueError("Рабочий набор относится к другому материалу.")
+                selected_submission = workspace_submission
+            result = _workspace_result(
+                workspace_payload,
+                source_title=(
+                    selected_submission.title
+                    if selected_submission is not None
+                    else workspace_payload.get("file_name") or "Документ"
+                ),
+            )
+        except (ValueError, PermissionError, FileNotFoundError):
+            messages.warning(
+                request,
+                "Сохранённый подбор источников больше недоступен. Запустите поиск заново.",
+            )
     if request.method == "POST" and form.is_valid():
         file_bytes, file_name, source_title, selected_submission = _read_form_source(form)
         if file_bytes is None:
@@ -167,29 +228,25 @@ def workspace(request):
                         else None
                     ),
                 )
-                result = {
-                    "source_title": source_title,
-                    "file_name": file_name,
-                    "token": workspace_payload["token"],
-                    "can_apply_docx": workspace_payload["suffix"] == ".docx",
-                    "claims": claims,
-                    "analyzed_claim_count": analyzed_claim_count,
-                    "analysis": analysis,
-                    "index": index_meta,
-                    "submission_id": workspace_payload.get("submission_id"),
-                    "total_recommendations": sum(
-                        len(claim.get("recommendations") or []) for claim in claims
-                    ),
-                    "best_available": any(
-                        item.get("best_available")
-                        for claim in claims
-                        for item in (claim.get("recommendations") or [])
-                    ),
-                }
+                workspace_payload["analyzed_claim_count"] = analyzed_claim_count
+                result = _workspace_result(
+                    workspace_payload,
+                    source_title=source_title,
+                )
                 if not claims:
                     messages.warning(
                         request,
                         "Подходящие новые источники не найдены.",
+                    )
+                if selected_submission is not None:
+                    query = urlencode(
+                        {
+                            "submission": selected_submission.pk,
+                            "workspace": workspace_payload["token"],
+                        }
+                    )
+                    return redirect(
+                        f"{reverse('citations:workspace')}?{query}"
                     )
             except Exception as exc:
                 form.add_error(None, f"Поиск источников не завершён: {exc}")
@@ -208,6 +265,8 @@ def workspace(request):
             "auto_analyze": bool(
                 request.method == "GET"
                 and selected_submission is not None
+                and result is None
+                and not requested_workspace_token
             ),
         },
     )
