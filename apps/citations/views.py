@@ -113,6 +113,7 @@ def workspace(request):
                     max_claims=form.cleaned_data["max_claims"],
                 )
                 claims = analysis["claims"]
+                analyzed_claim_count = len(claims)
                 for claim in claims:
                     claim["recommendations"] = search_claim(claim)
                 rerank_claims(claims)
@@ -156,6 +157,7 @@ def workspace(request):
                     "token": workspace_payload["token"],
                     "can_apply_docx": workspace_payload["suffix"] == ".docx",
                     "claims": claims,
+                    "analyzed_claim_count": analyzed_claim_count,
                     "analysis": analysis,
                     "index": index_meta,
                     "submission_id": workspace_payload.get("submission_id"),

@@ -5,7 +5,7 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727c">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727d">
 {% endblock %}
 
 {% block content %}
@@ -68,7 +68,7 @@
         {% endif %}
     </form>
 </section>
-{% elif not selected_submission %}
+{% elif not selected_submission and not result %}
 <section class="citation-search-card">
     <div class="citation-card-heading">
         <div>
@@ -117,12 +117,16 @@
 {% endif %}
 
 {% if result %}
-<section class="citation-results">
+<section class="citation-results{% if not result.claims %} is-empty{% endif %}" id="citation-results">
     <div class="citation-results-heading">
         <div>
-            <span>02 · Подходящие источники</span>
+            <span>02 · Анализ завершён</span>
             <h2>{{ result.source_title }}</h2>
-            <p>Фрагмент статьи, подходящая публикация и процент соответствия. Найдено: {{ result.claims|length }}.</p>
+            {% if result.claims %}
+                <p>Фрагмент статьи, подходящая публикация и процент соответствия. Найдено: {{ result.claims|length }}.</p>
+            {% else %}
+                <p>Файл успешно загружен и обработан. Проверено фрагментов: {{ result.analyzed_claim_count }}.</p>
+            {% endif %}
         </div>
     </div>
 
@@ -199,7 +203,14 @@
         </aside>
     </div>
     {% else %}
-    <div class="citation-empty-source">Подходящие новые источники не найдены.</div>
+    <div class="citation-empty-source" role="status">
+        <span class="citation-empty-source-icon" aria-hidden="true">✓</span>
+        <div>
+            <h3>Анализ выполнен</h3>
+            <p>Текст документа прочитан, но в локальной базе не найдено новых публикаций с соответствием не ниже 50%. Это не ошибка загрузки.</p>
+            <a class="citation-primary-action" href="{% url 'citations:workspace' %}">Проверить другой файл</a>
+        </div>
+    </div>
     {% endif %}
 </section>
 {% endif %}

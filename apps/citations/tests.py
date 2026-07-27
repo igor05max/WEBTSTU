@@ -273,7 +273,12 @@ class CitationSystemTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["result"]["claims"], [])
+        self.assertEqual(response.context["result"]["analyzed_claim_count"], 1)
+        self.assertContains(response, "Анализ выполнен")
+        self.assertContains(response, "Файл успешно загружен и обработан")
+        self.assertContains(response, "Это не ошибка загрузки")
         self.assertContains(response, "Подходящие новые источники не найдены")
+        self.assertNotContains(response, "data-citation-source-form")
 
     def test_submission_check_contains_exact_citation_locations(self):
         submission = SimpleNamespace(
