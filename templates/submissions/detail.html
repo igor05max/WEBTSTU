@@ -303,6 +303,37 @@
 
         {% if can_edit_formatting_rules and formatting_rules_form %}
             <details class="submission-formatting-editor">
+                <summary>
+                    {% if submission.formatting_template %}
+                        Заменить шаблон оформления
+                    {% else %}
+                        Добавить шаблон оформления к этой статье
+                    {% endif %}
+                </summary>
+                <form method="post" enctype="multipart/form-data" action="{% url 'submissions:attach_formatting_template' submission.pk %}">
+                    {% csrf_token %}
+                    {{ formatting_template_attach_form.non_field_errors }}
+                    <div class="submission-formatting-fields submission-formatting-template-inputs">
+                        {% for field in formatting_template_attach_form %}
+                            <label>
+                                <span>{{ field.label }}</span>
+                                {{ field.errors }}
+                                {{ field }}
+                                {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="submission-formatting-editor-actions">
+                        <p>
+                            Загрузите LaTeX/DOCX/PDF либо вставьте обычное описание. Исходная статья не изменится:
+                            сначала система извлечёт правила и подготовит предпросмотр.
+                        </p>
+                        <button class="button" type="submit">Сохранить и разобрать шаблон</button>
+                    </div>
+                </form>
+            </details>
+
+            <details class="submission-formatting-editor">
                 <summary>Уточнить правила для этой работы</summary>
                 <form method="post" action="{% url 'submissions:update_formatting_rules' submission.pk %}">
                     {% csrf_token %}

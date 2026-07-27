@@ -1993,6 +1993,79 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("formatting_template_file", form.errors)
 
+    def test_article_accepts_plain_template_description(self):
+        description = (
+            "Формат A4, поля 2 см. Times New Roman 14 пт, интервал 1,5. "
+            "Обязательны аннотация и ключевые слова."
+        )
+        form = SubmissionCreateForm(
+            data={
+                "journal_query": self.journal.name,
+                "article_type": self.article_type.pk,
+                "formatting_template_description": description,
+            },
+            files={"file": SimpleUploadedFile("article.txt", b"content")},
+            current_user=self.user,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(
+            form.cleaned_data["formatting_template_description"],
+            description,
+        )
+
+    @patch("apps.submissions.views.queue_submission_template_processing")
+    def test_existing_submission_can_receive_description_template(
+        self,
+        mocked_queue,
+    ):
+        submission = Submission.objects.create(
+            title="Статья без шаблона",
+            author=self.user,
+            journal=self.journal,
+            article_type=self.article_type,
+            status=SubmissionStatus.SUBMITTED,
+        )
+        submission.authors.add(self.user)
+        version = SubmissionVersion.objects.create(
+            submission=submission,
+            version_number=1,
+            file=SimpleUploadedFile("article.docx", self._docx_bytes()),
+            uploaded_by=self.user,
+        )
+        submission.current_version = version
+        submission.save(update_fields=["current_version", "updated_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("submissions:attach_formatting_template", args=[submission.pk]),
+            {
+                "formatting_template_description": (
+                    "A4, поля 2 см, Times New Roman 14 пт, интервал 1,5."
+                )
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("submissions:detail", args=[submission.pk]),
+        )
+        submission.refresh_from_db()
+        self.assertIsNotNone(submission.formatting_template_id)
+        self.assertTrue(
+            submission.formatting_template.file.name.endswith(
+                "template-requirements-description.txt"
+            )
+        )
+        with submission.formatting_template.file.open("rb") as source:
+            self.assertIn("Times New Roman", source.read().decode("utf-8"))
+        self.assertTrue(submission.formatting_check_requested)
+        mocked_queue.assert_called_once_with(
+            submission,
+            submission.formatting_template,
+            start_checks=True,
+        )
+
     def test_theses_allow_new_topic_without_template_or_optional_metadata(self):
         form = SubmissionCreateForm(
             data={

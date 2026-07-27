@@ -113,6 +113,21 @@ class SubmissionCreateForm(forms.ModelForm):
         required=False,
         help_text="Можно загрузить DOCX, DOC, PDF, LaTeX (.tex), текстовый файл или изображение.",
     )
+    formatting_template_description = forms.CharField(
+        label="Или вставьте описание требований",
+        required=False,
+        max_length=120_000,
+        widget=forms.Textarea(
+            attrs={
+                "rows": 7,
+                "placeholder": (
+                    "Например: A4, поля 2 см, Times New Roman 14 пт, "
+                    "межстрочный интервал 1,5; обязательны аннотация и ключевые слова."
+                ),
+            }
+        ),
+        help_text="Свободное описание разберёт локальная модель; затем правила можно проверить вручную.",
+    )
     formatting_check_requested = forms.BooleanField(
         label="Проверить оформление по шаблону",
         required=False,
@@ -219,6 +234,15 @@ class SubmissionCreateForm(forms.ModelForm):
         topic_query = (cleaned_data.get("publication_topic_query") or "").strip()
         selected_template = cleaned_data.get("formatting_template")
         uploaded_template = cleaned_data.get("formatting_template_file")
+        template_description = (
+            cleaned_data.get("formatting_template_description") or ""
+        ).strip()
+        cleaned_data["formatting_template_description"] = template_description
+        if uploaded_template is not None and template_description:
+            self.add_error(
+                "formatting_template_description",
+                "Выберите один способ: загрузите файл или вставьте описание.",
+            )
 
         if _is_article_type(article_type):
             cleaned_data["publication_topic"] = None
@@ -240,10 +264,14 @@ class SubmissionCreateForm(forms.ModelForm):
             if selected_template is None:
                 selected_template = latest_template
                 cleaned_data["formatting_template"] = selected_template
-            if uploaded_template is None and selected_template is None:
+            if (
+                uploaded_template is None
+                and not template_description
+                and selected_template is None
+            ):
                 self.add_error(
                     "formatting_template_file",
-                    "Для этого журнала ещё нет шаблона. Загрузите его перед отправкой статьи.",
+                    "Для этого журнала ещё нет шаблона. Загрузите файл или вставьте описание требований.",
                 )
                 return cleaned_data
             if selected_template is not None and (
@@ -331,6 +359,71 @@ class SubmissionCreateForm(forms.ModelForm):
                 }
             ),
         }
+
+
+class FormattingTemplateAttachForm(forms.Form):
+    formatting_template_file = forms.FileField(
+        label="Файл шаблона",
+        required=False,
+        help_text="DOCX, DOC, PDF, LaTeX (.tex), TXT, Markdown или изображение.",
+    )
+    formatting_template_description = forms.CharField(
+        label="Описание требований",
+        required=False,
+        max_length=120_000,
+        widget=forms.Textarea(
+            attrs={
+                "rows": 7,
+                "placeholder": (
+                    "Опишите поля, шрифт, интервалы, объём и обязательные разделы."
+                ),
+            }
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["formatting_template_file"].widget.attrs["accept"] = ",".join(
+            sorted(TEMPLATE_EXTENSIONS)
+        )
+
+    def clean_formatting_template_file(self):
+        uploaded_file = self.cleaned_data.get("formatting_template_file")
+        if uploaded_file is None:
+            return uploaded_file
+        suffix = Path(uploaded_file.name).suffix.casefold()
+        if suffix not in TEMPLATE_EXTENSIONS:
+            allowed = ", ".join(
+                sorted(value.lstrip(".").upper() for value in TEMPLATE_EXTENSIONS)
+            )
+            raise forms.ValidationError(
+                f"Формат шаблона не поддерживается. Разрешены: {allowed}."
+            )
+        maximum_size = int(
+            getattr(settings, "SUBMISSION_FILE_MAX_SIZE", 50 * 1024 * 1024)
+        )
+        if uploaded_file.size > maximum_size:
+            raise forms.ValidationError(
+                f"Размер шаблона превышает {round(maximum_size / 1024 / 1024)} МБ."
+            )
+        return uploaded_file
+
+    def clean(self):
+        cleaned_data = super().clean()
+        uploaded_file = cleaned_data.get("formatting_template_file")
+        description = (
+            cleaned_data.get("formatting_template_description") or ""
+        ).strip()
+        cleaned_data["formatting_template_description"] = description
+        if uploaded_file is not None and description:
+            raise forms.ValidationError(
+                "Выберите один способ: загрузите файл или вставьте описание."
+            )
+        if uploaded_file is None and not description:
+            raise forms.ValidationError(
+                "Загрузите файл шаблона или вставьте описание требований."
+            )
+        return cleaned_data
 
 
 class FormattingRulesForm(forms.Form):

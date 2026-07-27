@@ -929,6 +929,25 @@
     text-align: right;
 }
 
+.submission-template-choice {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 10px 0;
+    color: #8a96a8;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.submission-template-choice::before,
+.submission-template-choice::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: #e1e6ee;
+}
+
 .formatting-check-toggle {
     display: flex;
     align-items: flex-start;

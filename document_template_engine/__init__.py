@@ -17,16 +17,19 @@ from .latex import (
     extract_latex_template_rules,
     latex_to_plain_text,
 )
+from .preservation import DocxPreservationError, assert_docx_payload_preserved
 from .schema import BLOCK_CATALOG, normalize_template_rules
 
 __all__ = [
     "BLOCK_CATALOG",
     "DocumentTemplateEngineError",
+    "DocxPreservationError",
     "TEMPLATE_RULE_SCHEMA",
     "build_docx_from_template",
     "build_docx_plan",
     "build_interpretation_prompt",
     "build_latex_template",
+    "assert_docx_payload_preserved",
     "check_latex_against_template",
     "check_docx_against_template",
     "extract_latex_template_rules",

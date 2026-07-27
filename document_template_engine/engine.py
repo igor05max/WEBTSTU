@@ -6,6 +6,7 @@ import re
 from typing import Any, Iterable
 
 from .schema import BLOCK_CATALOG, get_document_blocks, normalize_template_rules
+from .preservation import DocxPreservationError, assert_docx_payload_preserved
 
 
 class DocumentTemplateEngineError(ValueError):
@@ -1010,5 +1011,9 @@ def build_docx_from_template(
     output = BytesIO()
     document.save(output)
     built_bytes = output.getvalue()
+    try:
+        assert_docx_payload_preserved(docx_bytes, built_bytes)
+    except DocxPreservationError as exc:
+        raise DocumentTemplateEngineError(str(exc)) from exc
     plan = build_docx_plan(built_bytes, normalized_rules, metadata=metadata)
     return built_bytes, list(dict.fromkeys(changes)), plan

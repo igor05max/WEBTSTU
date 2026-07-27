@@ -7,6 +7,10 @@ from pathlib import Path
 
 from django.conf import settings
 from docx import Document
+from document_template_engine import (
+    DocxPreservationError,
+    assert_docx_payload_preserved,
+)
 
 
 TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -230,6 +234,51 @@ def _append_bibliography_entry(document, layout, number, citation):
     return paragraph
 
 
+def _iter_document_paragraphs(document):
+    """Yield body and table-cell paragraphs once, in document order where possible."""
+
+    seen = set()
+    for paragraph in document.paragraphs:
+        seen.add(id(paragraph._p))
+        yield paragraph
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    identity = id(paragraph._p)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    yield paragraph
+
+
+def _existing_reference_numbers(document, bibliography_heading):
+    numbers = [
+        int(value)
+        for paragraph in _iter_document_paragraphs(document)
+        for value in CITATION_NUMBER_RE.findall(paragraph.text)
+    ]
+    if bibliography_heading is None:
+        return numbers
+    paragraphs = document.paragraphs
+    heading_index = next(
+        (
+            index
+            for index, paragraph in enumerate(paragraphs)
+            if paragraph._p is bibliography_heading._p
+        ),
+        len(paragraphs),
+    )
+    for paragraph in paragraphs[heading_index + 1 :]:
+        bracketed = BRACKETED_REFERENCE_RE.match(paragraph.text)
+        decimal = DECIMAL_REFERENCE_RE.match(paragraph.text)
+        if bracketed is not None:
+            numbers.append(int(bracketed.group(1)))
+        elif decimal is not None:
+            numbers.append(int(decimal.group(1)))
+    return numbers
+
+
 def apply_to_docx(*, user_id, token, selections):
     payload = load_workspace(user_id=user_id, token=token)
     if payload.get("suffix") != ".docx" or not payload.get("source_name"):
@@ -240,27 +289,6 @@ def apply_to_docx(*, user_id, token, selections):
 
     source_path = payload["_directory"] / payload["source_name"]
     document = Document(source_path)
-    existing_numbers = [
-        int(value)
-        for paragraph in document.paragraphs
-        for value in CITATION_NUMBER_RE.findall(paragraph.text)
-    ]
-    start_number = max(existing_numbers, default=0) + 1
-    number_by_article = {
-        article_id: start_number + offset
-        for article_id, offset in article_numbers.items()
-    }
-
-    for claim, _result, article_id in selected:
-        marker = f"[{number_by_article[article_id]}]"
-        target_text = " ".join(str(claim.get("text") or "").split())
-        for paragraph in document.paragraphs:
-            normalized = " ".join(paragraph.text.split())
-            if target_text and target_text in normalized:
-                if not _insert_marker_after_claim(paragraph, target_text, marker):
-                    paragraph.add_run(f" {marker}")
-                break
-
     bibliography_heading = next(
         (
             paragraph
@@ -277,6 +305,24 @@ def apply_to_docx(*, user_id, token, selections):
         ),
         None,
     )
+    existing_numbers = _existing_reference_numbers(document, bibliography_heading)
+    start_number = max(existing_numbers, default=0) + 1
+    number_by_article = {
+        article_id: start_number + offset
+        for article_id, offset in article_numbers.items()
+    }
+
+    document_paragraphs = list(_iter_document_paragraphs(document))
+    for claim, _result, article_id in selected:
+        marker = f"[{number_by_article[article_id]}]"
+        target_text = " ".join(str(claim.get("text") or "").split())
+        for paragraph in document_paragraphs:
+            normalized = " ".join(paragraph.text.split())
+            if target_text and target_text in normalized:
+                if not _insert_marker_after_claim(paragraph, target_text, marker):
+                    paragraph.add_run(f" {marker}")
+                break
+
     if bibliography_heading is None:
         try:
             heading_style = document.styles["Heading 1"]
@@ -309,6 +355,10 @@ def apply_to_docx(*, user_id, token, selections):
     output = BytesIO()
     document.save(output)
     output.seek(0)
+    try:
+        assert_docx_payload_preserved(source_path.read_bytes(), output.getvalue())
+    except DocxPreservationError as exc:
+        raise ValueError(str(exc)) from exc
     original_stem = Path(payload.get("file_name") or "article").stem
     return output, f"{original_stem}_with_citations.docx"
 

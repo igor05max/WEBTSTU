@@ -545,6 +545,95 @@ class CitationSystemTests(TestCase):
         self.assertAlmostEqual(reference.paragraph_format.first_line_indent.cm, -1, places=2)
         self.assertEqual(reference.paragraph_format.line_spacing, 1)
 
+    def test_added_reference_continues_visible_decimal_bibliography_numbering(self):
+        document = Document()
+        claim_text = "Нейронные сети применяются для анализа движений человека."
+        document.add_paragraph(claim_text)
+        document.add_paragraph("Список литературы")
+        document.add_paragraph("1. Первый источник.")
+        document.add_paragraph("2. Второй источник.")
+        document.add_paragraph("3. Третий источник.")
+        source = BytesIO()
+        document.save(source)
+        claim = {
+            "id": "claim-decimal",
+            "text": claim_text,
+            "recommendations": [
+                {
+                    "article_id": "1001",
+                    "title": "Система компьютерного зрения",
+                    "citation": "Обухов А. Д. Система компьютерного зрения. 2023.",
+                }
+            ],
+        }
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="decimal.docx",
+            snapshot={"text": claim_text},
+            claims=[claim],
+            index_status={"ready": True},
+        )
+
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[{"claim_id": "claim-decimal", "article_id": "1001"}],
+        )
+        result = Document(output)
+
+        self.assertIn(f"{claim_text} [4]", result.paragraphs[0].text)
+        self.assertEqual(
+            result.paragraphs[-1].text,
+            "4. Обухов А. Д. Система компьютерного зрения. 2023.",
+        )
+
+    def test_marker_can_be_inserted_into_table_without_losing_media(self):
+        import base64
+
+        document = Document()
+        claim_text = "Метод применяется для анализа экспериментальных данных."
+        table = document.add_table(rows=1, cols=1)
+        table.cell(0, 0).text = claim_text
+        pixel = BytesIO(
+            base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lE"
+                "QVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+            )
+        )
+        document.add_picture(pixel)
+        source = BytesIO()
+        document.save(source)
+        claim = {
+            "id": "claim-table",
+            "text": claim_text,
+            "recommendations": [
+                {
+                    "article_id": "1002",
+                    "title": "Анализ экспериментальных данных",
+                    "citation": "Петров П. П. Анализ экспериментальных данных. 2025.",
+                }
+            ],
+        }
+        payload = create_workspace(
+            user_id=self.user.pk,
+            file_bytes=source.getvalue(),
+            file_name="table-and-image.docx",
+            snapshot={"text": claim_text},
+            claims=[claim],
+            index_status={"ready": True},
+        )
+
+        output, _name = apply_to_docx(
+            user_id=self.user.pk,
+            token=payload["token"],
+            selections=[{"claim_id": "claim-table", "article_id": "1002"}],
+        )
+        result = Document(output)
+
+        self.assertEqual(result.tables[0].cell(0, 0).text, f"{claim_text} [1]")
+        self.assertEqual(len(result.inline_shapes), 1)
+
     def test_apply_source_when_docx_has_no_heading_style(self):
         document = Document()
         heading_style = document.styles["Heading 1"]

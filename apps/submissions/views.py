@@ -28,6 +28,7 @@ from apps.directory.formatting_templates import (
 )
 from apps.directory.publication_topics import resolve_or_create_publication_topic
 from apps.submissions.forms import (
+    FormattingTemplateAttachForm,
     FormattingRulesForm,
     SubmissionAppealDecisionForm,
     SubmissionAppealForm,
@@ -104,6 +105,21 @@ _CORRECTED_VERSION_CREATION_STATUSES = frozenset(
         SubmissionStatus.REVISION_REQUESTED,
     }
 )
+
+
+def _template_input_file(cleaned_data):
+    uploaded_file = cleaned_data.get("formatting_template_file")
+    if uploaded_file is not None:
+        return uploaded_file
+    description = str(
+        cleaned_data.get("formatting_template_description") or ""
+    ).strip()
+    if not description:
+        return None
+    return ContentFile(
+        description.encode("utf-8"),
+        name="template-requirements-description.txt",
+    )
 
 
 def _task_visibility_filter(user):
@@ -874,7 +890,7 @@ def submission_create(request):
                 )
 
             formatting_template = form.cleaned_data["formatting_template"]
-            uploaded_template = form.cleaned_data["formatting_template_file"]
+            uploaded_template = _template_input_file(form.cleaned_data)
             template_requires_processing = uploaded_template is not None
             if uploaded_template is not None:
                 formatting_template = create_formatting_template(
@@ -938,6 +954,76 @@ def submission_create(request):
         form = SubmissionCreateForm(current_user=request.user)
 
     return render(request, "submissions/create.html", {"form": form})
+
+
+@login_required
+@require_POST
+def attach_formatting_template_view(request, pk):
+    submission = get_object_or_404(
+        Submission.objects.select_related(
+            "author",
+            "article_type",
+            "journal",
+            "publication_topic",
+            "current_version",
+        ),
+        pk=pk,
+    )
+    if submission.author_id != request.user.id and not request.user.is_superuser:
+        return HttpResponseForbidden("Только автор может изменить шаблон оформления.")
+    if submission.status not in _DELETABLE_DRAFT_STATUSES:
+        messages.error(
+            request,
+            "Шаблон можно заменить только до запуска маршрута согласования.",
+        )
+        return redirect("submissions:detail", pk=submission.pk)
+
+    form = FormattingTemplateAttachForm(request.POST, request.FILES)
+    if not form.is_valid():
+        messages.error(
+            request,
+            "Не удалось добавить шаблон: "
+            + " ".join(
+                str(message)
+                for messages_list in form.errors.values()
+                for message in messages_list
+            ),
+        )
+        return redirect("submissions:detail", pk=submission.pk)
+
+    template_file = _template_input_file(form.cleaned_data)
+    formatting_template = create_formatting_template(
+        article_type=submission.article_type,
+        uploaded_by=request.user,
+        file=template_file,
+        journal=submission.journal,
+        publication_topic=submission.publication_topic,
+    )
+    submission.formatting_template = formatting_template
+    submission.formatting_rules_snapshot = build_rules_snapshot(
+        article_type=submission.article_type,
+        template=formatting_template,
+        journal=submission.journal,
+    )
+    submission.formatting_check_requested = True
+    submission.save(
+        update_fields=[
+            "formatting_template",
+            "formatting_rules_snapshot",
+            "formatting_check_requested",
+            "updated_at",
+        ]
+    )
+    queue_submission_template_processing(
+        submission,
+        formatting_template,
+        start_checks=submission.status != SubmissionStatus.DRAFT,
+    )
+    messages.success(
+        request,
+        "Шаблон сохранён. Правила извлекаются локально; после обработки появятся LaTeX и безопасное редактирование DOCX.",
+    )
+    return redirect("submissions:detail", pk=submission.pk)
 
 
 @login_required
@@ -1193,6 +1279,9 @@ def submission_detail(request, pk):
             document_template_plan_error = str(exc)
     formatting_rules_form = None
     can_edit_formatting_rules = can_edit and submission.status in _DELETABLE_DRAFT_STATUSES
+    formatting_template_attach_form = (
+        FormattingTemplateAttachForm() if can_edit_formatting_rules else None
+    )
     if can_edit_formatting_rules:
         formatting_rules_form = FormattingRulesForm.from_snapshot(
             submission.formatting_rules_snapshot
@@ -1283,6 +1372,7 @@ def submission_detail(request, pk):
             "progress_poll_interval_ms": settings.SUBMISSION_PROGRESS_POLL_INTERVAL_MS,
             "can_edit": can_edit,
             "formatting_rules_form": formatting_rules_form,
+            "formatting_template_attach_form": formatting_template_attach_form,
             "formatting_rules": (submission.formatting_rules_snapshot or {}).get("effective") or {},
             "formatting_template_is_processing": bool(
                 submission.formatting_template_id

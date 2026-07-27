@@ -194,6 +194,16 @@
                     {% if form.formatting_template_file.errors %}<div class="submission-field-errors">{{ form.formatting_template_file.errors }}</div>{% else %}<small>Загрузите новый файл, только если предложенного шаблона нет или его нужно заменить.</small>{% endif %}
                 </div>
 
+                <div class="submission-template-choice">
+                    <span>или</span>
+                </div>
+
+                <div class="submission-field{% if form.formatting_template_description.errors %} has-error{% endif %}">
+                    <label for="{{ form.formatting_template_description.id_for_label }}">{{ form.formatting_template_description.label }}</label>
+                    {{ form.formatting_template_description }}
+                    {% if form.formatting_template_description.errors %}<div class="submission-field-errors">{{ form.formatting_template_description.errors }}</div>{% else %}<small>{{ form.formatting_template_description.help_text }}</small>{% endif %}
+                </div>
+
                 <label class="formatting-check-toggle" for="{{ form.formatting_check_requested.id_for_label }}">
                     {{ form.formatting_check_requested }}
                     <span>

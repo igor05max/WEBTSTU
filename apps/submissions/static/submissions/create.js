@@ -9,6 +9,7 @@
         var topicHidden = document.getElementById("id_publication_topic");
         var templateHidden = document.getElementById("id_formatting_template");
         var templateFile = document.getElementById("id_formatting_template_file");
+        var templateDescription = document.getElementById("id_formatting_template_description");
         var journalField = document.querySelector("[data-destination-field='journal']");
         var topicField = document.querySelector("[data-destination-field='topic']");
         var templateEmpty = document.querySelector("[data-template-empty]");
@@ -333,6 +334,27 @@
                 templateMeta.textContent = templateHidden.value
                     ? "Новый шаблон заменит предложенный и станет последней версией."
                     : "Новый шаблон будет сохранён для следующих пользователей.";
+                templateDownload.removeAttribute("href");
+                if (templateLatexDownload) {
+                    templateLatexDownload.hidden = true;
+                    templateLatexDownload.removeAttribute("href");
+                }
+                rulesPanel.hidden = true;
+            });
+        }
+        if (templateDescription) {
+            templateDescription.addEventListener("input", function () {
+                var description = templateDescription.value.trim();
+                if (!description) {
+                    if (templateHidden.value && (!templateFile || !templateFile.files.length)) {
+                        fetchTemplateById();
+                    }
+                    return;
+                }
+                templateEmpty.hidden = true;
+                templateSelected.hidden = false;
+                templateName.textContent = "Описание требований";
+                templateMeta.textContent = "Локальная модель выделит проверяемые правила и сформирует LaTeX.";
                 templateDownload.removeAttribute("href");
                 if (templateLatexDownload) {
                     templateLatexDownload.hidden = true;

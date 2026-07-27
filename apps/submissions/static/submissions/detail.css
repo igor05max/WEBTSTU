@@ -1028,6 +1028,10 @@
     gap: 12px;
 }
 
+.workspace-page-main .submission-formatting-template-inputs {
+    grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 2fr);
+}
+
 .workspace-page-main .submission-formatting-fields label {
     min-width: 0;
     display: flex;
