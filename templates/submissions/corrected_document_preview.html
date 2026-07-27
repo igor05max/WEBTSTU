@@ -38,7 +38,9 @@
             <a class="corrected-document-action secondary" href="{% url 'submissions:corrected_document_download' submission.pk %}">
                 Скачать DOCX
             </a>
-            <form method="post" action="{% url 'submissions:submit_corrected_document_for_check' submission.pk source_version.pk %}">
+            <form method="post" action="{% url 'submissions:submit_corrected_document_for_check' submission.pk source_version.pk %}"
+                  data-site-loading data-site-loading-title="Создаём новую версию"
+                  data-site-loading-message="Сохраняем исправленный документ и запускаем проверки.">
                 {% csrf_token %}
                 <button class="corrected-document-action primary" type="submit">
                     Отправить на проверку

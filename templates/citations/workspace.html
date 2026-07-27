@@ -198,7 +198,9 @@
             <ol class="citation-plan-list" data-plan-list></ol>
             <button class="citation-copy-button" type="button" data-copy-plan hidden>Скопировать список</button>
             {% if result.can_apply_docx %}
-            <form method="post" action="{% if result.submission_id %}{% url 'citations:prepare_submission_result' %}{% else %}{% url 'citations:apply' %}{% endif %}" data-apply-form hidden>
+            <form method="post" action="{% if result.submission_id %}{% url 'citations:prepare_submission_result' %}{% else %}{% url 'citations:apply' %}{% endif %}"
+                  data-apply-form data-site-loading data-site-loading-title="Добавляем источники"
+                  data-site-loading-message="Формируем новую копию DOCX со ссылками и списком литературы." hidden>
                 {% csrf_token %}
                 <input type="hidden" name="workspace_token" value="{{ result.token }}">
                 <input type="hidden" name="selections" value="[]" data-selection-input>

@@ -158,13 +158,14 @@
         }
     }
 
-    function requestIsSilent(input, init) {
+    function requestWantsLoading(input, init) {
         try {
             var headers = new Headers(
                 (init && init.headers)
                 || (input instanceof Request ? input.headers : undefined)
             );
-            return headers.get("X-Site-Loading") === "silent";
+            var preference = String(headers.get("X-Site-Loading") || "").toLowerCase();
+            return preference === "visible" || preference === "background";
         } catch (_error) {
             return false;
         }
@@ -199,7 +200,7 @@
     var originalFetch = window.fetch;
     if (typeof originalFetch === "function") {
         window.fetch = function (input, init) {
-            if (requestIsSilent(input, init)) {
+            if (!requestWantsLoading(input, init)) {
                 return originalFetch.apply(this, arguments);
             }
             var element = recentButton();
@@ -225,20 +226,20 @@
         var originalSend = XMLHttpRequest.prototype.send;
         var originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
         XMLHttpRequest.prototype.open = function () {
-            this.__siteLoadingSilent = false;
+            this.__siteLoadingVisible = false;
             return originalOpen.apply(this, arguments);
         };
         XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
             if (
                 String(name).toLowerCase() === "x-site-loading"
-                && String(value).toLowerCase() === "silent"
+                && /^(?:visible|background)$/i.test(String(value))
             ) {
-                this.__siteLoadingSilent = true;
+                this.__siteLoadingVisible = true;
             }
             return originalSetRequestHeader.apply(this, arguments);
         };
         XMLHttpRequest.prototype.send = function () {
-            if (this.__siteLoadingSilent) {
+            if (!this.__siteLoadingVisible) {
                 return originalSend.apply(this, arguments);
             }
             var element = recentButton();
@@ -255,7 +256,7 @@
         };
     }
 
-    function isNavigatingLink(link, event) {
+    function isExplicitLoadingLink(link, event) {
         if (
             !link
             || event.defaultPrevented
@@ -264,7 +265,7 @@
             || event.ctrlKey
             || event.shiftKey
             || event.altKey
-            || link.dataset.noSiteLoading !== undefined
+            || link.dataset.siteLoading === undefined
             || (link.target && link.target !== "_self")
         ) {
             return false;
@@ -300,8 +301,8 @@
         if (action) {
             recentAction = {element: action, time: Date.now()};
         }
-        var link = event.target.closest("a[href]");
-        if (!isNavigatingLink(link, event)) {
+        var link = event.target.closest("a[data-site-loading][href]");
+        if (!isExplicitLoadingLink(link, event)) {
             return;
         }
         window.setTimeout(function () {
@@ -311,10 +312,10 @@
             var label = actionText(link);
             start({
                 mode: "navigation",
-                title: "Загружаем страницу",
-                message: label
+                title: link.dataset.siteLoadingTitle || "Готовим документ",
+                message: link.dataset.siteLoadingMessage || (label
                     ? "Переходим к разделу «" + label + "»."
-                    : "Подготавливаем содержимое новой страницы.",
+                    : "Подготавливаем содержимое новой страницы."),
                 element: link,
             });
         }, 0);
@@ -324,15 +325,13 @@
         var form = event.target;
         if (
             !form
+            || form.dataset.siteLoading === undefined
             || form.dataset.noSiteLoading !== undefined
             || String(form.getAttribute("method") || "get").toLowerCase() === "dialog"
         ) {
             return;
         }
         var submitter = event.submitter || recentButton();
-        if (isDownloadAction(submitter, form.getAttribute("action") || "")) {
-            return;
-        }
         window.setTimeout(function () {
             if (event.defaultPrevented || form.dataset.siteNavigationStarted === "true") {
                 return;
@@ -341,26 +340,15 @@
             var label = actionText(submitter);
             start({
                 mode: "navigation",
-                title: "Отправляем данные",
-                message: label
+                title: form.dataset.siteLoadingTitle || "Обрабатываем данные",
+                message: form.dataset.siteLoadingMessage || (label
                     ? "Выполняем действие «" + label + "»."
-                    : "Сохраняем данные и подготавливаем результат.",
+                    : "Сохраняем данные и подготавливаем результат."),
                 element: submitter,
             });
         }, 0);
     }, true);
 
-    window.addEventListener("beforeunload", function () {
-        if (!visibleTasks().some(function (task) {
-            return task.mode === "navigation";
-        })) {
-            start({
-                mode: "navigation",
-                title: "Загружаем страницу",
-                message: "Подготавливаем содержимое новой страницы.",
-            });
-        }
-    });
     window.addEventListener("pageshow", reset);
 
     window.SiteLoading = {

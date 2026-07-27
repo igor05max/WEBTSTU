@@ -288,7 +288,9 @@
                         новая версия появится только после подтверждения отправки на проверку.
                     </p>
                     {% if can_generate_corrected_document %}
-                        <a class="button" href="{% url 'submissions:corrected_document_preview' submission.pk submission.current_version_id %}">
+                        <a class="button" href="{% url 'submissions:corrected_document_preview' submission.pk submission.current_version_id %}"
+                           data-site-loading data-site-loading-title="Готовим исправленный документ"
+                           data-site-loading-message="Применяем правила оформления и создаём предпросмотр.">
                             Посмотреть и отправить отредактированную
                         </a>
                     {% endif %}
@@ -310,7 +312,9 @@
                         Добавить шаблон оформления к этой статье
                     {% endif %}
                 </summary>
-                <form method="post" enctype="multipart/form-data" action="{% url 'submissions:attach_formatting_template' submission.pk %}">
+                <form method="post" enctype="multipart/form-data" action="{% url 'submissions:attach_formatting_template' submission.pk %}"
+                      data-site-loading data-site-loading-title="Разбираем шаблон"
+                      data-site-loading-message="Извлекаем правила оформления и подготавливаем предпросмотр.">
                     {% csrf_token %}
                     {{ formatting_template_attach_form.non_field_errors }}
                     <div class="submission-formatting-fields submission-formatting-template-inputs">
@@ -537,7 +541,9 @@
                             </div>
                             <div class="submission-file-actions">
                                 {% if version.preview_available %}
-                                    <a class="submission-file-preview-link" href="{% url 'submissions:version_preview' submission.pk version.pk %}">
+                                    <a class="submission-file-preview-link" href="{% url 'submissions:version_preview' submission.pk version.pk %}"
+                                       data-site-loading data-site-loading-title="Открываем документ"
+                                       data-site-loading-message="Подготавливаем файл для просмотра.">
                                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
                                         Посмотреть
                                     </a>
@@ -701,7 +707,9 @@
         <section class="surface submission-form-panel">
             <div class="submission-section-title">Загрузить новую версию</div>
             <p class="meta meta-form-note">После загрузки система сразу повторно запустит автопроверки по текущей версии.</p>
-            <form method="post" enctype="multipart/form-data" action="{% url 'submissions:upload_version' submission.pk %}">
+            <form method="post" enctype="multipart/form-data" action="{% url 'submissions:upload_version' submission.pk %}"
+                  data-site-loading data-site-loading-title="Загружаем новую версию"
+                  data-site-loading-message="Сохраняем документ и запускаем необходимые проверки.">
                 {% csrf_token %}
                 {{ upload_form.as_p }}
                 <div class="actions">

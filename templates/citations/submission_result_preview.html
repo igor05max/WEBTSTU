@@ -26,7 +26,9 @@
     <div class="corrected-document-actions">
         <a class="corrected-document-action secondary" href="{% url 'citations:workspace' %}?submission={{ submission.pk }}">Назад</a>
         <a class="corrected-document-action secondary" href="{% url 'citations:submission_result_download' workspace_token %}">Скачать DOCX</a>
-        <form method="post" action="{% url 'citations:use_submission_result' workspace_token %}">
+        <form method="post" action="{% url 'citations:use_submission_result' workspace_token %}"
+              data-site-loading data-site-loading-title="Сохраняем документ"
+              data-site-loading-message="Создаём новую версию материала и запускаем проверки.">
             {% csrf_token %}
             <button class="corrected-document-action primary" type="submit">Использовать и начать проверки</button>
         </form>

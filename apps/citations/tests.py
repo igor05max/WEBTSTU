@@ -723,6 +723,7 @@ class CitationSystemTests(TestCase):
         self.assertEqual(search.status_code, 200)
         result = search.context["result"]
         self.assertEqual(result["submission_id"], submission.pk)
+        self.assertContains(search, 'data-site-loading-title="Добавляем источники"')
         claim = next(
             item for item in result["claims"] if item.get("recommendations")
         )
@@ -742,6 +743,13 @@ class CitationSystemTests(TestCase):
             prepared,
             reverse("citations:submission_result_preview", args=[result["token"]]),
             fetch_redirect_response=False,
+        )
+        preview_page = self.client.get(
+            reverse("citations:submission_result_preview", args=[result["token"]])
+        )
+        self.assertContains(
+            preview_page,
+            'data-site-loading-title="Сохраняем документ"',
         )
         preview_content = self.client.get(
             reverse("citations:submission_result_content", args=[result["token"]])

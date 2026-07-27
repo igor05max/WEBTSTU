@@ -37,7 +37,10 @@
             </ul>
         {% endif %}
 
-        <form class="submission-create-form" method="post" enctype="multipart/form-data" novalidate data-submission-wizard>
+        <form class="submission-create-form" method="post" enctype="multipart/form-data" novalidate
+              data-submission-wizard data-site-loading
+              data-site-loading-title="Создаём материал"
+              data-site-loading-message="Загружаем документ и подготавливаем рабочую карточку.">
             {% csrf_token %}
             {{ form.journal }}
             {{ form.publication_topic }}
