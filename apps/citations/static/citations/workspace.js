@@ -1,4 +1,55 @@
 (() => {
+    const sourceForm = document.querySelector("[data-citation-source-form]");
+    if (sourceForm) {
+        const submission = sourceForm.querySelector("[name='submission']");
+        const file = sourceForm.querySelector("[name='file']");
+        const text = sourceForm.querySelector("[name='text']");
+        const fileStatus = sourceForm.querySelector("[data-citation-file-status]");
+        const submitButton = sourceForm.querySelector("[data-citation-search-submit]");
+
+        const clearFile = () => {
+            if (file) file.value = "";
+            if (fileStatus) {
+                fileStatus.hidden = true;
+                fileStatus.textContent = "";
+            }
+        };
+
+        file?.addEventListener("change", () => {
+            const selectedFile = file.files?.[0];
+            if (!selectedFile) {
+                clearFile();
+                return;
+            }
+            if (submission) submission.value = "";
+            if (text) text.value = "";
+            if (fileStatus) {
+                const megabytes = Math.max(0.01, selectedFile.size / 1024 / 1024);
+                fileStatus.textContent = `Выбран файл: ${selectedFile.name} · ${megabytes.toFixed(2)} МБ`;
+                fileStatus.hidden = false;
+            }
+        });
+
+        submission?.addEventListener("change", () => {
+            if (!submission.value) return;
+            clearFile();
+            if (text) text.value = "";
+        });
+
+        text?.addEventListener("input", () => {
+            if (!text.value.trim()) return;
+            if (submission) submission.value = "";
+            clearFile();
+        });
+
+        sourceForm.addEventListener("submit", () => {
+            const selectedFile = file?.files?.[0];
+            if (!selectedFile || !submitButton) return;
+            submitButton.disabled = true;
+            submitButton.textContent = "Файл загружен · ищем источники…";
+        });
+    }
+
     const autoForm = document.querySelector("[data-auto-analyze]");
     if (autoForm) {
         window.setTimeout(() => autoForm.requestSubmit(), 120);

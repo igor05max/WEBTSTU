@@ -59,13 +59,15 @@ class CitationSearchForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        selected = [
-            bool(cleaned.get("submission")),
-            bool(cleaned.get("file")),
-            bool((cleaned.get("text") or "").strip()),
-        ]
-        if sum(selected) != 1:
-            raise forms.ValidationError(
-                "Выберите ровно один источник: материал, файл или вставленный текст."
-            )
-        return cleaned
+        if cleaned.get("file") is not None:
+            cleaned["submission"] = None
+            cleaned["text"] = ""
+            return cleaned
+        if cleaned.get("submission") is not None:
+            cleaned["text"] = ""
+            return cleaned
+        if (cleaned.get("text") or "").strip():
+            return cleaned
+        raise forms.ValidationError(
+            "Загрузите файл, выберите материал или вставьте текст."
+        )

@@ -14,6 +14,7 @@ from docx.shared import Cm
 
 from apps.citations.analysis import analyze_claims, text_snapshot
 from apps.citations.checks import build_citation_coverage_report
+from apps.citations.forms import CitationSearchForm
 from apps.citations.index import build_index, search_claim
 from apps.citations.matching import (
     build_source_identity,
@@ -118,6 +119,46 @@ class CitationSystemTests(TestCase):
         self.assertNotContains(response, "Почему рекомендуется")
         self.assertNotContains(response, "Поисковые запросы")
 
+    def test_uploaded_file_wins_over_stale_pasted_text(self):
+        document = Document()
+        document.add_paragraph("Документ для проверки загрузки.")
+        source = BytesIO()
+        document.save(source)
+        form = CitationSearchForm(
+            data={
+                "text": "Текст, оставшийся в форме от предыдущего выбора.",
+                "max_claims": 3,
+            },
+            files={
+                "file": SimpleUploadedFile(
+                    "article.docx",
+                    source.getvalue(),
+                    content_type=(
+                        "application/vnd.openxmlformats-officedocument."
+                        "wordprocessingml.document"
+                    ),
+                )
+            },
+            user=self.user,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["file"].name, "article.docx")
+        self.assertEqual(form.cleaned_data["text"], "")
+        self.assertIsNone(form.cleaned_data["submission"])
+
+    def test_source_form_explains_missing_input_without_reset_instruction(self):
+        form = CitationSearchForm(
+            data={"submission": "", "text": "", "max_claims": 3},
+            user=self.user,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Загрузите файл, выберите материал или вставьте текст.",
+            form.non_field_errors(),
+        )
+
     def test_russian_article_does_not_offer_fragments_from_english_translation(self):
         snapshot = text_snapshot(
             "Введение\n"
@@ -198,6 +239,7 @@ class CitationSystemTests(TestCase):
                         "wordprocessingml.document"
                     ),
                 ),
+                "text": "Этот текст остался в поле до выбора файла и должен быть очищен.",
                 "max_claims": 3,
             },
         )

@@ -260,6 +260,21 @@
     color: #a43a35;
 }
 
+.citation-file-status {
+    padding: 9px 11px;
+    border-radius: 9px;
+    background: var(--citation-green-soft);
+    color: var(--citation-green);
+    font-size: 11px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.citation-primary-action:disabled {
+    cursor: wait;
+    opacity: .72;
+}
+
 .citation-form-error {
     margin-bottom: 18px;
     padding: 12px 14px;

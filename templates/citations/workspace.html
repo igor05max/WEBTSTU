@@ -5,7 +5,7 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727b">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260727c">
 {% endblock %}
 
 {% block content %}
@@ -77,26 +77,27 @@
         </div>
         <p>Выберите один вариант. DOCX после подбора можно скачать с уже добавленными ссылками.</p>
     </div>
-    <form method="post" enctype="multipart/form-data" class="citation-search-form">
+    <form method="post" enctype="multipart/form-data" class="citation-search-form" data-citation-source-form>
         {% csrf_token %}
         {% if form.non_field_errors %}
             <div class="citation-form-error">{{ form.non_field_errors }}</div>
         {% endif %}
         <div class="citation-source-grid">
-            <label class="citation-field">
+            <label class="citation-field" data-citation-submission-field>
                 <span>{{ form.submission.label }}</span>
                 {{ form.submission }}
                 {% for error in form.submission.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
             </label>
-            <label class="citation-field citation-file-field">
+            <label class="citation-field citation-file-field" data-citation-file-field>
                 <span>{{ form.file.label }}</span>
                 {{ form.file }}
                 <small>{{ form.file.help_text }}</small>
+                <strong class="citation-file-status" data-citation-file-status hidden></strong>
                 {% for error in form.file.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
             </label>
         </div>
         <div class="citation-divider"><span>или</span></div>
-        <label class="citation-field">
+        <label class="citation-field" data-citation-text-field>
             <span>{{ form.text.label }}</span>
             {{ form.text }}
             {% for error in form.text.errors %}<small class="citation-error">{{ error }}</small>{% endfor %}
@@ -106,7 +107,7 @@
                 <span>{{ form.max_claims.label }}</span>
                 {{ form.max_claims }}
             </label>
-            <button class="citation-primary-action" type="submit">
+            <button class="citation-primary-action" type="submit" data-citation-search-submit>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M10.5 7v7M7 10.5h7"/></svg>
                 Проанализировать и найти
             </button>
@@ -219,5 +220,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260727b" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20260727c" defer></script>
 {% endblock %}
