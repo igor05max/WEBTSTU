@@ -67,7 +67,7 @@ a {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    gap: 16px;
     color: #fff;
     background:
         radial-gradient(circle at 10% 80%, rgba(35, 112, 220, 0.28), transparent 32%),
@@ -108,7 +108,15 @@ a {
     z-index: 1;
 }
 
+.dashboard-sidebar-top {
+    min-height: 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+}
+
 .dashboard-sidebar-caption {
+    flex: 0 0 auto;
     margin: 0 14px 22px;
     color: rgba(255, 255, 255, 0.42);
     font-size: 0.66rem;
@@ -118,8 +126,29 @@ a {
 }
 
 .dashboard-nav {
+    min-height: 0;
+    padding-right: 4px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    scrollbar-width: thin;
     display: grid;
+    align-content: start;
     gap: 7px;
+}
+
+.dashboard-nav::-webkit-scrollbar {
+    width: 5px;
+}
+
+.dashboard-nav::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.dashboard-nav::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .dashboard-nav-link {
@@ -199,6 +228,7 @@ a {
 }
 
 .dashboard-sidebar-bottom {
+    flex: 0 0 auto;
     padding-top: 18px;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 38px;
@@ -276,6 +306,35 @@ button[type="submit"].dashboard-logout:hover {
     color: #fff;
     background: rgba(255, 255, 255, 0.08);
     box-shadow: none;
+}
+
+@media (max-height: 780px) {
+    .dashboard-sidebar {
+        padding-top: 22px;
+        padding-bottom: 18px;
+        gap: 12px;
+    }
+
+    .dashboard-sidebar-caption {
+        margin-bottom: 14px;
+    }
+
+    .dashboard-nav {
+        gap: 5px;
+    }
+
+    .dashboard-nav-link {
+        min-height: 48px;
+        border-radius: 12px;
+    }
+
+    .dashboard-nav-section {
+        margin-top: 18px;
+    }
+
+    .dashboard-sidebar-bottom {
+        padding-top: 12px;
+    }
 }
 
 .dashboard-main {
