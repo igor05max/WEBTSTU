@@ -41,12 +41,24 @@ class Submission(models.Model):
         verbose_name="Отправитель",
         help_text="Пользователь, который создал и отправляет заявку в системе.",
     )
+    responsible_author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="responsible_submissions",
+        null=True,
+        blank=True,
+        verbose_name="Ответственный автор",
+        help_text=(
+            "Основной автор материала. По его кафедре определяется заведующий "
+            "кафедрой для маршрута согласования."
+        ),
+    )
     authors = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name="authored_submissions",
         verbose_name="Авторы",
         blank=True,
-        help_text="Все авторы материала. Отправитель добавляется автоматически.",
+        help_text="Все зарегистрированные в системе авторы материала.",
     )
     journal = models.ForeignKey(
         "directory.Journal",
@@ -133,8 +145,13 @@ class Submission(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        if self.author_id and not self.authors.filter(pk=self.author_id).exists():
-            self.authors.add(self.author_id)
+        effective_author_id = self.responsible_author_id or self.author_id
+        if effective_author_id and not self.authors.filter(pk=effective_author_id).exists():
+            self.authors.add(effective_author_id)
+
+    @property
+    def routing_author(self):
+        return self.responsible_author or self.author
 
     def get_authors_display(self):
         return ", ".join(str(author) for author in self.authors.all())

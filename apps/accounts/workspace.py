@@ -60,7 +60,9 @@ def get_workspace_navigation(user, *, active_tasks=None, decision_history=None, 
             "name",
             "",
         ),
-        "workspace_submission_count": Submission.objects.filter(authors=user).distinct().count(),
+        "workspace_submission_count": (
+            Submission.objects.filter(Q(author=user) | Q(authors=user)).distinct().count()
+        ),
         "workspace_plan_year": plan_year,
         "workspace_pending_review_count": pending_review_count,
         "workspace_review_history_count": review_history_count,

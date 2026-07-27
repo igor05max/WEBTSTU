@@ -297,6 +297,52 @@ class WorkflowRouteSelectionTests(TestCase):
         self.assertIsNone(task.assigned_unit)
         self.assertEqual(task.workflow_step.assignee_kind, AssigneeKind.AUTHOR_CHAIR_HEAD)
 
+    def test_start_workflow_uses_responsible_author_chair_instead_of_sender(self):
+        chair_org_unit = OrgUnit.objects.create(
+            name='Кафедра "Ответственного автора"',
+            code="responsible-author-chair",
+        )
+        chair_head_role, _ = Group.objects.get_or_create(name=CHAIR_HEAD_ROLE_NAME)
+        chair_org_unit.available_roles.add(chair_head_role)
+        responsible_author = User.objects.create_user(
+            username="responsible_author",
+            password="1234",
+            chair_org_unit=chair_org_unit,
+        )
+        chair_head = User.objects.create_user(
+            username="responsible_author_chair_head",
+            password="1234",
+            chair_org_unit=chair_org_unit,
+        )
+        chair_head.groups.add(chair_head_role)
+        route_template = RouteTemplate.objects.create(
+            name="Маршрут ответственного автора",
+            direction=self.direction_main,
+            is_active=True,
+        )
+        RouteStepTemplate.objects.create(
+            route_template=route_template,
+            order=1,
+            name="Заведующий кафедрой ответственного автора",
+            assignee_kind=AssigneeKind.AUTHOR_CHAIR_HEAD,
+        )
+        submission = Submission.objects.create(
+            title="Заявка от представителя",
+            author=self.author,
+            responsible_author=responsible_author,
+            journal=self.journal,
+            article_type=self.article_type,
+            direction=self.direction_main,
+            route_template=route_template,
+        )
+
+        workflow_run = start_workflow(submission, route_template=route_template)
+        task = ApprovalTask.objects.get(workflow_step__workflow_run=workflow_run)
+
+        self.assertEqual(task.assigned_user, chair_head)
+        self.assertEqual(submission.author, self.author)
+        self.assertNotEqual(submission.author, responsible_author)
+
     def test_start_workflow_raises_for_chair_head_step_without_author_chair(self):
         route_template = RouteTemplate.objects.create(
             name="Маршрут без кафедры автора",
@@ -320,7 +366,7 @@ class WorkflowRouteSelectionTests(TestCase):
 
         with self.assertRaisesMessage(
             ValueError,
-            "У отправителя не указана кафедра, поэтому нельзя выбрать заведующего кафедрой.",
+            "У ответственного автора не указана кафедра, поэтому нельзя выбрать заведующего кафедрой.",
         ):
             start_workflow(submission, route_template=route_template)
 

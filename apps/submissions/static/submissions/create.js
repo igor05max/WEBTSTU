@@ -793,27 +793,45 @@
         }
 
         function applyMatchedUsers(matches) {
-            var select = document.getElementById("id_co_authors");
-            if (!select) {
+            var responsibleSelect = document.getElementById("id_responsible_author");
+            var coauthorSelect = document.getElementById("id_co_authors");
+            if (!responsibleSelect || !coauthorSelect) {
                 return 0;
             }
-            var count = 0;
+            var matchedIds = [];
             (matches || []).forEach(function (match) {
-                if (match.is_current_user) {
-                    return;
-                }
-                var option = Array.prototype.find.call(select.options, function (item) {
-                    return String(item.value) === String(match.user_id);
-                });
-                if (option && !option.selected) {
-                    option.selected = true;
-                    count += 1;
+                var responsibleOption = Array.prototype.find.call(
+                    responsibleSelect.options,
+                    function (item) {
+                        return String(item.value) === String(match.user_id);
+                    }
+                );
+                if (responsibleOption) {
+                    matchedIds.push(String(match.user_id));
                 }
             });
-            if (count) {
-                select.dispatchEvent(new Event("change", {bubbles: true}));
+            if (!matchedIds.length) {
+                return 0;
             }
-            return count;
+
+            responsibleSelect.value = matchedIds[0];
+            responsibleSelect.dispatchEvent(new Event("change", {bubbles: true}));
+
+            matchedIds.slice(1).forEach(function (userId) {
+                var option = Array.prototype.find.call(coauthorSelect.options, function (item) {
+                    return String(item.value) === userId;
+                });
+                if (option) {
+                    option.selected = true;
+                }
+            });
+            Array.prototype.forEach.call(coauthorSelect.options, function (option) {
+                if (String(option.value) === matchedIds[0]) {
+                    option.selected = false;
+                }
+            });
+            coauthorSelect.dispatchEvent(new Event("change", {bubbles: true}));
+            return matchedIds.length;
         }
 
         function runExtraction(useSemanticModel) {

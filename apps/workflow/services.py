@@ -107,10 +107,13 @@ def _validate_assignment_membership(assigned_unit, assigned_group, assigned_user
 
 
 def _resolve_author_chair_head_assignment(submission):
-    author = submission.author
+    author = submission.routing_author
     chair_org_unit = getattr(author, "chair_org_unit", None)
     if chair_org_unit is None:
-        raise ValueError("У отправителя не указана кафедра, поэтому нельзя выбрать заведующего кафедрой.")
+        raise ValueError(
+            "У ответственного автора не указана кафедра, поэтому нельзя "
+            "выбрать заведующего кафедрой."
+        )
 
     chair_head_role = get_or_create_chair_head_role()
     candidates = list(get_chair_head_candidates(chair_org_unit))
@@ -642,7 +645,7 @@ def request_revision(task, actor, comment="", *, request_meta=None):
 @transaction.atomic
 def submit_submission_appeal(submission, author, *, comment, attachment=None):
     if author != submission.author and not author.is_superuser:
-        raise PermissionError("Подать апелляцию может только автор заявки.")
+        raise PermissionError("Подать апелляцию может только отправитель заявки.")
 
     if SubmissionAppeal.objects.filter(submission=submission).exists():
         raise ValueError("Апелляцию по этой заявке уже подавали.")

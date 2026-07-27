@@ -22,8 +22,10 @@ User = get_user_model()
 @login_required
 def dashboard(request):
     submissions = (
-        Submission.objects.filter(authors=request.user)
+        Submission.objects.filter(Q(author=request.user) | Q(authors=request.user))
         .select_related(
+            "author",
+            "responsible_author",
             "journal",
             "article_type",
             "direction",
@@ -104,10 +106,23 @@ def dashboard(request):
     if can_view_chair_submissions:
         chair_submissions = (
             Submission.objects.filter(
-                author__chair_org_unit_id=request.user.chair_org_unit_id,
+                Q(
+                    responsible_author__chair_org_unit_id=request.user.chair_org_unit_id
+                )
+                | Q(
+                    responsible_author__isnull=True,
+                    author__chair_org_unit_id=request.user.chair_org_unit_id,
+                ),
                 submitted_at__isnull=False,
             )
-            .select_related("author", "journal", "article_type", "direction", "route_template")
+            .select_related(
+                "author",
+                "responsible_author",
+                "journal",
+                "article_type",
+                "direction",
+                "route_template",
+            )
             .prefetch_related("authors")
             .distinct()
         )

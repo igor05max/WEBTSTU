@@ -741,6 +741,7 @@ class SubmissionCreateViewTests(TestCase):
         response = self.client.post(
             reverse("submissions:create"),
             data={
+                "responsible_author": self.chair_head.id,
                 "article_type": self.article_type.id,
                 "journal": self.journal.id,
                 "journal_query": self.journal.name,
@@ -761,6 +762,9 @@ class SubmissionCreateViewTests(TestCase):
             fetch_redirect_response=False,
         )
         self.assertEqual(submission.status, SubmissionStatus.DRAFT)
+        self.assertEqual(submission.responsible_author, self.chair_head)
+        self.assertFalse(submission.authors.filter(pk=self.user.pk).exists())
+        self.assertTrue(submission.authors.filter(pk=self.chair_head.pk).exists())
         self.assertEqual(template.analysis_status, "pending")
         self.assertEqual(submission.check_runs.count(), 0)
         queue_processing.assert_called_once()
@@ -841,6 +845,30 @@ class SubmissionCreateViewTests(TestCase):
         self.assertQuerySetEqual(
             submission.authors.order_by("id"),
             [self.user, coauthor],
+            transform=lambda user: user,
+        )
+
+    def test_sender_can_create_submission_for_another_responsible_author(self):
+        responsible_author = get_user_model().objects.create_user(
+            username="responsible_author",
+            password="1234",
+        )
+
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            responsible_author=responsible_author,
+            title="Статья, отправленная представителем",
+            abstract="Аннотация",
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("article.txt", b"content"),
+        )
+
+        self.assertEqual(submission.author, self.user)
+        self.assertEqual(submission.responsible_author, responsible_author)
+        self.assertQuerySetEqual(
+            submission.authors.all(),
+            [responsible_author],
             transform=lambda user: user,
         )
 

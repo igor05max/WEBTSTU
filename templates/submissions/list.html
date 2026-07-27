@@ -131,7 +131,7 @@
                                 <a class="submissions-row-open" href="{% url 'submissions:detail' submission.pk %}" aria-label="Открыть материал «{{ submission.title }}»"></a>
                                 <div class="submissions-title-cell">
                                     <span class="submissions-title">{{ submission.title }}</span>
-                                    <small>{{ submission.article_type.name }}{% if current_owner == 'chair' %} · {{ submission.author }}{% endif %}</small>
+                                    <small>{{ submission.article_type.name }}{% if current_owner == 'chair' %} · {{ submission.routing_author }}{% endif %}</small>
                                 </div>
                                 <div class="submissions-journal-cell" data-label="{{ submission.destination_label }}">
                                     <span>{{ submission.destination_name|default:"Не указано" }}</span>

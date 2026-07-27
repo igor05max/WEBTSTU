@@ -19,7 +19,7 @@ def add_submission_version(
     submission = Submission.objects.select_for_update().get(pk=submission.pk)
 
     if uploaded_by != submission.author and not uploaded_by.is_superuser:
-        raise PermissionError("Only the author can upload a new version.")
+        raise PermissionError("Только отправитель может загрузить новую версию.")
 
     if (
         expected_current_version_id is not None
@@ -68,6 +68,7 @@ def add_submission_version(
 def create_submission_with_initial_version(
     *,
     author,
+    responsible_author=None,
     title,
     abstract,
     journal,
@@ -86,6 +87,7 @@ def create_submission_with_initial_version(
     defer_checks=False,
     mark_as_checking=True,
 ):
+    responsible_author = responsible_author or author
     submission = Submission.objects.create(
         title=title or "Без названия",
         abstract=abstract,
@@ -94,6 +96,7 @@ def create_submission_with_initial_version(
         contact_emails=contact_emails or "",
         keywords=keywords or "",
         author=author,
+        responsible_author=responsible_author,
         journal=journal,
         publication_topic=publication_topic,
         article_type=article_type,
@@ -102,7 +105,7 @@ def create_submission_with_initial_version(
         formatting_check_requested=bool(formatting_check_requested),
         status=SubmissionStatus.DRAFT,
     )
-    author_ids = {author.id}
+    author_ids = {responsible_author.id}
     for co_author in co_authors or []:
         if co_author is None or co_author.id is None:
             continue
@@ -217,7 +220,7 @@ def submit_submission(
         raise ValueError(f"Submission in status '{submission.status}' cannot be submitted.")
 
     if submitted_by is not None and submitted_by != submission.author and not submitted_by.is_superuser:
-        raise PermissionError("Only the author can submit this submission.")
+        raise PermissionError("Только отправитель может отправить эту заявку.")
 
     direction, route_template = _resolve_submission_route_selection_for_submit(
         submission,

@@ -51,6 +51,16 @@ class UserChoiceSelectMultiple(forms.SelectMultiple):
         return option
 
 
+class UserChoiceSelect(forms.Select):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        instance = getattr(value, "instance", None)
+        if instance is not None:
+            option["attrs"]["data-username"] = instance.username
+            option["attrs"]["data-unit"] = getattr(instance.org_unit, "name", "")
+        return option
+
+
 class ArticleTypeSelect(forms.Select):
     def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
         option = super().create_option(name, value, label, selected, index, subindex, attrs)
@@ -135,11 +145,24 @@ class SubmissionCreateForm(forms.ModelForm):
         help_text="Проверка необязательна и не блокирует отправку.",
     )
     file = forms.FileField(label="Файл материала")
-    co_authors = forms.ModelMultipleChoiceField(
-        label="Соавторы",
+    responsible_author = forms.ModelChoiceField(
+        label="Ответственный автор",
         queryset=User.objects.none(),
         required=False,
-        help_text="Выберите остальных авторов материала. Вы как отправитель будете добавлены автоматически.",
+        help_text=(
+            "Основной автор материала. По его кафедре система выберет "
+            "заведующего кафедрой для согласования."
+        ),
+        widget=UserChoiceSelect(),
+    )
+    co_authors = forms.ModelMultipleChoiceField(
+        label="Другие авторы",
+        queryset=User.objects.none(),
+        required=False,
+        help_text=(
+            "Добавьте остальных авторов материала. Отправитель не включается "
+            "в авторы автоматически."
+        ),
         widget=UserChoiceSelectMultiple(attrs={"size": 8}),
     )
     version_comment = forms.CharField(
@@ -154,10 +177,20 @@ class SubmissionCreateForm(forms.ModelForm):
     )
 
     def __init__(self, *args, current_user=None, **kwargs):
+        self.current_user = current_user
         super().__init__(*args, **kwargs)
-        queryset = User.objects.select_related("org_unit").order_by("last_name", "first_name", "username")
-        if current_user is not None and getattr(current_user, "id", None):
-            queryset = queryset.exclude(pk=current_user.id)
+        queryset = (
+            User.objects.filter(is_active=True)
+            .select_related("org_unit")
+            .order_by("last_name", "first_name", "username")
+        )
+        self.fields["responsible_author"].queryset = queryset
+        if (
+            not self.is_bound
+            and current_user is not None
+            and getattr(current_user, "id", None)
+        ):
+            self.fields["responsible_author"].initial = current_user
         self.fields["co_authors"].queryset = queryset
         article_type_field = self.fields["article_type"]
         article_type_field.empty_label = "Выберите тип материала"
@@ -224,6 +257,11 @@ class SubmissionCreateForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if cleaned_data.get("responsible_author") is None:
+            if self.current_user is None or not getattr(self.current_user, "id", None):
+                self.add_error("responsible_author", "Выберите ответственного автора.")
+            else:
+                cleaned_data["responsible_author"] = self.current_user
         article_type = cleaned_data.get("article_type")
         if article_type is None:
             return cleaned_data
@@ -321,6 +359,7 @@ class SubmissionCreateForm(forms.ModelForm):
             "organizations",
             "contact_emails",
             "keywords",
+            "responsible_author",
             "journal_query",
             "journal",
             "publication_topic_query",

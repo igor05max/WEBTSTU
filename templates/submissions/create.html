@@ -265,6 +265,15 @@
                             </div>
                         </div>
 
+                        <div class="submission-field{% if form.responsible_author.errors %} has-error{% endif %}">
+                            <label for="{{ form.responsible_author.id_for_label }}">{{ form.responsible_author.label }}</label>
+                            {{ form.responsible_author }}
+                            {% if form.responsible_author.help_text %}
+                                <small class="submission-field-help">{{ form.responsible_author.help_text }}</small>
+                            {% endif %}
+                            {% if form.responsible_author.errors %}<div class="submission-field-errors">{{ form.responsible_author.errors }}</div>{% endif %}
+                        </div>
+
                         <div class="submission-field{% if form.co_authors.errors %} has-error{% endif %}">
                             <label for="coauthor-search">{{ form.co_authors.label }}</label>
                             <div class="coauthor-picker" data-coauthor-picker>
@@ -276,6 +285,9 @@
                                 <div class="coauthor-options" data-coauthor-options></div>
                                 <div class="coauthor-native" data-coauthor-native>{{ form.co_authors }}</div>
                             </div>
+                            {% if form.co_authors.help_text %}
+                                <small class="submission-field-help">{{ form.co_authors.help_text }}</small>
+                            {% endif %}
                             {% if form.co_authors.errors %}<div class="submission-field-errors">{{ form.co_authors.errors }}</div>{% endif %}
                         </div>
 
@@ -305,7 +317,7 @@
 </div>
 
 <script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
-<script src="{% static 'submissions/create.js' %}?v=20260727b" defer></script>
+<script src="{% static 'submissions/create.js' %}?v=20260727c" defer></script>
 {% include "includes/global_loading_body.html" %}
 </body>
 </html>

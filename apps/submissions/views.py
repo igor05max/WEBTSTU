@@ -132,9 +132,10 @@ def _can_access_chair_submissions(user):
 
 def _get_personal_submissions_queryset(user):
     return (
-        Submission.objects.filter(authors=user)
+        Submission.objects.filter(Q(author=user) | Q(authors=user))
         .select_related(
             "author",
+            "responsible_author",
             "journal",
             "publication_topic",
             "article_type",
@@ -153,11 +154,16 @@ def _get_chair_submissions_queryset(user):
         return Submission.objects.none()
     return (
         Submission.objects.filter(
-            author__chair_org_unit_id=user.chair_org_unit_id,
+            Q(responsible_author__chair_org_unit_id=user.chair_org_unit_id)
+            | Q(
+                responsible_author__isnull=True,
+                author__chair_org_unit_id=user.chair_org_unit_id,
+            ),
             submitted_at__isnull=False,
         )
         .select_related(
             "author",
+            "responsible_author",
             "journal",
             "publication_topic",
             "article_type",
@@ -596,13 +602,16 @@ def _build_formatting_rule_rows(snapshot):
 
 
 def _can_view_submission(user, submission):
-    if user.is_superuser or submission.authors.filter(pk=user.id).exists():
+    if (
+        user.is_superuser
+        or submission.author_id == user.id
+        or submission.authors.filter(pk=user.id).exists()
+    ):
         return True
     if (
         _can_access_chair_submissions(user)
         and submission.submitted_at is not None
-        and submission.author.chair_org_unit_id is not None
-        and submission.author.chair_org_unit_id == user.chair_org_unit_id
+        and submission.routing_author.chair_org_unit_id == user.chair_org_unit_id
     ):
         return True
     if not user.is_authenticated:
@@ -615,7 +624,7 @@ def _can_view_submission(user, submission):
 
 def _get_viewable_submission_or_404(user, pk):
     submission = get_object_or_404(
-        Submission.objects.select_related("author").prefetch_related("authors"),
+        Submission.objects.select_related("author", "responsible_author").prefetch_related("authors"),
         pk=pk,
     )
     if not _can_view_submission(user, submission):
@@ -919,6 +928,7 @@ def submission_create(request):
             )
             submission = create_submission_with_initial_version(
                 author=request.user,
+                responsible_author=form.cleaned_data["responsible_author"],
                 title=title,
                 abstract=form.cleaned_data["abstract"] or metadata.get("abstract", ""),
                 journal=journal,
@@ -1617,7 +1627,7 @@ def corrected_document_download_view(request, pk):
         pk=pk,
     )
     if submission.author_id != request.user.id and not request.user.is_superuser:
-        return HttpResponseForbidden("Исправленный файл доступен только автору.")
+        return HttpResponseForbidden("Исправленный файл доступен только отправителю.")
     try:
         corrected_bytes, changes = build_corrected_docx(submission)
     except FormattingCorrectionError as exc:
@@ -1645,7 +1655,7 @@ def _get_correctable_submission(request, pk):
         pk=pk,
     )
     if submission.author_id != request.user.id and not request.user.is_superuser:
-        raise PermissionDenied("Исправленный файл доступен только автору.")
+        raise PermissionDenied("Исправленный файл доступен только отправителю.")
     return submission
 
 

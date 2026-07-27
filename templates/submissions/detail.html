@@ -28,6 +28,16 @@
                 <div class="submission-meta-value"><a href="{% url 'activities:list' %}?scope=all&amp;owner={{ submission.author_id }}">{{ submission.author }}</a></div>
             </div>
             <div class="submission-meta-card">
+                <div class="submission-meta-label">Ответственный автор</div>
+                <div class="submission-meta-value">
+                    {% if submission.responsible_author %}
+                        <a href="{% url 'activities:list' %}?scope=all&amp;owner={{ submission.responsible_author_id }}">{{ submission.responsible_author }}</a>
+                    {% else %}
+                        {{ submission.author }}
+                    {% endif %}
+                </div>
+            </div>
+            <div class="submission-meta-card">
                 <div class="submission-meta-label">Пользователи-авторы</div>
                 <div class="submission-meta-value">
                     {% for author in submission.authors.all %}
