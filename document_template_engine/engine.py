@@ -205,6 +205,21 @@ def _looks_like_authors(text: str) -> bool:
     )
 
 
+def _looks_like_body_start(paragraph) -> bool:
+    text = " ".join(paragraph.text.split())
+    style_name = (
+        (paragraph.style.name or "").casefold()
+        if getattr(paragraph, "style", None)
+        else ""
+    )
+    if "heading" in style_name or "заголов" in style_name:
+        return True
+    if re.match(r"^\s*\d+(?:\.\d+)*[.)]?\s+\S", text):
+        return True
+    words = _WORD_RE.findall(text)
+    return len(words) >= 12 and text.rstrip().endswith((".", "!", "?", "…"))
+
+
 def _looks_like_city_country(text: str) -> bool:
     if not (2 <= len(text) <= 100) or "," not in text:
         return False
@@ -270,6 +285,8 @@ def _assign_roles(document, metadata: dict[str, Any] | None = None) -> dict[int,
             roles[title_index] = "title"
 
     if title_index is not None:
+        authors_found = False
+        inspected_front_paragraphs = 0
         for index in nonempty:
             if index <= title_index:
                 continue
@@ -277,19 +294,41 @@ def _assign_roles(document, metadata: dict[str, Any] | None = None) -> dict[int,
                 break
             if index in roles:
                 continue
-            text = paragraphs[index].text.strip()
+            inspected_front_paragraphs += 1
+            if inspected_front_paragraphs > 12:
+                break
+            paragraph = paragraphs[index]
+            text = paragraph.text.strip()
             if _looks_like_authors(text):
                 roles[index] = "authors"
+                authors_found = True
+                continue
+            if authors_found or _looks_like_body_start(paragraph):
+                break
 
     references_heading = next(
         (index for index, role in roles.items() if role == "references_heading"),
         None,
     )
     front_limit = references_heading if references_heading is not None else len(paragraphs)
+    content_boundary = min(
+        (
+            index
+            for index, role in roles.items()
+            if role in {"abstract", "keywords"}
+        ),
+        default=front_limit,
+    )
+    front_scan_start = title_index if title_index is not None else -1
     for index in nonempty:
-        if index in roles or index >= front_limit:
+        if index <= front_scan_start or index >= min(front_limit, content_boundary):
             continue
-        text = paragraphs[index].text.strip()
+        if index in roles:
+            continue
+        paragraph = paragraphs[index]
+        if _looks_like_body_start(paragraph):
+            break
+        text = paragraph.text.strip()
         if _INSTITUTION_RE.search(text) and len(text) <= 250:
             roles[index] = "institution"
         elif _looks_like_city_country(text):

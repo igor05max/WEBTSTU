@@ -624,6 +624,31 @@ class FormattingRulesForm(forms.Form):
             for block in ((effective.get("document") or {}).get("blocks") or [])
             if block.get("role")
         }
+        existing_blocks.setdefault(
+            "body",
+            {
+                "role": "body",
+                "label": BLOCK_CATALOG["body"]["label"],
+                "required": True,
+            },
+        )
+        for text_role in ("body", "abstract", "keywords"):
+            text_block = existing_blocks.get(text_role)
+            if text_block is None:
+                continue
+            text_style = {**(text_block.get("style") or {})}
+            for key in (
+                "font_family",
+                "font_size_pt",
+                "line_spacing",
+                "first_line_indent_cm",
+            ):
+                value = effective["body"].get(key)
+                if value in (None, ""):
+                    text_style.pop(key, None)
+                else:
+                    text_style[key] = value
+            text_block["style"] = text_style
         for role, label in self._BLOCK_CHOICES:
             if role not in existing_blocks and role in selected_blocks:
                 existing_blocks[role] = {

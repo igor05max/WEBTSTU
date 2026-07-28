@@ -165,6 +165,62 @@ class ReusableTemplateEngineTests(SimpleTestCase):
         self.assertTrue(authors["found"])
         self.assertEqual(authors["paragraph_numbers"], [5])
 
+    def test_front_matter_like_phrases_inside_body_do_not_move_formatting_boundary(self):
+        from docx import Document
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+        document = Document()
+        document.add_paragraph("НАЗВАНИЕ НАУЧНОЙ СТАТЬИ")
+        document.add_heading("1. Введение", level=1)
+        document.add_paragraph(
+            "Основной текст статьи начинается здесь и содержит достаточно слов, "
+            "чтобы однозначно считаться научным повествованием."
+        )
+        document.add_paragraph("ПОЛЯКОВ Дмитрий Вадимович")
+        document.add_paragraph("Точность, полнота и F-мера")
+        document.add_paragraph(
+            "Базовая модель использует институт как источник данных"
+        )
+        output = BytesIO()
+        document.save(output)
+
+        rules = {
+            "body": {
+                "line_spacing": 1.5,
+                "first_line_indent_cm": 1.25,
+                "alignment": "justify",
+            },
+            "document": {
+                "blocks": [
+                    {"role": "title", "required": True},
+                    {"role": "authors", "required": False},
+                    {"role": "body", "required": True},
+                ]
+            },
+        }
+        report = check_docx_against_template(output.getvalue(), rules)
+        assigned_roles = {
+            assignment["role"]
+            for assignment in report["role_assignments"]
+        }
+        self.assertTrue(
+            {"authors", "institution", "city_country"}.isdisjoint(assigned_roles),
+        )
+
+        corrected_bytes, _changes, _plan = build_docx_from_template(
+            output.getvalue(),
+            rules,
+        )
+        corrected = Document(BytesIO(corrected_bytes))
+        body = corrected.paragraphs[2]
+        self.assertEqual(body.paragraph_format.line_spacing, 1.5)
+        self.assertAlmostEqual(
+            body.paragraph_format.first_line_indent.cm,
+            1.25,
+            places=2,
+        )
+        self.assertEqual(body.alignment, WD_ALIGN_PARAGRAPH.JUSTIFY)
+
     def test_latex_rules_are_extracted_without_executing_source(self):
         source = r"""
             \documentclass[14pt,a4paper]{article}

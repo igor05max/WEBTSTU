@@ -28,6 +28,7 @@ from apps.conclusions.models import ConclusionDocument
 from apps.directory.formatting_templates import (
     build_rules_snapshot,
     create_formatting_template,
+    has_manual_rule_overrides,
 )
 from apps.directory.publication_topics import resolve_or_create_publication_topic
 from apps.submissions.forms import (
@@ -1220,14 +1221,17 @@ def start_submission_checks_view(request, pk):
             template.analysis_status in {"ready", "partial"}
             and template.extracted_rules
         ):
-            submission.formatting_rules_snapshot = build_rules_snapshot(
-                article_type=submission.article_type,
-                template=template,
-                journal=submission.journal,
-            )
-            submission.save(
-                update_fields=["formatting_rules_snapshot", "updated_at"]
-            )
+            if not has_manual_rule_overrides(
+                submission.formatting_rules_snapshot
+            ):
+                submission.formatting_rules_snapshot = build_rules_snapshot(
+                    article_type=submission.article_type,
+                    template=template,
+                    journal=submission.journal,
+                )
+                submission.save(
+                    update_fields=["formatting_rules_snapshot", "updated_at"]
+                )
         else:
             submission.status = SubmissionStatus.AUTO_CHECKING
             submission.save(update_fields=["status", "updated_at"])

@@ -905,6 +905,122 @@ class SubmissionCreateViewTests(TestCase):
         )
 
     @patch("apps.submissions.views.queue_submission_checks")
+    def test_start_checks_preserves_manually_confirmed_formatting_rules(
+        self,
+        queue_checks,
+    ):
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("requirements.txt", b"Formatting requirements"),
+            uploaded_by=self.user,
+            analysis_status="ready",
+            extracted_rules={
+                "body": {
+                    "line_spacing": 1,
+                    "first_line_indent_cm": 0,
+                }
+            },
+        )
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Ручные правила не должны сбрасываться",
+            abstract="",
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            file=SimpleUploadedFile("article.txt", b"content"),
+            defer_checks=True,
+            mark_as_checking=False,
+        )
+        submission.formatting_rules_snapshot = {
+            "effective": {
+                "body": {
+                    "line_spacing": 1.5,
+                    "first_line_indent_cm": 1.25,
+                },
+                "document": {"manual_override_confirmed": True},
+            },
+            "sources": [{"kind": "manual", "priority": 40}],
+            "conflicts": [],
+        }
+        submission.save(
+            update_fields=["formatting_rules_snapshot", "updated_at"]
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("submissions:start_checks", args=[submission.pk])
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("submissions:detail", args=[submission.pk]),
+        )
+        submission.refresh_from_db()
+        body = submission.formatting_rules_snapshot["effective"]["body"]
+        self.assertEqual(body["line_spacing"], 1.5)
+        self.assertEqual(body["first_line_indent_cm"], 1.25)
+        queue_checks.assert_called_once()
+
+    def test_background_template_preparation_preserves_manual_rules(self):
+        from apps.submissions.template_processing import (
+            prepare_submission_template_by_id,
+        )
+
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("requirements.txt", b"Formatting requirements"),
+            uploaded_by=self.user,
+            analysis_status="ready",
+            extracted_rules={
+                "body": {
+                    "line_spacing": 1,
+                    "first_line_indent_cm": 0,
+                }
+            },
+        )
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Фоновая подготовка сохраняет ручные правила",
+            abstract="",
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            file=SimpleUploadedFile("article.txt", b"content"),
+            defer_checks=True,
+            mark_as_checking=False,
+        )
+        submission.formatting_rules_snapshot = {
+            "effective": {
+                "body": {
+                    "line_spacing": 1.5,
+                    "first_line_indent_cm": 1.25,
+                },
+                "document": {"manual_override_confirmed": True},
+            },
+            "sources": [{"kind": "manual", "priority": 40}],
+            "conflicts": [],
+        }
+        submission.save(
+            update_fields=["formatting_rules_snapshot", "updated_at"]
+        )
+
+        prepared = prepare_submission_template_by_id(
+            submission.pk,
+            template_id=template.pk,
+            expected_version_id=submission.current_version_id,
+            start_checks=False,
+        )
+
+        self.assertTrue(prepared)
+        submission.refresh_from_db()
+        body = submission.formatting_rules_snapshot["effective"]["body"]
+        self.assertEqual(body["line_spacing"], 1.5)
+        self.assertEqual(body["first_line_indent_cm"], 1.25)
+
+    @patch("apps.submissions.views.queue_submission_checks")
     def test_start_checks_does_not_duplicate_existing_current_version_runs(
         self,
         queue_checks,
@@ -2586,6 +2702,86 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertContains(
             confirmed_response,
             "Посмотреть и отправить отредактированную",
+        )
+
+    @patch("apps.submissions.views.queue_submission_checks")
+    def test_manual_paragraph_rules_override_stale_body_block_style(
+        self,
+        _queue_checks,
+    ):
+        submission, _source_version = self._create_correctable_submission()
+        snapshot = submission.formatting_rules_snapshot
+        snapshot["effective"]["document"] = {
+            "blocks": [
+                {
+                    "role": role,
+                    "required": role == "body",
+                    "style": {
+                        "font_family": "Times New Roman",
+                        "font_size_pt": 14,
+                        "line_spacing": 1,
+                        "first_line_indent_cm": 1,
+                        "alignment": "justify",
+                    },
+                }
+                for role in ("body", "abstract", "keywords")
+            ]
+        }
+        submission.formatting_rules_snapshot = snapshot
+        submission.save(
+            update_fields=["formatting_rules_snapshot", "updated_at"]
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("submissions:update_formatting_rules", args=[submission.pk]),
+            data={
+                "font_family": "Times New Roman",
+                "font_size_pt": "14",
+                "line_spacing": "1.5",
+                "first_line_indent_cm": "1.25",
+                "margin_top_cm": "2",
+                "margin_right_cm": "2",
+                "margin_bottom_cm": "2",
+                "margin_left_cm": "2",
+                "min_words": "2000",
+                "max_words": "12000",
+                "required_sections": "",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("submissions:detail", args=[submission.pk]),
+        )
+        submission.refresh_from_db()
+        effective = submission.formatting_rules_snapshot["effective"]
+        text_blocks = {
+            block["role"]: block
+            for block in effective["document"]["blocks"]
+            if block["role"] in {"body", "abstract", "keywords"}
+        }
+        for role in ("body", "abstract", "keywords"):
+            self.assertEqual(text_blocks[role]["style"]["line_spacing"], 1.5)
+            self.assertEqual(
+                text_blocks[role]["style"]["first_line_indent_cm"],
+                1.25,
+            )
+
+        corrected_bytes, _changes = build_corrected_docx(submission)
+        from docx import Document
+
+        corrected = Document(BytesIO(corrected_bytes))
+        body = next(
+            paragraph
+            for paragraph in corrected.paragraphs
+            if paragraph.text.startswith("Исходный научный текст")
+        )
+        self.assertEqual(body.paragraph_format.line_spacing, 1.5)
+        self.assertAlmostEqual(
+            body.paragraph_format.first_line_indent.cm,
+            1.25,
+            places=2,
         )
 
     def test_submission_latex_template_contains_saved_metadata(self):

@@ -8,6 +8,7 @@ from django.urls import reverse
 from apps.directory.formatting_templates import (
     _classify_template_source,
     _extract_pdf_rules,
+    _publisher_sample_profile,
     create_formatting_template,
     get_latest_formatting_template,
     process_formatting_template,
@@ -316,10 +317,41 @@ class PublicationTopicAndTemplateTests(TestCase):
         self.assertNotIn("margins_cm", rules["page"])
         self.assertIn("Автоматическое оформление DOCX включено", template.analysis_message)
 
+    def test_mdpi_profile_keeps_detected_paragraph_rules_but_not_column_margins(self):
+        rules = _publisher_sample_profile(
+            "sensors-4449654-peer-review-v1.pdf",
+            "MDPI Sensors peer-review manuscript",
+            {
+                "page": {
+                    "size": "A4",
+                    "orientation": "portrait",
+                    "margins_cm": {
+                        "top": 2.96,
+                        "right": 1.21,
+                        "bottom": 2.51,
+                        "left": 5.86,
+                    },
+                },
+                "body": {
+                    "font_family": "Palatino Linotype",
+                    "font_size_pt": 10,
+                    "line_spacing": 1.4,
+                    "first_line_indent_cm": 0.78,
+                    "alignment": "justify",
+                },
+            },
+        )
+
+        self.assertEqual(rules["page"], {"size": "A4", "orientation": "portrait"})
+        self.assertNotIn("margins_cm", rules["page"])
+        self.assertEqual(rules["body"]["line_spacing"], 1.4)
+        self.assertEqual(rules["body"]["first_line_indent_cm"], 0.78)
+
     def test_docx_builder_really_changes_page_size_to_a4(self):
         from io import BytesIO
 
         from docx import Document
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
         from docx.shared import Inches
 
         document = Document()
@@ -357,3 +389,11 @@ class PublicationTopicAndTemplateTests(TestCase):
         self.assertIn("размер страницы: A4", changes)
         self.assertAlmostEqual(corrected.paragraphs[0].runs[0].font.size.pt, 18, places=1)
         self.assertEqual(str(corrected.paragraphs[0].runs[0].font.color.rgb), "000000")
+        body = corrected.paragraphs[1]
+        self.assertEqual(body.paragraph_format.line_spacing, 1.4)
+        self.assertAlmostEqual(
+            body.paragraph_format.first_line_indent.cm,
+            0.75,
+            places=2,
+        )
+        self.assertEqual(body.alignment, WD_ALIGN_PARAGRAPH.JUSTIFY)

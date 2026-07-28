@@ -8,6 +8,7 @@ from django.db import close_old_connections, transaction
 
 from apps.directory.formatting_templates import (
     build_rules_snapshot,
+    has_manual_rule_overrides,
     process_formatting_template,
 )
 from apps.directory.models import FormattingTemplate
@@ -46,12 +47,15 @@ def prepare_submission_template_by_id(
             )
             return False
 
-        submission.formatting_rules_snapshot = build_rules_snapshot(
-            article_type=submission.article_type,
-            template=template,
-            journal=submission.journal,
-        )
-        submission.save(update_fields=["formatting_rules_snapshot", "updated_at"])
+        if not has_manual_rule_overrides(submission.formatting_rules_snapshot):
+            submission.formatting_rules_snapshot = build_rules_snapshot(
+                article_type=submission.article_type,
+                template=template,
+                journal=submission.journal,
+            )
+            submission.save(
+                update_fields=["formatting_rules_snapshot", "updated_at"]
+            )
     except Exception:
         logger.exception(
             "Failed to prepare formatting template %s for submission %s.",

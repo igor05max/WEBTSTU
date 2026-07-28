@@ -564,7 +564,7 @@ def _sample_manuscript_rules(deterministic_rules, classification, text):
     }
 
 
-def _publisher_sample_profile(file_name, text):
+def _publisher_sample_profile(file_name, text, deterministic_rules=None):
     """
     Return a conservative formatting profile for a recognised publisher sample.
 
@@ -588,14 +588,31 @@ def _publisher_sample_profile(file_name, text):
     if not (mdpi_sensors_name or mdpi_sensors_text):
         return {}
 
+    body_rules = {
+        "font_family": "Palatino Linotype",
+        "font_size_pt": 10,
+        "line_spacing": 1,
+        "alignment": "justify",
+    }
+    detected_body = (
+        deterministic_rules.get("body") or {}
+        if isinstance(deterministic_rules, dict)
+        else {}
+    )
+    for key in (
+        "line_spacing",
+        "first_line_indent_cm",
+        "alignment",
+    ):
+        value = detected_body.get(key)
+        if value not in (None, ""):
+            body_rules[key] = value
+
     return {
         "page": {"size": "A4", "orientation": "portrait"},
-        "body": {
-            "font_family": "Palatino Linotype",
-            "font_size_pt": 10,
-            "line_spacing": 1,
-            "alignment": "justify",
-        },
+        # Text-column margins from a typeset article are intentionally ignored,
+        # but paragraph typography is safe to reproduce in an editable DOCX.
+        "body": body_rules,
         "headings": {
             "font_family": "Palatino Linotype",
             "font_size_pt": 10,
@@ -862,6 +879,20 @@ def build_rules_snapshot(*, article_type, template=None, journal=None):
     }
 
 
+def has_manual_rule_overrides(snapshot):
+    snapshot = snapshot or {}
+    effective = snapshot.get("effective") or {}
+    document_rules = effective.get("document") or {}
+    return bool(
+        document_rules.get("manual_override_confirmed")
+        or any(
+            source.get("kind") == "manual"
+            for source in (snapshot.get("sources") or [])
+            if isinstance(source, dict)
+        )
+    )
+
+
 @transaction.atomic
 def create_formatting_template(
     *,
@@ -907,7 +938,11 @@ def process_formatting_template(template):
         text, deterministic_rules, parse_warning = _extract_template_content(template)
         classification = _classify_template_source(template.file.name, text)
         if classification["kind"] == "sample_manuscript":
-            publisher_profile = _publisher_sample_profile(template.file.name, text)
+            publisher_profile = _publisher_sample_profile(
+                template.file.name,
+                text,
+                deterministic_rules,
+            )
             template.source_text = text
             template.extracted_rules = normalize_template_rules(
                 publisher_profile
