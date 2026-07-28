@@ -489,7 +489,7 @@ class SubmissionRouteSelectionTests(TestCase):
             self.direction_other.id,
         )
 
-    def test_submission_detail_hides_version_upload_until_revision_is_requested(self):
+    def test_submission_detail_allows_author_to_upload_edited_version_before_workflow(self):
         submission = create_submission_with_initial_version(
             author=self.user,
             title="Статья без лишней дозагрузки",
@@ -502,8 +502,12 @@ class SubmissionRouteSelectionTests(TestCase):
         self.client.force_login(self.user)
         response = self.client.get(reverse("submissions:detail", args=[submission.pk]))
 
-        self.assertIsNone(response.context["upload_form"])
-        self.assertNotContains(response, "Загрузить новую версию")
+        self.assertIsNotNone(response.context["upload_form"])
+        self.assertContains(response, "Загрузить новую версию")
+        self.assertContains(
+            response,
+            "отредактируйте его в Word или LaTeX",
+        )
 
     def test_submission_detail_shows_version_upload_after_revision_request(self):
         submission = create_submission_with_initial_version(
@@ -2477,6 +2481,106 @@ class SubmissionFormattingTemplateTests(TestCase):
         ]
         positions = [rendered.index(label) for label in ordered_labels]
         self.assertEqual(positions, sorted(positions))
+
+    @patch("apps.submissions.views.queue_submission_checks")
+    def test_sample_pdf_keeps_word_editing_and_manual_rule_confirmation_available(
+        self,
+        queue_checks,
+    ):
+        sample_rules = {
+            "page": {"size": "A4", "orientation": "portrait"},
+            "document": {
+                "source_kind": "sample_manuscript",
+                "rules_reliable": False,
+                "latex_generation_allowed": False,
+                "source_notice": (
+                    "PDF является готовой статьёй и не задаёт обязательное оформление."
+                ),
+            },
+            "structure": {"required_sections": []},
+        }
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("sample.pdf", b"%PDF-1.4\n%%EOF"),
+            uploaded_by=self.user,
+            analysis_status="partial",
+            extracted_rules=sample_rules,
+        )
+        submission = Submission.objects.create(
+            title="Статья с PDF-образцом",
+            author=self.user,
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            formatting_rules_snapshot={
+                "effective": sample_rules,
+                "sources": [],
+                "conflicts": [],
+            },
+            formatting_check_requested=True,
+            status=SubmissionStatus.SUBMITTED,
+        )
+        version = SubmissionVersion.objects.create(
+            submission=submission,
+            version_number=1,
+            file=SimpleUploadedFile("article.docx", self._docx_bytes()),
+            uploaded_by=self.user,
+        )
+        submission.current_version = version
+        submission.save(update_fields=["current_version", "updated_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("submissions:detail", args=[submission.pk])
+        )
+
+        self.assertContains(
+            response,
+            "Автоматическое оформление по этому PDF отключено",
+        )
+        self.assertContains(response, "Скачать DOCX для редактирования")
+        self.assertContains(response, "Загрузить отредактированную версию")
+        self.assertContains(response, "Подтвердить правила и открыть сборку")
+        self.assertIsNotNone(response.context["upload_form"])
+
+        response = self.client.post(
+            reverse("submissions:update_formatting_rules", args=[submission.pk]),
+            data={
+                "font_family": "Times New Roman",
+                "font_size_pt": "14",
+                "line_spacing": "1.5",
+                "first_line_indent_cm": "1.25",
+                "margin_top_cm": "2",
+                "margin_right_cm": "2",
+                "margin_bottom_cm": "2",
+                "margin_left_cm": "2",
+                "min_words": "2000",
+                "max_words": "12000",
+                "required_sections": "",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("submissions:detail", args=[submission.pk]),
+        )
+        submission.refresh_from_db()
+        document_rules = (
+            submission.formatting_rules_snapshot["effective"]["document"]
+        )
+        self.assertTrue(document_rules["rules_reliable"])
+        self.assertTrue(document_rules["latex_generation_allowed"])
+        self.assertTrue(document_rules["manual_override_confirmed"])
+        queue_checks.assert_called_once()
+
+        confirmed_response = self.client.get(
+            reverse("submissions:detail", args=[submission.pk])
+        )
+        self.assertContains(
+            confirmed_response,
+            "Посмотреть и отправить отредактированную",
+        )
 
     def test_submission_latex_template_contains_saved_metadata(self):
         submission, _source_version = self._create_correctable_submission()

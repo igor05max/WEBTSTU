@@ -316,8 +316,29 @@
             </div>
         {% elif document_template_plan_error %}
             <div class="submission-template-warning">
-                <strong>Конструктор пока недоступен</strong>
+                {% if formatting_rules_need_manual_confirmation %}
+                    <strong>Автоматическое оформление по этому PDF отключено</strong>
+                {% else %}
+                    <strong>Конструктор пока недоступен</strong>
+                {% endif %}
                 <p>{{ document_template_plan_error }}</p>
+                {% if formatting_rules_need_manual_confirmation and can_edit %}
+                    <p>
+                        Редактирование самой статьи не заблокировано. Можно скачать текущий DOCX,
+                        изменить его в Word и загрузить новой версией. Либо укажите подтверждённые
+                        поля и шрифт ниже — после сохранения станет доступна автоматическая сборка.
+                    </p>
+                    <div class="submission-template-download-actions">
+                        {% if current_version_is_docx %}
+                            <a class="button" href="{% url 'submissions:version_download' submission.pk submission.current_version_id %}">
+                                Скачать DOCX для редактирования
+                            </a>
+                        {% endif %}
+                        <a class="button secondary" href="#submission-version-upload">
+                            Загрузить отредактированную версию
+                        </a>
+                    </div>
+                {% endif %}
             </div>
         {% endif %}
 
@@ -355,7 +376,7 @@
                 </form>
             </details>
 
-            <details class="submission-formatting-editor">
+            <details id="manual-formatting-rules" class="submission-formatting-editor"{% if formatting_rules_need_manual_confirmation %} open{% endif %}>
                 <summary>Уточнить правила для этой работы</summary>
                 <form method="post" action="{% url 'submissions:update_formatting_rules' submission.pk %}">
                     {% csrf_token %}
@@ -371,9 +392,10 @@
                     </div>
                     <div class="submission-formatting-editor-actions">
                         <p>
-                            После сохранения система повторно проверит оформление документа.
+                            После сохранения правила считаются подтверждёнными автором:
+                            система повторно проверит оформление и откроет автоматическую сборку DOCX.
                         </p>
-                        <button class="button" type="submit">Сохранить и перепроверить</button>
+                        <button class="button" type="submit">Подтвердить правила и открыть сборку</button>
                     </div>
                 </form>
             </details>
@@ -748,9 +770,12 @@
     {% endif %}
 
     {% if upload_form %}
-        <section class="surface submission-form-panel">
+        <section id="submission-version-upload" class="surface submission-form-panel">
             <div class="submission-section-title">Загрузить новую версию</div>
-            <p class="meta meta-form-note">После загрузки система сразу повторно запустит автопроверки по текущей версии.</p>
+            <p class="meta meta-form-note">
+                Скачайте текущий файл, отредактируйте его в Word или LaTeX и загрузите сюда.
+                После загрузки система сразу повторно запустит автопроверки по новой версии.
+            </p>
             <form method="post" enctype="multipart/form-data" action="{% url 'submissions:upload_version' submission.pk %}"
                   data-site-loading data-site-loading-title="Загружаем новую версию"
                   data-site-loading-message="Сохраняем документ и запускаем необходимые проверки.">

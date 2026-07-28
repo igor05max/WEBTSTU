@@ -1354,6 +1354,16 @@ def submission_detail(request, pk):
     formatting_rules_effective = (
         (submission.formatting_rules_snapshot or {}).get("effective") or {}
     )
+    formatting_document_rules = (
+        formatting_rules_effective.get("document") or {}
+    )
+    formatting_rules_need_manual_confirmation = bool(
+        formatting_document_rules.get("rules_reliable") is False
+    )
+    current_version_is_docx = bool(
+        submission.current_version_id
+        and Path(submission.current_version.file.name).suffix.casefold() == ".docx"
+    )
     formatting_latex_available = bool(
         formatting_rules_effective
         and (formatting_rules_effective.get("document") or {}).get(
@@ -1365,7 +1375,7 @@ def submission_detail(request, pk):
         can_edit
         and submission.status in _CORRECTED_VERSION_CREATION_STATUSES
         and submission.current_version_id
-        and Path(submission.current_version.file.name).suffix.casefold() == ".docx"
+        and current_version_is_docx
         and submission.formatting_template_id
         and formatting_rules_effective
         and (formatting_rules_effective.get("document") or {}).get(
@@ -1395,7 +1405,10 @@ def submission_detail(request, pk):
             submission.formatting_rules_snapshot
         )
     can_review_route = route_review_task is not None
-    if can_edit and submission.status == SubmissionStatus.REVISION_REQUESTED:
+    if can_edit and submission.status in {
+        *_DELETABLE_DRAFT_STATUSES,
+        SubmissionStatus.REVISION_REQUESTED,
+    }:
         upload_form = SubmissionVersionUploadForm()
     if can_edit and submission.status == SubmissionStatus.SUBMITTED:
         route_suggestion = ensure_submission_route_suggestion(submission)
@@ -1496,6 +1509,8 @@ def submission_detail(request, pk):
             "formatting_rules_form": formatting_rules_form,
             "formatting_template_attach_form": formatting_template_attach_form,
             "formatting_rules": formatting_rules_effective,
+            "formatting_rules_need_manual_confirmation": formatting_rules_need_manual_confirmation,
+            "current_version_is_docx": current_version_is_docx,
             "formatting_latex_available": formatting_latex_available,
             "formatting_template_is_processing": bool(
                 submission.formatting_template_id

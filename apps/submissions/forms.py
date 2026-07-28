@@ -642,6 +642,15 @@ class FormattingRulesForm(forms.Form):
         effective["document"] = {
             **(effective.get("document") or {}),
             "blocks": list(existing_blocks.values()),
+            # Saving this form is an explicit author confirmation.  It makes
+            # the manually entered rules usable even when the uploaded PDF was
+            # classified only as a visual sample manuscript.
+            "rules_reliable": True,
+            "latex_generation_allowed": True,
+            "manual_override_confirmed": True,
+            "source_notice": (
+                "Правила оформления вручную подтверждены автором для этой работы."
+            ),
         }
         effective = normalize_template_rules(effective)
         updated["effective"] = effective
