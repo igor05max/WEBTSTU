@@ -176,7 +176,7 @@
                         {{ submission.formatting_template.get_analysis_status_display }}
                     </span>
                     {% if submission.formatting_template.analysis_status == "pending" or submission.formatting_template.analysis_status == "processing" %}
-                        <small>Шаблон обрабатывается в фоне. Проверки начнутся после этапа работы с источниками и вашего подтверждения.</small>
+                        <small>Шаблон обрабатывается в фоне. Все проверки уже показаны ниже и стоят в очереди; страница обновится автоматически.</small>
                     {% elif submission.formatting_template.analysis_message %}
                         <small>{{ submission.formatting_template.analysis_message }}</small>
                     {% endif %}

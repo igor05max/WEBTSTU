@@ -186,8 +186,13 @@ def create_submission_with_initial_version(
         publication_topic.last_used_at = timezone.now()
         publication_topic.save(update_fields=["last_used_at", "updated_at"])
     if defer_checks and mark_as_checking:
-        submission.status = SubmissionStatus.AUTO_CHECKING
-        submission.save(update_fields=["status", "updated_at"])
+        # Show the full check pipeline immediately while a newly uploaded
+        # template is parsed in the background.  The background launch replaces
+        # these pending rows with the actual run, so the page never has an
+        # empty "checking" state.
+        from apps.checks.services import prepare_submission_checks
+
+        prepare_submission_checks(submission, version=version)
     elif not defer_checks:
         from apps.checks.services import queue_submission_checks
 

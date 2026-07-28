@@ -812,7 +812,10 @@ class SubmissionCreateViewTests(TestCase):
         self.assertFalse(submission.authors.filter(pk=self.user.pk).exists())
         self.assertTrue(submission.authors.filter(pk=self.chair_head.pk).exists())
         self.assertEqual(template.analysis_status, "pending")
-        self.assertEqual(submission.check_runs.count(), 0)
+        self.assertEqual(submission.check_runs.count(), 5)
+        self.assertFalse(
+            submission.check_runs.exclude(status=CheckRunStatus.PENDING).exists()
+        )
         self.assertFalse(analyze_document_mock.call_args.kwargs["use_ai"])
         queue_processing.assert_called_once()
         queued_submission, queued_template = queue_processing.call_args.args
@@ -874,6 +877,9 @@ class SubmissionCreateViewTests(TestCase):
             defer_checks=True,
             mark_as_checking=True,
         )
+        # Simulate a legacy/stalled launch where even the pending placeholders
+        # were lost, so the manual recovery branch remains covered.
+        submission.check_runs.all().delete()
         self.client.force_login(self.user)
 
         response = self.client.post(
@@ -940,6 +946,7 @@ class SubmissionCreateViewTests(TestCase):
             defer_checks=True,
             mark_as_checking=True,
         )
+        submission.check_runs.all().delete()
         Submission.objects.filter(pk=submission.pk).update(
             updated_at=timezone.now() - timedelta(minutes=5)
         )
