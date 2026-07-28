@@ -8,6 +8,7 @@ from django.db import close_old_connections, transaction
 
 from apps.directory.formatting_templates import (
     build_rules_snapshot,
+    formatting_template_needs_processing,
     has_manual_rule_overrides,
     process_formatting_template,
 )
@@ -30,10 +31,7 @@ def prepare_submission_template_by_id(
     submission = None
     try:
         template = FormattingTemplate.objects.get(pk=template_id)
-        if (
-            template.analysis_status not in {"ready", "partial"}
-            or not template.extracted_rules
-        ):
+        if formatting_template_needs_processing(template):
             process_formatting_template(template)
         submission = Submission.objects.select_related(
             "article_type",

@@ -455,7 +455,7 @@ class ArticleExtractionTests(SimpleTestCase):
         rules = _extract_docx_rules(data)
         self.assertIn("page", rules)
         self.assertTrue(
-            rules["body"]["line_spacing"] is None
+            rules["body"].get("line_spacing") is None
             or rules["body"]["line_spacing"] < 10
         )
 

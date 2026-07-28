@@ -28,6 +28,7 @@ from apps.conclusions.models import ConclusionDocument
 from apps.directory.formatting_templates import (
     build_rules_snapshot,
     create_formatting_template,
+    formatting_template_needs_processing,
     has_manual_rule_overrides,
 )
 from apps.directory.publication_topics import resolve_or_create_publication_topic
@@ -963,7 +964,6 @@ def submission_create(request):
 
             formatting_template = form.cleaned_data["formatting_template"]
             uploaded_template = _template_input_file(form.cleaned_data)
-            template_requires_processing = uploaded_template is not None
             if uploaded_template is not None:
                 formatting_template = create_formatting_template(
                     article_type=article_type,
@@ -972,6 +972,10 @@ def submission_create(request):
                     journal=journal,
                     publication_topic=publication_topic,
                 )
+            template_requires_processing = bool(
+                formatting_template
+                and formatting_template_needs_processing(formatting_template)
+            )
 
             rules_snapshot = build_rules_snapshot(
                 article_type=article_type,

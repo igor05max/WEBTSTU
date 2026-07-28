@@ -287,6 +287,13 @@ class SubmissionCreateForm(forms.ModelForm):
                 "formatting_template_description",
                 "Выберите один способ: загрузите файл или вставьте описание.",
             )
+        if uploaded_template is not None or template_description:
+            # An explicitly supplied template replaces the version suggested
+            # by the journal/topic search widget.  Keeping both values made
+            # the saved choice depend on later view code and obscured which
+            # file the submission would actually use.
+            selected_template = None
+            cleaned_data["formatting_template"] = None
 
         if _is_article_type(article_type):
             cleaned_data["publication_topic"] = None
@@ -305,7 +312,10 @@ class SubmissionCreateForm(forms.ModelForm):
                 article_type=article_type,
                 journal=journal,
             )
-            if selected_template is None:
+            if uploaded_template is not None or template_description:
+                selected_template = None
+                cleaned_data["formatting_template"] = None
+            elif selected_template is None:
                 selected_template = latest_template
                 cleaned_data["formatting_template"] = selected_template
             if (
@@ -338,7 +348,10 @@ class SubmissionCreateForm(forms.ModelForm):
                 article_type=article_type,
                 publication_topic=publication_topic,
             )
-            if selected_template is None:
+            if uploaded_template is not None or template_description:
+                selected_template = None
+                cleaned_data["formatting_template"] = None
+            elif selected_template is None:
                 selected_template = latest_template
                 cleaned_data["formatting_template"] = selected_template
             if selected_template is not None and (

@@ -387,7 +387,9 @@ class PublicationTopicAndTemplateTests(TestCase):
         self.assertAlmostEqual(section.page_width.cm, 21, places=1)
         self.assertAlmostEqual(section.page_height.cm, 29.7, places=1)
         self.assertIn("размер страницы: A4", changes)
-        self.assertAlmostEqual(corrected.paragraphs[0].runs[0].font.size.pt, 18, places=1)
+        # Heading 1 without title metadata is a section heading, not the
+        # article title.
+        self.assertAlmostEqual(corrected.paragraphs[0].runs[0].font.size.pt, 10, places=1)
         self.assertEqual(str(corrected.paragraphs[0].runs[0].font.color.rgb), "000000")
         body = corrected.paragraphs[1]
         self.assertEqual(body.paragraph_format.line_spacing, 1.4)

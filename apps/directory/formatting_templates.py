@@ -53,6 +53,9 @@ DEFAULT_RULES = {
     "theses": {"limits": {"min_words": 500, "max_words": 5000}},
 }
 
+FORMATTING_TEMPLATE_ANALYSIS_REVISION = 3
+
+
 def _round_cm(length):
     if length is None:
         return None
@@ -134,6 +137,18 @@ def _style_font_size(style):
     return None
 
 
+def _style_font_color_hex(style, *, automatic=""):
+    for candidate in _style_chain(style):
+        try:
+            rgb = candidate.font.color.rgb
+        except (AttributeError, TypeError, ValueError):
+            rgb = None
+        value = str(rgb or "").strip().lstrip("#")
+        if re.fullmatch(r"[0-9a-fA-F]{6}", value):
+            return value.upper()
+    return automatic
+
+
 def _document_default_font_size(document):
     try:
         from docx.oxml.ns import qn
@@ -200,7 +215,13 @@ def _resolved_style_rules(document, paragraphs):
     font_sizes = []
     line_spacings = []
     first_line_indents = []
+    left_indents = []
+    right_indents = []
+    spaces_before = []
+    spaces_after = []
     alignments = []
+    keep_with_next_values = []
+    keep_together_values = []
     for paragraph in paragraphs:
         for run in paragraph.runs:
             if not run.text.strip():
@@ -227,6 +248,50 @@ def _resolved_style_rules(document, paragraphs):
             )
         if indent is None:
             indent = normal_style.paragraph_format.first_line_indent
+        left_indent = formatting.left_indent
+        if left_indent is None:
+            left_indent = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.left_indent,
+            )
+        if left_indent is None:
+            left_indent = normal_style.paragraph_format.left_indent
+        right_indent = formatting.right_indent
+        if right_indent is None:
+            right_indent = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.right_indent,
+            )
+        if right_indent is None:
+            right_indent = normal_style.paragraph_format.right_indent
+        space_before = formatting.space_before
+        if space_before is None:
+            space_before = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.space_before,
+            )
+        if space_before is None:
+            space_before = normal_style.paragraph_format.space_before
+        space_after = formatting.space_after
+        if space_after is None:
+            space_after = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.space_after,
+            )
+        if space_after is None:
+            space_after = normal_style.paragraph_format.space_after
+        keep_with_next = formatting.keep_with_next
+        if keep_with_next is None:
+            keep_with_next = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.keep_with_next,
+            )
+        keep_together = formatting.keep_together
+        if keep_together is None:
+            keep_together = _first_style_value(
+                paragraph.style or representative_style,
+                lambda style: style.paragraph_format.keep_together,
+            )
         alignment = paragraph.alignment
         if alignment is None:
             alignment = _first_style_value(
@@ -237,6 +302,14 @@ def _resolved_style_rules(document, paragraphs):
             alignment = normal_style.paragraph_format.alignment
 
         first_line_indents.append(_round_cm(indent))
+        left_indents.append(_round_cm(left_indent))
+        right_indents.append(_round_cm(right_indent))
+        spaces_before.append(_round_pt(space_before))
+        spaces_after.append(_round_pt(space_after))
+        if keep_with_next is not None:
+            keep_with_next_values.append(bool(keep_with_next))
+        if keep_together is not None:
+            keep_together_values.append(bool(keep_together))
         if alignment is not None:
             alignments.append(str(alignment).split()[0].casefold())
 
@@ -259,7 +332,7 @@ def _resolved_style_rules(document, paragraphs):
         representative_style,
         lambda style: style.font.name,
     )
-    return {
+    result = {
         "font_family": (
             _dominant(font_names)
             or style_font_name
@@ -275,7 +348,169 @@ def _resolved_style_rules(document, paragraphs):
         ),
         "line_spacing": _dominant(line_spacings),
         "first_line_indent_cm": _dominant(first_line_indents),
+        "left_indent_cm": _dominant(left_indents),
+        "right_indent_cm": _dominant(right_indents),
+        "space_before_pt": _dominant(spaces_before),
+        "space_after_pt": _dominant(spaces_after),
         "alignment": _dominant(alignments) or "",
+    }
+    bold = _first_style_value(
+        representative_style,
+        lambda style: style.font.bold,
+    )
+    italic = _first_style_value(
+        representative_style,
+        lambda style: style.font.italic,
+    )
+    if bold is not None:
+        result["bold"] = bool(bold)
+    if italic is not None:
+        result["italic"] = bool(italic)
+    if keep_with_next_values:
+        result["keep_with_next"] = _dominant(keep_with_next_values)
+    if keep_together_values:
+        result["keep_together"] = _dominant(keep_together_values)
+    return {
+        key: value
+        for key, value in result.items()
+        if value not in (None, "")
+    }
+
+
+def _style_definition_rules(
+    document,
+    paragraphs,
+    *,
+    include_color=False,
+    automatic_color_hex="",
+):
+    """
+    Resolve formatting from a representative paragraph style definition.
+
+    Placeholder text in a DOCX template often carries direct formatting which
+    is not part of the reusable style.  Font family and size may legitimately
+    inherit from Normal/document defaults, but paragraph layout must come only
+    from the custom style chain; otherwise Normal or a formatted placeholder
+    can silently change captions, headings, references, and front matter.
+    """
+
+    if not paragraphs:
+        return {}
+
+    normal_style = document.styles["Normal"]
+    style_id = _dominant(
+        paragraph.style.style_id
+        for paragraph in paragraphs
+        if paragraph.style is not None
+    )
+    representative_style = next(
+        (
+            paragraph.style
+            for paragraph in paragraphs
+            if paragraph.style is not None
+            and paragraph.style.style_id == style_id
+        ),
+        normal_style,
+    )
+
+    def custom_style_value(getter):
+        for candidate in _style_chain(representative_style):
+            if candidate.style_id == normal_style.style_id:
+                break
+            value = getter(candidate)
+            if value is not None:
+                return value
+        return None
+
+    font_family = (
+        _first_style_value(
+            representative_style,
+            lambda style: style.font.name,
+        )
+        or normal_style.font.name
+        or _document_default_font_family(document)
+        or ""
+    )
+    font_size = (
+        _style_font_size(representative_style)
+        or _style_font_size(normal_style)
+        or _document_default_font_size(document)
+    )
+    spacing = custom_style_value(
+        lambda style: style.paragraph_format.line_spacing
+    )
+    line_spacing = None
+    if hasattr(spacing, "pt") and font_size:
+        ratio = round(float(spacing.pt) / font_size, 2)
+        if 0.5 <= ratio <= 4:
+            line_spacing = ratio
+    elif isinstance(spacing, (int, float)):
+        ratio = round(float(spacing), 2)
+        if 0.5 <= ratio <= 4:
+            line_spacing = ratio
+
+    alignment = custom_style_value(
+        lambda style: style.paragraph_format.alignment
+    )
+    result = {
+        "font_family": font_family,
+        "font_size_pt": font_size,
+        "line_spacing": line_spacing,
+        "first_line_indent_cm": _round_cm(
+            custom_style_value(
+                lambda style: style.paragraph_format.first_line_indent
+            )
+        ),
+        "left_indent_cm": _round_cm(
+            custom_style_value(
+                lambda style: style.paragraph_format.left_indent
+            )
+        ),
+        "right_indent_cm": _round_cm(
+            custom_style_value(
+                lambda style: style.paragraph_format.right_indent
+            )
+        ),
+        "space_before_pt": _round_pt(
+            custom_style_value(
+                lambda style: style.paragraph_format.space_before
+            )
+        ),
+        "space_after_pt": _round_pt(
+            custom_style_value(
+                lambda style: style.paragraph_format.space_after
+            )
+        ),
+        "alignment": (
+            str(alignment).split()[0].casefold()
+            if alignment is not None
+            else "left"
+        ),
+    }
+    if include_color:
+        result["color_hex"] = _style_font_color_hex(
+            representative_style,
+            automatic=automatic_color_hex,
+        )
+    for key, getter in (
+        ("bold", lambda style: style.font.bold),
+        ("italic", lambda style: style.font.italic),
+        (
+            "keep_with_next",
+            lambda style: style.paragraph_format.keep_with_next,
+        ),
+        (
+            "keep_together",
+            lambda style: style.paragraph_format.keep_together,
+        ),
+    ):
+        value = custom_style_value(getter)
+        if value is not None:
+            result[key] = bool(value)
+    return {
+        key: value
+        for key, value in result.items()
+        if value not in (None, "")
     }
 
 
@@ -305,6 +540,144 @@ def _body_paragraphs(document):
         if paragraph.style is not None and paragraph.style.style_id == style_id
     ]
     return selected or candidates
+
+
+_DOCX_ROLE_STYLE_TOKENS = {
+    "title": ("title", "назван"),
+    "authors": ("authorname", "author_name", "author names", "автор"),
+    "institution": ("affiliation", "institution", "организац"),
+    "abstract": ("abstract", "аннотац"),
+    "keywords": ("keyword", "ключев"),
+    "references": ("reference", "литератур"),
+}
+
+_DOCX_SPECIAL_STYLE_TOKENS = {
+    "figure_caption": (
+        "figure_caption",
+        "figure caption",
+        "рисунок",
+        "подпись рисун",
+    ),
+    "table_caption": (
+        "table_caption",
+        "table caption",
+        "подпись табли",
+    ),
+    "list_itemize": ("itemize", "numbered list", "нумерован"),
+    "list_bullet": ("bullet", "bulleted list", "маркирован"),
+    "table_body": ("table_body", "table body", "текст табли"),
+}
+
+
+def _paragraphs_with_style_tokens(document, tokens, *, limit=1000):
+    normalized_tokens = tuple(str(token).casefold() for token in tokens)
+    return [
+        paragraph
+        for paragraph in document.paragraphs[:limit]
+        if paragraph.text.strip()
+        and paragraph.style is not None
+        and any(
+            token in (paragraph.style.name or "").casefold()
+            for token in normalized_tokens
+        )
+    ]
+
+
+def _table_paragraphs_with_style_tokens(document, tokens):
+    normalized_tokens = tuple(str(token).casefold() for token in tokens)
+    paragraphs = []
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    if (
+                        paragraph.text.strip()
+                        and paragraph.style is not None
+                        and any(
+                            token in (paragraph.style.name or "").casefold()
+                            for token in normalized_tokens
+                        )
+                    ):
+                        paragraphs.append(paragraph)
+    return paragraphs
+
+
+def _docx_heading_style_level(paragraph):
+    style_name = (
+        (paragraph.style.name or "").casefold()
+        if paragraph.style is not None
+        else ""
+    )
+    match = re.search(r"(?:heading|заголов\w*)[\s_.-]*([1-6])\b", style_name)
+    return int(match.group(1)) if match else None
+
+
+def _semantic_docx_blocks(document, body_rules):
+    blocks = []
+    for role in (
+        "title",
+        "authors",
+        "institution",
+        "abstract",
+        "keywords",
+        "body",
+        "references",
+    ):
+        if role == "body":
+            style = dict(body_rules or {})
+            # Body styles describe the paragraph defaults.  Inline bold and
+            # italic emphasis in the scientific text must remain untouched.
+            style.pop("bold", None)
+            style.pop("italic", None)
+        else:
+            paragraphs = _paragraphs_with_style_tokens(
+                document,
+                _DOCX_ROLE_STYLE_TOKENS[role],
+            )
+            if not paragraphs:
+                continue
+            style = _style_definition_rules(document, paragraphs)
+            # An absent Word alignment means the default left alignment.  It
+            # must remain explicit here so generic block defaults do not turn
+            # an intentionally left-aligned publisher title into a centered
+            # one.
+            style.setdefault("alignment", "left")
+            if role in {
+                "title",
+                "authors",
+                "institution",
+                "abstract",
+                "keywords",
+            }:
+                style.setdefault("first_line_indent_cm", 0)
+        if not style:
+            continue
+        blocks.append(
+            {
+                "role": role,
+                "required": role == "body",
+                "style": style,
+            }
+        )
+    return blocks
+
+
+def _special_docx_paragraph_styles(document):
+    result = {}
+    for role, tokens in _DOCX_SPECIAL_STYLE_TOKENS.items():
+        paragraphs = (
+            _table_paragraphs_with_style_tokens(document, tokens)
+            if role == "table_body"
+            else _paragraphs_with_style_tokens(document, tokens)
+        )
+        if not paragraphs:
+            continue
+        style = _style_definition_rules(document, paragraphs)
+        style.setdefault("alignment", "left")
+        if role in {"figure_caption", "table_caption"}:
+            style.setdefault("first_line_indent_cm", 0)
+        result[role] = style
+    return result
 
 
 def _pdf_font_family(base_font):
@@ -699,18 +1072,53 @@ def _extract_docx_rules(data):
             },
         }
 
-    body_rules = _resolved_style_rules(document, _body_paragraphs(document))
+    body_paragraphs = _body_paragraphs(document)
+    normal_style_id = document.styles["Normal"].style_id
+    body_style_id = _dominant(
+        paragraph.style.style_id
+        for paragraph in body_paragraphs
+        if paragraph.style is not None
+    )
+    body_rules = (
+        _style_definition_rules(document, body_paragraphs)
+        if body_style_id and body_style_id != normal_style_id
+        else _resolved_style_rules(document, body_paragraphs)
+    )
     heading_paragraphs = [
         paragraph
         for paragraph in document.paragraphs[:1000]
         if paragraph.text.strip()
-        and paragraph.style is not None
-        and (
-            "heading" in (paragraph.style.name or "").casefold()
-            or "заголов" in (paragraph.style.name or "").casefold()
-        )
+        and _docx_heading_style_level(paragraph) is not None
     ]
-    heading_rules = _resolved_style_rules(document, heading_paragraphs)
+    heading_levels = {}
+    for level in range(1, 7):
+        level_paragraphs = [
+            paragraph
+            for paragraph in heading_paragraphs
+            if _docx_heading_style_level(paragraph) == level
+        ]
+        if not level_paragraphs:
+            continue
+        level_rules = _style_definition_rules(
+            document,
+            level_paragraphs,
+            include_color=True,
+            automatic_color_hex="000000",
+        )
+        level_rules.setdefault("alignment", "left")
+        level_rules.setdefault("first_line_indent_cm", 0)
+        level_rules.setdefault("bold", False)
+        level_rules.setdefault("italic", False)
+        heading_levels[str(level)] = level_rules
+    heading_rules = (
+        dict(heading_levels.get("1") or {})
+        or _style_definition_rules(
+            document,
+            heading_paragraphs,
+            include_color=True,
+            automatic_color_hex="000000",
+        )
+    )
     title_paragraphs = [
         paragraph
         for paragraph in document.paragraphs[:100]
@@ -721,26 +1129,23 @@ def _extract_docx_rules(data):
             or "назван" in (paragraph.style.name or "").casefold()
         )
     ]
-    title_rules = _resolved_style_rules(document, title_paragraphs)
+    title_rules = _style_definition_rules(document, title_paragraphs)
     if title_rules.get("font_size_pt"):
         heading_rules["title_font_size_pt"] = title_rules["font_size_pt"]
+    if heading_levels:
+        heading_rules["levels"] = heading_levels
 
     result = {
         "page": page_rules,
         "body": body_rules,
+        "document": {
+            "analysis_revision": FORMATTING_TEMPLATE_ANALYSIS_REVISION,
+            "blocks": _semantic_docx_blocks(document, body_rules),
+            "paragraph_styles": _special_docx_paragraph_styles(document),
+        },
     }
     if heading_paragraphs:
-        result["headings"] = {
-            key: value
-            for key, value in heading_rules.items()
-            if key
-            in {
-                "font_family",
-                "font_size_pt",
-                "title_font_size_pt",
-            }
-            and value not in (None, "")
-        }
+        result["headings"] = heading_rules
     return result
 
 
@@ -794,7 +1199,31 @@ def _extract_template_content(template):
 def _merge_dict(base, override):
     result = dict(base or {})
     for key, value in (override or {}).items():
-        if isinstance(value, dict) and isinstance(result.get(key), dict):
+        if (
+            key == "blocks"
+            and isinstance(value, list)
+            and isinstance(result.get(key), list)
+        ):
+            merged_blocks = []
+            positions = {}
+            for block in [*result[key], *value]:
+                if not isinstance(block, dict):
+                    continue
+                role = str(block.get("role") or "").strip().casefold()
+                if not role:
+                    merged_blocks.append(block)
+                    continue
+                if role in positions:
+                    position = positions[role]
+                    merged_blocks[position] = _merge_dict(
+                        merged_blocks[position],
+                        block,
+                    )
+                else:
+                    positions[role] = len(merged_blocks)
+                    merged_blocks.append(block)
+            result[key] = merged_blocks
+        elif isinstance(value, dict) and isinstance(result.get(key), dict):
             result[key] = _merge_dict(result[key], value)
         elif value not in (None, "", [], {}):
             result[key] = value
@@ -927,6 +1356,26 @@ def create_formatting_template(
         version_number=last_version + 1,
         file=file,
         uploaded_by=uploaded_by,
+    )
+
+
+def formatting_template_needs_processing(template):
+    if (
+        template.analysis_status not in {"ready", "partial"}
+        or not template.extracted_rules
+    ):
+        return True
+    suffix = Path(template.file.name or "").suffix.casefold()
+    if suffix not in {".docx", ".dotx"}:
+        return False
+    document_rules = (
+        template.extracted_rules.get("document")
+        if isinstance(template.extracted_rules, dict)
+        else {}
+    ) or {}
+    return (
+        document_rules.get("analysis_revision")
+        != FORMATTING_TEMPLATE_ANALYSIS_REVISION
     )
 
 

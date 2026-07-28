@@ -236,6 +236,34 @@ def _is_probable_title(text: str) -> bool:
     return uppercase_ratio >= 0.8
 
 
+def _heading_level(paragraph, role: str = "") -> int | None:
+    style_name = (
+        (paragraph.style.name or "").casefold()
+        if getattr(paragraph, "style", None)
+        else ""
+    )
+    style_match = re.search(
+        r"(?:heading|заголов\w*)[\s_.-]*([1-6])\b",
+        style_name,
+    )
+    style_level = int(style_match.group(1)) if style_match else None
+    if role != "body" or any(
+        token in style_name
+        for token in ("list", "bullet", "itemize", "список", "маркер")
+    ):
+        return style_level
+    text = " ".join(paragraph.text.split())
+    if not text or len(text) > 240 or len(_WORD_RE.findall(text)) > 24:
+        return style_level
+    match = re.match(r"^(\d+(?:\.\d+){0,5})\.?\s+(\S.+)$", text)
+    if not match:
+        return style_level
+    label = match.group(2).rstrip()
+    if label.endswith((".", ",", ";")):
+        return style_level
+    return min(6, match.group(1).count(".") + 1)
+
+
 def _assign_roles(document, metadata: dict[str, Any] | None = None) -> dict[int, str]:
     paragraphs = document.paragraphs
     nonempty = [index for index, paragraph in enumerate(paragraphs) if paragraph.text.strip()]
@@ -796,7 +824,7 @@ def _set_run_font(run, *, font_family: str, font_size: float | None):
 
 def _apply_paragraph_style(paragraph, style: dict[str, Any], *, body_rules: dict[str, Any]):
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.shared import Cm
+    from docx.shared import Cm, Pt, RGBColor
 
     merged = {
         key: value
@@ -806,7 +834,13 @@ def _apply_paragraph_style(paragraph, style: dict[str, Any], *, body_rules: dict
             "font_size_pt",
             "line_spacing",
             "first_line_indent_cm",
+            "left_indent_cm",
+            "right_indent_cm",
+            "space_before_pt",
+            "space_after_pt",
             "alignment",
+            "keep_with_next",
+            "keep_together",
         }
     }
     merged.update({key: value for key, value in (style or {}).items() if value not in (None, "")})
@@ -814,7 +848,14 @@ def _apply_paragraph_style(paragraph, style: dict[str, Any], *, body_rules: dict
     font_size = _as_float(merged.get("font_size_pt"))
     line_spacing = _as_float(merged.get("line_spacing"))
     first_line_indent = _as_float(merged.get("first_line_indent_cm"))
+    left_indent = _as_float(merged.get("left_indent_cm"))
+    right_indent = _as_float(merged.get("right_indent_cm"))
+    space_before = _as_float(merged.get("space_before_pt"))
+    space_after = _as_float(merged.get("space_after_pt"))
     alignment = str(merged.get("alignment") or "").casefold()
+    color_hex = str(merged.get("color_hex") or "").strip().lstrip("#")
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", color_hex):
+        color_hex = ""
     alignment_map = {
         "left": WD_ALIGN_PARAGRAPH.LEFT,
         "по левому краю": WD_ALIGN_PARAGRAPH.LEFT,
@@ -830,10 +871,28 @@ def _apply_paragraph_style(paragraph, style: dict[str, Any], *, body_rules: dict
         paragraph.paragraph_format.line_spacing = line_spacing
     if first_line_indent is not None:
         paragraph.paragraph_format.first_line_indent = Cm(first_line_indent)
+    if left_indent is not None:
+        paragraph.paragraph_format.left_indent = Cm(left_indent)
+    if right_indent is not None:
+        paragraph.paragraph_format.right_indent = Cm(right_indent)
+    if space_before is not None:
+        paragraph.paragraph_format.space_before = Pt(space_before)
+    if space_after is not None:
+        paragraph.paragraph_format.space_after = Pt(space_after)
+    if merged.get("keep_with_next") is not None:
+        paragraph.paragraph_format.keep_with_next = bool(
+            merged["keep_with_next"]
+        )
+    if merged.get("keep_together") is not None:
+        paragraph.paragraph_format.keep_together = bool(
+            merged["keep_together"]
+        )
     if alignment in alignment_map:
         paragraph.alignment = alignment_map[alignment]
     for run in paragraph.runs:
         _set_run_font(run, font_family=font_family, font_size=font_size)
+        if color_hex:
+            run.font.color.rgb = RGBColor.from_string(color_hex.upper())
         if merged.get("bold") is not None:
             run.bold = bool(merged["bold"])
         if merged.get("italic") is not None:
@@ -865,7 +924,113 @@ def _looks_like_figure_caption(paragraph) -> bool:
     )
 
 
-def _normalize_inline_figures(document) -> int:
+def _looks_like_table_caption(paragraph) -> bool:
+    text = " ".join(paragraph.text.split())
+    style_name = (
+        (paragraph.style.name or "").casefold()
+        if getattr(paragraph, "style", None)
+        else ""
+    )
+    return (
+        "table caption" in style_name
+        or "table_caption" in style_name
+        or "подпис" in style_name and "табли" in style_name
+        or bool(re.match(r"^(?:таблица|табл\.|table)\s*\d+", text, re.I))
+    )
+
+
+_TABLE_DATA_STYLE_RE = re.compile(
+    r"(?:^|[^0-9a-z])mdpi[\s_.-]*4(?:[\s_.-]|$)",
+    re.I,
+)
+_TABLE_DATA_STYLE_TOKENS = (
+    "table_body",
+    "table body",
+    "table_header",
+    "table header",
+)
+
+
+def _paragraph_immediately_before_table(table):
+    from docx.oxml.ns import qn
+    from docx.text.paragraph import Paragraph
+
+    element = table._tbl.getprevious()
+    while element is not None:
+        if element.tag != qn("w:p"):
+            return None
+        paragraph = Paragraph(element, table._parent)
+        if paragraph.text.strip():
+            return paragraph
+        element = element.getprevious()
+    return None
+
+
+def _table_has_explicit_data_style(table) -> bool:
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                style_name = (
+                    (paragraph.style.name or "").casefold()
+                    if getattr(paragraph, "style", None)
+                    else ""
+                )
+                if (
+                    any(token in style_name for token in _TABLE_DATA_STYLE_TOKENS)
+                    or _TABLE_DATA_STYLE_RE.search(style_name)
+                ):
+                    return True
+    return False
+
+
+def _is_qualifying_data_table(table) -> bool:
+    preceding = _paragraph_immediately_before_table(table)
+    return bool(
+        (
+            preceding is not None
+            and _looks_like_table_caption(preceding)
+        )
+        or _table_has_explicit_data_style(table)
+    )
+
+
+def _table_cell_has_protected_content(cell) -> bool:
+    if cell.tables:
+        return True
+    return bool(
+        cell._tc.xpath(
+            ".//m:oMath | .//m:oMathPara | .//w:drawing | "
+            ".//w:object | .//w:pict"
+        )
+    )
+
+
+def _list_paragraph_style_role(paragraph) -> str:
+    text = " ".join(paragraph.text.split())
+    style_name = (
+        (paragraph.style.name or "").casefold()
+        if getattr(paragraph, "style", None)
+        else ""
+    )
+    if re.match(r"^rq\s*\d+[.)]\s*", text, re.I):
+        return "list_itemize"
+    if any(
+        token in style_name
+        for token in ("bullet", "маркир")
+    ):
+        return "list_bullet"
+    if any(
+        token in style_name
+        for token in ("list", "список")
+    ) or (
+        paragraph._p.pPr is not None
+        and paragraph._p.pPr.numPr is not None
+    ):
+        return "list_bullet"
+    return ""
+
+
+def _normalize_inline_figures(document, *, center_captions=True) -> int:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shape import InlineShape
     from docx.shared import Cm
@@ -903,10 +1068,11 @@ def _normalize_inline_figures(document) -> int:
             ):
                 paragraph.paragraph_format.keep_with_next = True
                 caption = paragraphs[paragraph_index + 1]
-                caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                caption.paragraph_format.left_indent = Cm(0)
-                caption.paragraph_format.right_indent = Cm(0)
-                caption.paragraph_format.first_line_indent = Cm(0)
+                if center_captions:
+                    caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    caption.paragraph_format.left_indent = Cm(0)
+                    caption.paragraph_format.right_indent = Cm(0)
+                    caption.paragraph_format.first_line_indent = Cm(0)
                 caption.paragraph_format.keep_together = True
         if paragraph._p.pPr is not None and paragraph._p.pPr.sectPr is not None:
             section_index += 1
@@ -1087,7 +1253,7 @@ def build_docx_from_template(
     try:
         from docx.enum.section import WD_ORIENT
         from docx.oxml.ns import qn
-        from docx.shared import Cm, Pt, RGBColor
+        from docx.shared import Cm, Pt
     except ImportError as exc:
         raise DocumentTemplateEngineError("Для обработки DOCX требуется python-docx.") from exc
 
@@ -1139,60 +1305,148 @@ def build_docx_from_template(
         changes.append("блоки титульной части расставлены в порядке шаблона")
         roles = _assign_roles(document, metadata)
     block_map = _configured_block_map(normalized_rules)
+    paragraph_styles = (
+        (normalized_rules.get("document") or {}).get("paragraph_styles")
+        or {}
+    )
+    heading_levels = (
+        heading_rules.get("levels")
+        if isinstance(heading_rules.get("levels"), dict)
+        else {}
+    )
+    styled_roles = set()
+    styled_headings = 0
+    styled_captions = 0
+    styled_lists = 0
     for index, paragraph in enumerate(document.paragraphs):
         if not paragraph.text.strip():
             continue
         role = roles.get(index, "")
-        style_name = (
-            (paragraph.style.name or "").casefold()
-            if getattr(paragraph, "style", None)
-            else ""
-        )
-        is_heading = "heading" in style_name or "заголов" in style_name
-        if is_heading and heading_rules:
-            is_title = bool(re.search(r"(?:heading|заголовок)\s*1\b", style_name))
-            heading_size = _as_float(
-                heading_rules.get("title_font_size_pt")
-                if is_title
-                else heading_rules.get("font_size_pt")
-            )
+        block = block_map.get(role)
+        caption_style = None
+        if (
+            paragraph_styles.get("figure_caption")
+            and _looks_like_figure_caption(paragraph)
+        ):
+            caption_style = paragraph_styles["figure_caption"]
+        elif (
+            paragraph_styles.get("table_caption")
+            and _looks_like_table_caption(paragraph)
+        ):
+            caption_style = paragraph_styles["table_caption"]
+        if caption_style:
             _apply_paragraph_style(
                 paragraph,
-                {
-                    "alignment": "center" if is_title else "left",
-                    "first_line_indent_cm": 0,
-                    "bold": True,
-                    "font_family": (
-                        heading_rules.get("font_family") or font_family
-                    ),
-                    "font_size_pt": heading_size or font_size,
-                    "line_spacing": body_rules.get("line_spacing"),
-                },
+                caption_style,
                 body_rules={},
             )
-            color_hex = str(heading_rules.get("color_hex") or "").strip().lstrip("#")
-            if re.fullmatch(r"[0-9a-fA-F]{6}", color_hex):
-                for run in paragraph.runs:
-                    run.font.color.rgb = RGBColor.from_string(color_hex.upper())
+            styled_captions += 1
             continue
-        if role == "references_heading":
-            role_style = {
-                "alignment": "center",
-                "first_line_indent_cm": 0,
-                "bold": True,
-                "font_family": font_family,
-                "font_size_pt": font_size,
-                "line_spacing": body_rules.get("line_spacing"),
-            }
-            _apply_paragraph_style(paragraph, role_style, body_rules={})
+        list_style_role = (
+            _list_paragraph_style_role(paragraph)
+            if role == "body"
+            else ""
+        )
+        list_style = paragraph_styles.get(list_style_role)
+        if list_style:
+            _apply_paragraph_style(
+                paragraph,
+                list_style,
+                body_rules={},
+            )
+            styled_lists += 1
             continue
-        block = block_map.get(role)
-        if block:
-            if role == "title" and _apply_text_constraints(
+        if role == "title":
+            if block and _apply_text_constraints(
                 paragraph,
                 block.get("constraints") or {},
             ):
                 changes.append("регистр и пунктуация названия приведены к шаблону")
+            title_style = dict((block or {}).get("style") or {})
+            title_style.setdefault("alignment", "center")
+            title_style.setdefault("first_line_indent_cm", 0)
+            if heading_rules.get("font_family") not in (None, ""):
+                title_style.setdefault(
+                    "font_family",
+                    heading_rules["font_family"],
+                )
+            if heading_rules.get("title_font_size_pt") not in (None, ""):
+                title_style.setdefault(
+                    "font_size_pt",
+                    heading_rules["title_font_size_pt"],
+                )
+            _apply_paragraph_style(
+                paragraph,
+                title_style,
+                body_rules={
+                    "font_family": font_family,
+                    "font_size_pt": font_size,
+                    "line_spacing": body_rules.get("line_spacing"),
+                },
+            )
+            styled_roles.add("title")
+            continue
+
+        heading_level = _heading_level(paragraph, role)
+        if heading_level is not None and heading_rules:
+            level_style = dict(
+                heading_levels.get(str(heading_level))
+                or heading_levels.get(heading_level)
+                or {}
+            )
+            if not level_style:
+                level_style = {
+                    "alignment": "left",
+                    "first_line_indent_cm": 0,
+                    "bold": True,
+                    "font_family": heading_rules.get("font_family") or font_family,
+                    "font_size_pt": (
+                        heading_rules.get("font_size_pt") or font_size
+                    ),
+                    "line_spacing": body_rules.get("line_spacing"),
+                }
+            else:
+                level_style.setdefault("alignment", "left")
+                level_style.setdefault("first_line_indent_cm", 0)
+                level_style.setdefault(
+                    "font_family",
+                    heading_rules.get("font_family") or font_family,
+                )
+                level_style.setdefault(
+                    "font_size_pt",
+                    heading_rules.get("font_size_pt") or font_size,
+                )
+            level_style.setdefault(
+                "color_hex",
+                heading_rules.get("color_hex"),
+            )
+            _apply_paragraph_style(
+                paragraph,
+                level_style,
+                body_rules={},
+            )
+            styled_headings += 1
+            continue
+        if role == "references_heading":
+            role_style = dict(
+                heading_levels.get("1")
+                or {
+                    "alignment": "center",
+                    "bold": True,
+                    "font_family": font_family,
+                    "font_size_pt": font_size,
+                    "line_spacing": body_rules.get("line_spacing"),
+                }
+            )
+            role_style.setdefault("first_line_indent_cm", 0)
+            role_style.setdefault(
+                "color_hex",
+                heading_rules.get("color_hex"),
+            )
+            _apply_paragraph_style(paragraph, role_style, body_rules={})
+            styled_roles.add("references")
+            continue
+        if block:
             role_body_rules = body_rules if role in {"body", "abstract", "keywords"} else {
                 "font_family": font_family,
                 "font_size_pt": font_size,
@@ -1203,20 +1457,77 @@ def build_docx_from_template(
                 block.get("style") or {},
                 body_rules=role_body_rules,
             )
+            styled_roles.add(role)
         else:
             # Unknown elements keep their local alignment/indent. Typography is
             # normalized, because this does not change structural meaning.
             for run in paragraph.runs:
                 _set_run_font(run, font_family=font_family, font_size=font_size)
 
-    for table in document.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        _set_run_font(run, font_family=font_family, font_size=font_size)
+    if styled_headings:
+        changes.append(
+            f"заголовки оформлены по уровням DOCX-шаблона: {styled_headings}"
+        )
+    if styled_captions:
+        changes.append(
+            f"подписи рисунков и таблиц оформлены по DOCX-шаблону: {styled_captions}"
+        )
+    if styled_lists:
+        changes.append(
+            f"списки оформлены по DOCX-шаблону: {styled_lists}"
+        )
+    semantic_roles = [
+        BLOCK_CATALOG[role]["label"]
+        for role in (
+            "title",
+            "authors",
+            "institution",
+            "abstract",
+            "keywords",
+            "references",
+        )
+        if role in styled_roles
+    ]
+    if semantic_roles:
+        changes.append(
+            "применены стили блоков DOCX-шаблона: "
+            + ", ".join(semantic_roles)
+        )
 
-    resized_figures = _normalize_inline_figures(document)
+    styled_table_paragraphs = 0
+    table_body_style = paragraph_styles.get("table_body") or {}
+    table_body_fallback = {
+        key: body_rules[key]
+        for key in ("font_size_pt", "line_spacing")
+        if body_rules.get(key) not in (None, "")
+    }
+    if table_body_style:
+        for table in document.tables:
+            if not _is_qualifying_data_table(table):
+                continue
+            for row in table.rows:
+                for cell in row.cells:
+                    if _table_cell_has_protected_content(cell):
+                        continue
+                    for paragraph in cell.paragraphs:
+                        if not paragraph.text.strip():
+                            continue
+                        _apply_paragraph_style(
+                            paragraph,
+                            table_body_style,
+                            body_rules=table_body_fallback,
+                        )
+                        styled_table_paragraphs += 1
+    if styled_table_paragraphs:
+        changes.append(
+            "текст таблиц оформлен по DOCX-шаблону: "
+            f"{styled_table_paragraphs} абзацев"
+        )
+
+    resized_figures = _normalize_inline_figures(
+        document,
+        center_captions=not bool(paragraph_styles.get("figure_caption")),
+    )
     if resized_figures:
         changes.append(
             f"рисунки вписаны в рабочую область страницы: {resized_figures}"
