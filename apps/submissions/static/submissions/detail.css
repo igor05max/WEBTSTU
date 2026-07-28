@@ -2,6 +2,121 @@
     overflow: hidden;
 }
 
+.workspace-page-main .submission-route-waiting-card {
+    position: relative;
+    min-height: 178px;
+    padding: 25px 27px;
+    display: flex;
+    align-items: center;
+    gap: 21px;
+    overflow: hidden;
+    border: 1px solid #d8e2fb;
+    background:
+        radial-gradient(circle at 95% 5%, rgba(36, 92, 230, 0.11), transparent 34%),
+        linear-gradient(135deg, #fbfdff, #f4f7ff);
+}
+
+.workspace-page-main .submission-route-waiting-card::after {
+    content: "";
+    position: absolute;
+    top: -42px;
+    right: -42px;
+    width: 132px;
+    height: 132px;
+    border: 1px solid rgba(36, 92, 230, 0.1);
+    border-radius: 50%;
+}
+
+.workspace-page-main .submission-route-waiting-icon {
+    position: relative;
+    width: 68px;
+    height: 68px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 68px;
+    border: 1px solid #cbd9fb;
+    border-radius: 20px;
+    color: #245ce6;
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(36, 92, 230, 0.13);
+}
+
+.workspace-page-main .submission-route-waiting-icon::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border: 1px solid rgba(36, 92, 230, 0.16);
+    border-radius: 25px;
+    animation: submission-route-waiting-pulse 2.4s ease-out infinite;
+}
+
+.workspace-page-main .submission-route-waiting-icon svg {
+    width: 34px;
+    height: 34px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.workspace-page-main .submission-route-waiting-copy {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+}
+
+.workspace-page-main .submission-route-waiting-copy > span {
+    color: #245ce6;
+    font-size: 0.62rem;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.workspace-page-main .submission-route-waiting-copy h3 {
+    margin: 5px 0 6px;
+    color: #24324a;
+    font-size: 1rem;
+    line-height: 1.3;
+}
+
+.workspace-page-main .submission-route-waiting-copy p {
+    max-width: 660px;
+    margin: 0;
+    color: #6e7b90;
+    font-size: 0.72rem;
+    line-height: 1.55;
+}
+
+.workspace-page-main .submission-route-waiting-reviewer {
+    margin-top: 15px;
+    display: grid;
+    gap: 2px;
+}
+
+.workspace-page-main .submission-route-waiting-reviewer small {
+    color: #8994a7;
+    font-size: 0.61rem;
+}
+
+.workspace-page-main .submission-route-waiting-reviewer strong {
+    color: #334159;
+    font-size: 0.76rem;
+}
+
+@keyframes submission-route-waiting-pulse {
+    0% {
+        opacity: 0.7;
+        transform: scale(0.94);
+    }
+    70%,
+    100% {
+        opacity: 0;
+        transform: scale(1.1);
+    }
+}
+
 .workspace-page-main .submission-file-name {
     max-width: 360px;
     margin-top: 5px;
@@ -1087,6 +1202,13 @@
 }
 
 @media (max-width: 720px) {
+    .workspace-page-main .submission-route-waiting-card {
+        padding: 22px 20px;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 17px;
+    }
+
     .workspace-page-main .submission-check-issues {
         grid-template-columns: 1fr;
     }
@@ -1133,6 +1255,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .workspace-page-main .submission-route-waiting-icon::after {
+        animation: none;
+    }
+
     .workspace-page-main .submission-decision-chevron svg {
         transition: none;
     }

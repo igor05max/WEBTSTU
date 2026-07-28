@@ -1373,6 +1373,18 @@ def submission_detail(request, pk):
         if route_preview_templates:
             selected_route_preview_template = route_preview_templates[0]
     is_route_approval_pending = bool(primary_workflow_run and primary_workflow_run.awaiting_route_approval)
+    route_approval_reviewer_name = ""
+    if is_route_approval_pending and primary_workflow_run.current_step_id:
+        route_review_step = next(
+            (
+                step
+                for step in primary_workflow_run.ordered_steps
+                if step.pk == primary_workflow_run.current_step_id
+            ),
+            None,
+        )
+        if route_review_step is not None:
+            route_approval_reviewer_name = route_review_step.route_user_text
     can_view_route_details = request.user.is_superuser or can_review_route or (
         submission.status not in {SubmissionStatus.AUTO_CHECKING, SubmissionStatus.SUBMITTED}
         and not is_route_approval_pending
@@ -1421,6 +1433,7 @@ def submission_detail(request, pk):
             "selected_route_preview_template": selected_route_preview_template,
             "is_auto_checking": submission.status == SubmissionStatus.AUTO_CHECKING,
             "is_route_approval_pending": is_route_approval_pending,
+            "route_approval_reviewer_name": route_approval_reviewer_name,
             "status_tone": _get_submission_status_tone(submission.status),
             "progress_poll_interval_ms": settings.SUBMISSION_PROGRESS_POLL_INTERVAL_MS,
             "can_edit": can_edit,

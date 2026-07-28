@@ -1219,8 +1219,32 @@ class SubmissionCreateViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context["can_view_route_details"])
+        self.assertEqual(
+            response.context["route_approval_reviewer_name"],
+            str(self.chair_head),
+        )
+        self.assertContains(response, "Маршрут проверяет заведующий кафедрой")
+        self.assertContains(response, str(self.chair_head))
+        self.assertContains(response, "data-route-approval-waiting")
         self.assertNotContains(response, "Маршрут согласования")
         self.assertNotContains(response, "Основной эксперт")
+
+        route_review_task = ApprovalTask.objects.get(
+            workflow_step__workflow_run__submission=submission,
+            status=ApprovalTaskStatus.ACTIVE,
+        )
+        approve_task(
+            route_review_task,
+            self.chair_head,
+            comment="Маршрут проверен.",
+        )
+        response = self.client.get(reverse("submissions:detail", args=[submission.pk]))
+
+        self.assertTrue(response.context["can_view_route_details"])
+        self.assertFalse(response.context["is_route_approval_pending"])
+        self.assertContains(response, "Маршрут согласования")
+        self.assertContains(response, "Основной эксперт")
+        self.assertNotContains(response, "data-route-approval-waiting")
 
     def test_chair_head_detail_contains_preview_payload_for_direction_switching(self):
         reviewer_group = Group.objects.create(name="Эксперт базового маршрута")

@@ -5,7 +5,7 @@
 
 {% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
 
-{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/detail.css' %}?v=20260724b">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/detail.css' %}?v=20260728a">{% endblock %}
 
 {% block content %}
     {% if route_review_preview_payload %}
@@ -368,6 +368,26 @@
             </details>
         {% endif %}
     </section>
+
+    {% if is_route_approval_pending and not can_view_route_details %}
+    <section class="surface submission-route-waiting-card" data-route-approval-waiting aria-labelledby="route-waiting-title">
+        <div class="submission-route-waiting-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8.5"></circle>
+                <path d="M12 7.5v5l3.25 2"></path>
+            </svg>
+        </div>
+        <div class="submission-route-waiting-copy">
+            <span>Маршрут ещё не открыт</span>
+            <h3 id="route-waiting-title">Маршрут проверяет заведующий кафедрой</h3>
+            <p>После подтверждения здесь автоматически появятся этапы согласования, а этот статус исчезнет.</p>
+            <div class="submission-route-waiting-reviewer">
+                <small>Заведующий кафедрой</small>
+                <strong>{{ route_approval_reviewer_name|default:"Назначенный заведующий кафедрой" }}</strong>
+            </div>
+        </div>
+    </section>
+    {% endif %}
 
     {% if can_view_route_details %}
     <section class="surface submission-route-card" id="submission-route" aria-labelledby="submission-route-title">
