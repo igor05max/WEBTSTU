@@ -11,6 +11,7 @@ systemd. Nginx принимает HTTP-запросы и раздаёт толь
 apt-get install -y --no-install-recommends \
   libreoffice-writer libreoffice-math \
   latexmk texlive-latex-extra texlive-fonts-recommended texlive-lang-cyrillic \
+  texlive-plain-generic \
   fonts-dejavu-core fonts-liberation \
   fonts-crosextra-carlito fonts-crosextra-caladea
 ```
