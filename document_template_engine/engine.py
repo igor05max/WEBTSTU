@@ -33,6 +33,11 @@ _AUTHOR_TOKEN_RE = re.compile(
     r"(?:[A-ZА-ЯЁ]\s*\.\s*){1,3}[A-ZА-ЯЁ][A-ZА-ЯЁ-]{1,}|"
     r"[A-ZА-ЯЁ][A-ZА-ЯЁ-]{2,}\s+(?:[A-ZА-ЯЁ]\s*\.\s*){1,3}"
 )
+_FULL_AUTHOR_NAME_RE = re.compile(
+    r"^\s*[A-ZА-ЯЁ][A-ZА-ЯЁ-]{2,}\s+"
+    r"[A-ZА-ЯЁ][a-zа-яё-]{2,}\s+"
+    r"[A-ZА-ЯЁ][a-zа-яё-]{2,}(?:\s*[,;]|\s*$)"
+)
 _WORD_RE = re.compile(r"[0-9A-Za-zА-Яа-яЁё][0-9A-Za-zА-Яа-яЁё'’-]*")
 
 
@@ -195,7 +200,9 @@ def _resolve_run_font(run, paragraph, normal_style, defaults) -> tuple[str, floa
 def _looks_like_authors(text: str) -> bool:
     if len(text) > 300:
         return False
-    return len(_AUTHOR_TOKEN_RE.findall(text.upper())) >= 1
+    return bool(_FULL_AUTHOR_NAME_RE.match(text)) or (
+        len(_AUTHOR_TOKEN_RE.findall(text.upper())) >= 1
+    )
 
 
 def _looks_like_city_country(text: str) -> bool:
@@ -264,12 +271,15 @@ def _assign_roles(document, metadata: dict[str, Any] | None = None) -> dict[int,
 
     if title_index is not None:
         for index in nonempty:
-            if index <= title_index or index in roles:
+            if index <= title_index:
+                continue
+            if roles.get(index) in {"abstract", "keywords"}:
+                break
+            if index in roles:
                 continue
             text = paragraphs[index].text.strip()
             if _looks_like_authors(text):
                 roles[index] = "authors"
-            break
 
     references_heading = next(
         (index for index, role in roles.items() if role == "references_heading"),

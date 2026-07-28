@@ -58,6 +58,7 @@ from apps.submissions.document_preview import (
 from apps.submissions.document_ai import analyze_document
 from apps.submissions.document_analysis import match_authors_to_users, read_file_bytes
 from apps.submissions.article_extraction import filter_probable_person_names
+from apps.submissions.document_uploads import prepare_document_upload
 from apps.submissions.models import Submission, SubmissionAppeal, SubmissionStatus, SubmissionVersion
 from apps.submissions.latex_projects import (
     LATEX_MAX_ARCHIVE_BYTES,
@@ -910,6 +911,13 @@ def submission_create(request):
     if request.method == "POST":
         form = SubmissionCreateForm(request.POST, request.FILES, current_user=request.user)
         if form.is_valid():
+            uploaded_material = form.cleaned_data["file"]
+            try:
+                prepared_material = prepare_document_upload(uploaded_material)
+            except ValueError as exc:
+                form.add_error("file", str(exc))
+                return render(request, "submissions/create.html", {"form": form})
+
             article_type = form.cleaned_data["article_type"]
             journal = form.cleaned_data["journal"]
             publication_topic = form.cleaned_data["publication_topic"]
@@ -936,10 +944,9 @@ def submission_create(request):
                 template=formatting_template,
                 journal=journal,
             )
-            uploaded_material = form.cleaned_data["file"]
             document_snapshot = analyze_document(
-                read_file_bytes(uploaded_material),
-                uploaded_material.name,
+                read_file_bytes(prepared_material.working_file),
+                prepared_material.working_file.name,
                 use_ai=False,
             )
             metadata = document_snapshot.get("metadata") or {}
@@ -958,7 +965,7 @@ def submission_create(request):
                 formatting_template=formatting_template,
                 formatting_rules_snapshot=rules_snapshot,
                 formatting_check_requested=form.cleaned_data["formatting_check_requested"],
-                file=uploaded_material,
+                file=prepared_material,
                 comment=form.cleaned_data["version_comment"],
                 authors=form.cleaned_data["authors"],
                 document_authors=form.cleaned_data["document_authors"] or metadata.get("document_authors", ""),
@@ -979,7 +986,14 @@ def submission_create(request):
                 )
             messages.success(
                 request,
-                "Материал создан, данные из файла распознаны. Автопроверки запущены в фоне; источники можно подбирать параллельно.",
+                (
+                    "Материал создан. Исходный DOC сохранён, а для проверок и "
+                    "редактирования автоматически создана рабочая версия DOCX. "
+                    "Автопроверки запущены в фоне; источники можно подбирать параллельно."
+                    if prepared_material.converted_from_legacy_doc
+                    else "Материал создан, данные из файла распознаны. "
+                    "Автопроверки запущены в фоне; источники можно подбирать параллельно."
+                ),
             )
             return redirect(
                 f"{reverse('citations:workspace')}?submission={submission.pk}&auto=1"

@@ -3,6 +3,7 @@ import io
 import os
 from pathlib import Path
 import posixpath
+import re
 import shutil
 import subprocess
 import tempfile
@@ -342,7 +343,9 @@ def _build_preview_safe_docx(document_bytes):
     Word stores legacy MathType equations as an embedded binary object plus a VML
     preview image. LibreOffice may abort while importing a document containing many
     such objects. The downloadable DOCX is never changed; only its temporary preview
-    copy drops the OLE relationship and keeps the already embedded image.
+    copy removes the OLE activation element, replaces the binary payload with
+    an empty inert part, and keeps the already embedded preview image. Keeping
+    the relationship target present is required for a valid OOXML package.
     """
 
     try:
@@ -373,10 +376,34 @@ def _build_preview_safe_docx(document_bytes):
             if not removed_objects:
                 return document_bytes
 
-            ole_attribute = f"{{{OFFICE_NAMESPACE}}}ole"
-            shape_tag = f"{{{VML_NAMESPACE}}}shape"
-            for shape in document_root.iter(shape_tag):
-                shape.attrib.pop(ole_attribute, None)
+            preview_document_xml = document_xml
+            office_prefixes = set(
+                re.findall(
+                    rb'xmlns:([A-Za-z_][A-Za-z0-9_.-]*)=["\']'
+                    + re.escape(OFFICE_NAMESPACE.encode())
+                    + rb'["\']',
+                    document_xml,
+                )
+            )
+            for prefix in office_prefixes:
+                ole_name = re.escape(prefix) + rb":OLEObject"
+                preview_document_xml = re.sub(
+                    rb"<"
+                    + ole_name
+                    + rb"\b[^>]*(?:/\s*>|>.*?</"
+                    + ole_name
+                    + rb"\s*>)",
+                    b"",
+                    preview_document_xml,
+                    flags=re.S,
+                )
+                preview_document_xml = re.sub(
+                    rb"\s+"
+                    + re.escape(prefix)
+                    + rb":ole=(?:\"[^\"]*\"|'[^']*')",
+                    b"",
+                    preview_document_xml,
+                )
 
             relationships_root = ElementTree.fromstring(relationships_xml)
             relationship_tag = (
@@ -395,27 +422,20 @@ def _build_preview_safe_docx(document_bytes):
                     removed_targets.add(
                         posixpath.normpath(posixpath.join("word", target)).lstrip("/")
                     )
-                relationships_root.remove(relationship)
 
             output = io.BytesIO()
             with ZipFile(output, "w", ZIP_DEFLATED) as output_archive:
                 for info in input_archive.infolist():
                     normalized_name = posixpath.normpath(info.filename).lstrip("/")
-                    if normalized_name in removed_targets:
-                        continue
                     value = input_archive.read(info)
+                    if normalized_name in removed_targets:
+                        value = b""
                     if info.filename == "word/document.xml":
-                        value = ElementTree.tostring(
-                            document_root,
-                            encoding="utf-8",
-                            xml_declaration=True,
-                        )
-                    elif info.filename == "word/_rels/document.xml.rels":
-                        value = ElementTree.tostring(
-                            relationships_root,
-                            encoding="utf-8",
-                            xml_declaration=True,
-                        )
+                        # Keep the document's original namespace prefixes.
+                        # mc:Ignorable contains prefix names as text, so a full
+                        # ElementTree re-serialization can make real Word files
+                        # invalid even when the XML remains namespace-correct.
+                        value = preview_document_xml
                     output_archive.writestr(info, value)
             return output.getvalue()
     except (BadZipFile, ElementTree.ParseError, OSError):

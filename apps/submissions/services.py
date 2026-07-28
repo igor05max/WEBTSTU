@@ -2,9 +2,64 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from apps.directory.models import Direction
+from apps.submissions.document_uploads import prepare_document_upload
 from apps.submissions.models import Submission, SubmissionStatus, SubmissionVersion
 from apps.submissions.route_suggestions import ensure_submission_route_suggestion, is_route_template_selectable
 from apps.workflow.models import RouteTemplate, WorkflowRunStatus
+
+
+def _create_version_records(
+    *,
+    submission,
+    uploaded_by,
+    file,
+    first_version_number,
+    comment="",
+    latex_project=None,
+):
+    prepared = prepare_document_upload(file)
+    version_number = first_version_number
+    if prepared.converted_from_legacy_doc:
+        SubmissionVersion.objects.create(
+            submission=submission,
+            version_number=version_number,
+            file=prepared.source_file,
+            uploaded_by=uploaded_by,
+            comment=(
+                "Исходный файл DOC. Система сохранила его без изменений "
+                "и создала следующую рабочую версию DOCX."
+            ),
+        )
+        version_number += 1
+
+    working_comment = comment or ""
+    if prepared.converted_from_legacy_doc:
+        conversion_note = (
+            "Рабочая DOCX-версия автоматически создана из загруженного DOC."
+        )
+        working_comment = (
+            f"{conversion_note} {working_comment}".strip()
+            if working_comment
+            else conversion_note
+        )
+    version_fields = {
+        "submission": submission,
+        "version_number": version_number,
+        "file": prepared.working_file,
+        "uploaded_by": uploaded_by,
+        "comment": working_comment,
+    }
+    if latex_project is not None:
+        version_fields.update(
+            {
+                "project_archive": latex_project.archive_file,
+                "project_main_path": latex_project.main_path,
+                "project_manifest": latex_project.manifest,
+                "latex_compile_status": "pending",
+                "latex_compile_message": "",
+            }
+        )
+    return SubmissionVersion.objects.create(**version_fields)
 
 
 @transaction.atomic
@@ -43,25 +98,13 @@ def add_submission_version(
     next_version_number = (
         submission.versions.aggregate(max_number=models.Max("version_number"))["max_number"] or 0
     ) + 1
-    version_fields = {
-        "submission": submission,
-        "version_number": next_version_number,
-        "file": file,
-        "uploaded_by": uploaded_by,
-        "comment": comment or "",
-    }
-    if latex_project is not None:
-        version_fields.update(
-            {
-                "project_archive": latex_project.archive_file,
-                "project_main_path": latex_project.main_path,
-                "project_manifest": latex_project.manifest,
-                "latex_compile_status": "pending",
-                "latex_compile_message": "",
-            }
-        )
-    version = SubmissionVersion.objects.create(
-        **version_fields,
+    version = _create_version_records(
+        submission=submission,
+        uploaded_by=uploaded_by,
+        file=file,
+        first_version_number=next_version_number,
+        comment=comment,
+        latex_project=latex_project,
     )
     submission.current_version = version
     submission.save(update_fields=["current_version", "updated_at"])
@@ -129,24 +172,14 @@ def create_submission_with_initial_version(
     if author_ids:
         submission.authors.set(author_ids)
 
-    version_fields = {
-        "submission": submission,
-        "version_number": 1,
-        "file": file,
-        "uploaded_by": author,
-        "comment": comment or "",
-    }
-    if latex_project is not None:
-        version_fields.update(
-            {
-                "project_archive": latex_project.archive_file,
-                "project_main_path": latex_project.main_path,
-                "project_manifest": latex_project.manifest,
-                "latex_compile_status": "pending",
-                "latex_compile_message": "",
-            }
-        )
-    version = SubmissionVersion.objects.create(**version_fields)
+    version = _create_version_records(
+        submission=submission,
+        uploaded_by=author,
+        file=file,
+        first_version_number=1,
+        comment=comment,
+        latex_project=latex_project,
+    )
     submission.current_version = version
     submission.save(update_fields=["current_version", "updated_at"])
     if publication_topic is not None:

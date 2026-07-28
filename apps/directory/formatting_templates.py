@@ -24,6 +24,7 @@ from apps.submissions.document_analysis import (
     analyze_document_bytes,
     read_file_bytes,
 )
+from apps.submissions.document_conversion import convert_legacy_doc_to_docx
 from document_template_engine import (
     extract_latex_template_rules,
     interpret_template_text,
@@ -156,6 +157,38 @@ def _document_default_font_size(document):
     return None
 
 
+def _document_default_font_family(document):
+    from docx.oxml.ns import qn
+
+    try:
+        styles_root = document.styles.element
+    except (AttributeError, TypeError):
+        return ""
+    defaults = styles_root.find(qn("w:docDefaults"))
+    run_defaults = (
+        defaults.find(qn("w:rPrDefault"))
+        if defaults is not None
+        else None
+    )
+    run_properties = (
+        run_defaults.find(qn("w:rPr"))
+        if run_defaults is not None
+        else None
+    )
+    fonts = (
+        run_properties.find(qn("w:rFonts"))
+        if run_properties is not None
+        else None
+    )
+    if fonts is None:
+        return ""
+    for attribute in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        value = str(fonts.get(qn(attribute)) or "").strip()
+        if value and not value.startswith(("+", "major", "minor")):
+            return value
+    return ""
+
+
 def _resolved_style_rules(document, paragraphs):
     if not paragraphs:
         return {}
@@ -214,9 +247,13 @@ def _resolved_style_rules(document, paragraphs):
             or _document_default_font_size(document)
         )
         if hasattr(spacing, "pt") and reference_size:
-            line_spacings.append(round(float(spacing.pt) / reference_size, 2))
+            ratio = round(float(spacing.pt) / reference_size, 2)
+            if 0.5 <= ratio <= 4:
+                line_spacings.append(ratio)
         elif isinstance(spacing, (int, float)):
-            line_spacings.append(round(float(spacing), 2))
+            ratio = round(float(spacing), 2)
+            if 0.5 <= ratio <= 4:
+                line_spacings.append(ratio)
 
     style_font_name = _first_style_value(
         representative_style,
@@ -227,6 +264,7 @@ def _resolved_style_rules(document, paragraphs):
             _dominant(font_names)
             or style_font_name
             or normal_style.font.name
+            or _document_default_font_family(document)
             or ""
         ),
         "font_size_pt": (
@@ -537,11 +575,16 @@ def _extract_template_content(template):
     with template.file.open("rb") as source:
         data = read_file_bytes(source)
     suffix = Path(template.file.name).suffix.casefold()
-    snapshot = analyze_document_bytes(data, template.file.name)
+    analysis_data = data
+    analysis_name = template.file.name
+    if suffix == ".doc":
+        analysis_data = convert_legacy_doc_to_docx(data)
+        analysis_name = f"{Path(template.file.name).stem}.docx"
+    snapshot = analyze_document_bytes(analysis_data, analysis_name)
     text = snapshot.get("text") or ""
     parse_warning = snapshot.get("parse_error") or ""
-    if suffix in {".docx", ".dotx"}:
-        deterministic_rules = _extract_docx_rules(data)
+    if suffix in {".doc", ".docx", ".dotx"}:
+        deterministic_rules = _extract_docx_rules(analysis_data)
     elif suffix == ".pdf":
         deterministic_rules = _extract_pdf_rules(data)
     elif suffix == ".tex":

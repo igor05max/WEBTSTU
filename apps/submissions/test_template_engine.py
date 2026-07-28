@@ -6,6 +6,7 @@ from document_template_engine import (
     build_docx_from_template,
     build_docx_plan,
     build_latex_template,
+    check_docx_against_template,
     check_latex_against_template,
     extract_latex_template_rules,
     interpret_template_text,
@@ -93,6 +94,38 @@ def _sample_docx():
 
 
 class ReusableTemplateEngineTests(SimpleTestCase):
+    def test_full_name_author_is_found_after_copyright_and_identifiers(self):
+        from docx import Document
+
+        document = Document()
+        document.add_paragraph("УДК 004.8")
+        document.add_paragraph("НАЗВАНИЕ НАУЧНОЙ СТАТЬИ")
+        document.add_paragraph("© Автор(ы) 2026 – не изменять, не удалять")
+        document.add_paragraph("ORCID: 0000-0000-0000-0000")
+        document.add_paragraph("ВОЛКОВ Андрей Андреевич, аспирант")
+        document.add_paragraph("Аннотация. Текст аннотации.")
+        output = BytesIO()
+        document.save(output)
+
+        report = check_docx_against_template(
+            output.getvalue(),
+            {
+                "document": {
+                    "blocks": [
+                        {"role": "title", "required": True},
+                        {"role": "authors", "required": True},
+                        {"role": "abstract", "required": True},
+                    ]
+                }
+            },
+        )
+
+        authors = next(
+            block for block in report["blocks"] if block["role"] == "authors"
+        )
+        self.assertTrue(authors["found"])
+        self.assertEqual(authors["paragraph_numbers"], [5])
+
     def test_latex_rules_are_extracted_without_executing_source(self):
         source = r"""
             \documentclass[14pt,a4paper]{article}
@@ -226,6 +259,34 @@ class ReusableTemplateEngineTests(SimpleTestCase):
         self.assertEqual(blocks["authors"]["style"]["line_spacing"], 1)
         self.assertNotIn("alignment", blocks["references"]["style"])
         self.assertNotIn("first_line_indent_cm", blocks["references"]["style"])
+
+    def test_ai_contradictory_manual_break_note_and_caption_alignment_are_removed(self):
+        rules = interpret_template_text(
+            document_type="Статья",
+            target_name="Журнал",
+            text=(
+                "НЕ ДОПУСКАЕТСЯ ИСПОЛЬЗОВАНИЕ РУЧНЫХ ПЕРЕНОСОВ! "
+                "Подпись рисунка выравнивается по центру."
+            ),
+            complete_json=lambda _prompt: """
+                {
+                  "notes": [
+                    "Не допускается использование ручных переносов",
+                    "Маркеры абзацев ставятся вручную"
+                  ],
+                  "figures": {
+                    "captions_required": true,
+                    "caption_position": "center"
+                  }
+                }
+            """,
+        )
+
+        self.assertEqual(
+            rules["notes"],
+            ["Не допускается использование ручных переносов"],
+        )
+        self.assertEqual(rules["figures"]["caption_position"], "")
 
     def test_legacy_placeholders_become_blocks_not_required_sections(self):
         normalized = normalize_template_rules(LEGACY_RULES)

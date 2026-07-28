@@ -37,6 +37,14 @@ RELATIONSHIPS_XML = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   Target="embeddings/equation.bin"/>
 </Relationships>"""
 
+CONTENT_TYPES_XML = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+ <Override PartName="/word/document.xml"
+  ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+ <Override PartName="/word/embeddings/equation.bin"
+  ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>
+</Types>"""
+
 FORMULA_XML = b"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document
  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -55,6 +63,7 @@ def _ole_docx():
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         archive.writestr("word/document.xml", DOCUMENT_XML)
         archive.writestr("word/_rels/document.xml.rels", RELATIONSHIPS_XML)
+        archive.writestr("[Content_Types].xml", CONTENT_TYPES_XML)
         archive.writestr("word/media/equation.wmf", b"preview-image")
         archive.writestr("word/embeddings/equation.bin", b"ole-payload")
     return output.getvalue()
@@ -82,19 +91,23 @@ class CorrectedDocumentPreviewTests(SimpleTestCase):
         self.assertNotEqual(first, second)
         self.assertEqual(_stable_docx_digest(first), _stable_docx_digest(second))
 
-    def test_preview_copy_keeps_equation_image_and_removes_ole_payload(self):
+    def test_preview_copy_keeps_equation_image_and_neutralizes_ole_payload(self):
         result = _build_preview_safe_docx(_ole_docx())
 
         with ZipFile(io.BytesIO(result)) as archive:
             names = set(archive.namelist())
             document_xml = archive.read("word/document.xml")
             relationships_xml = archive.read("word/_rels/document.xml.rels")
+            content_types_xml = archive.read("[Content_Types].xml")
+            ole_payload = archive.read("word/embeddings/equation.bin")
 
         self.assertIn("word/media/equation.wmf", names)
-        self.assertNotIn("word/embeddings/equation.bin", names)
+        self.assertIn("word/embeddings/equation.bin", names)
+        self.assertEqual(ole_payload, b"")
         self.assertNotIn(b"OLEObject", document_xml)
-        self.assertNotIn(b"rIdOle", relationships_xml)
+        self.assertIn(b"rIdOle", relationships_xml)
         self.assertIn(b"rIdImage", relationships_xml)
+        self.assertIn(b"word/embeddings/equation.bin", content_types_xml)
 
     def test_formula_fallback_keeps_equation_text(self):
         result = _build_formula_fallback_docx(_formula_docx())
@@ -124,7 +137,10 @@ class CorrectedDocumentPreviewTests(SimpleTestCase):
         self.assertEqual(first, second)
         self.assertEqual(len(converted_sources), 1)
         with ZipFile(io.BytesIO(converted_sources[0])) as archive:
-            self.assertNotIn("word/embeddings/equation.bin", archive.namelist())
+            self.assertEqual(
+                archive.read("word/embeddings/equation.bin"),
+                b"",
+            )
 
     def test_pdf_conversion_retries_with_linear_formula_fallback(self):
         converted_sources = []

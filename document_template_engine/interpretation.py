@@ -153,4 +153,51 @@ def interpret_template_text(
             if not re.search(r"(?:абзацн\w*\s+отступ|выравнив)", references_context):
                 style.pop("first_line_indent_cm", None)
                 style.pop("alignment", None)
+
+    if re.search(
+        r"не\s+допуска\w*(?:.{0,80})ручн\w*\s+перенос",
+        source,
+        re.S,
+    ):
+        notes = [
+            str(note)
+            for note in normalized.get("notes") or []
+            if not (
+                (
+                    re.search(r"ручн\w*\s+перенос", str(note), re.I)
+                    or (
+                        re.search(r"маркер", str(note), re.I)
+                        and re.search(r"вручн", str(note), re.I)
+                    )
+                )
+                and not re.search(
+                    r"(?:не\s+допуска|запрещ|нельзя|без\s+ручн)",
+                    str(note),
+                    re.I,
+                )
+            )
+        ]
+        canonical_note = "Ручные переносы не допускаются"
+        if not any(
+            re.search(r"ручн\w*\s+перенос", note, re.I)
+            and re.search(r"(?:не\s+допуска|запрещ|нельзя)", note, re.I)
+            for note in notes
+        ):
+            notes.append(canonical_note)
+        normalized["notes"] = notes
+
+    for object_kind in ("figures", "tables"):
+        object_rules = normalized.get(object_kind) or {}
+        position = str(object_rules.get("caption_position") or "").casefold()
+        if position in {
+            "left",
+            "right",
+            "center",
+            "justify",
+            "слева",
+            "справа",
+            "по центру",
+            "по ширине",
+        }:
+            object_rules["caption_position"] = ""
     return normalized

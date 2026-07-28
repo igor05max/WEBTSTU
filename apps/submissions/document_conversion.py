@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+import io
+import re
 
 from django.conf import settings
 
@@ -17,6 +19,49 @@ LEGACY_DOC_SIGNATURE = bytes.fromhex("d0cf11e0a1b11ae1")
 
 class LegacyDocConversionError(ValueError):
     pass
+
+
+_PARAGRAPH_ALIGNMENT_PATTERN = re.compile(
+    rb'(<w:jc\b[^>]*\bw:val=")(start|end)(")',
+)
+
+
+def normalize_docx_compatibility(data):
+    """
+    Normalize valid OOXML alignment values unsupported by python-docx 1.2.
+
+    LibreOffice emits the bidi-aware values ``start`` and ``end`` when it
+    converts old DOC files.  python-docx raises ValueError while reading those
+    paragraphs, so normalize them in the working DOCX copy.  The source DOC is
+    preserved separately by the submission service.
+    """
+
+    try:
+        source = io.BytesIO(data)
+        output = io.BytesIO()
+        changed = False
+        with zipfile.ZipFile(source) as input_archive, zipfile.ZipFile(
+            output,
+            "w",
+            zipfile.ZIP_DEFLATED,
+        ) as output_archive:
+            for info in input_archive.infolist():
+                payload = input_archive.read(info.filename)
+                if info.filename.endswith(".xml"):
+                    normalized = _PARAGRAPH_ALIGNMENT_PATTERN.sub(
+                        lambda match: (
+                            match.group(1)
+                            + (b"left" if match.group(2) == b"start" else b"right")
+                            + match.group(3)
+                        ),
+                        payload,
+                    )
+                    changed = changed or normalized != payload
+                    payload = normalized
+                output_archive.writestr(info, payload)
+    except (OSError, zipfile.BadZipFile):
+        return data
+    return output.getvalue() if changed else data
 
 
 def _libreoffice_executable():
@@ -110,4 +155,4 @@ def convert_legacy_doc_to_docx(data):
             raise LegacyDocConversionError(
                 f"Конвертер не смог преобразовать DOC в DOCX.{detail}"
             )
-        return converted_path.read_bytes()
+        return normalize_docx_compatibility(converted_path.read_bytes())
