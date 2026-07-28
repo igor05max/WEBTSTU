@@ -267,6 +267,55 @@ class PublicationTopicAndTemplateTests(TestCase):
             status_code=422,
         )
 
+    def test_recognised_mdpi_sensors_pdf_enables_safe_docx_formatting(self):
+        from io import BytesIO
+
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen.canvas import Canvas
+
+        output = BytesIO()
+        canvas = Canvas(output, pagesize=A4)
+        canvas.drawString(72, 790, "MDPI Sensors peer-review manuscript")
+        canvas.drawString(72, 750, "Abstract")
+        canvas.drawString(72, 720, "Keywords: sensor; calibration")
+        canvas.drawString(72, 680, "1. Introduction")
+        canvas.drawString(72, 640, "2. Experiments")
+        canvas.drawString(72, 600, "3. Conclusions")
+        canvas.drawString(72, 560, "References")
+        canvas.drawString(72, 520, "https://doi.org/10.3390/example")
+        canvas.save()
+
+        template = create_formatting_template(
+            article_type=self.article_type,
+            publication_topic=resolve_or_create_publication_topic(
+                "Sensors MDPI sample",
+                created_by=self.user,
+            )[0],
+            uploaded_by=self.user,
+            file=SimpleUploadedFile(
+                "sensors-4449654-peer-review-v1.pdf",
+                output.getvalue(),
+                content_type="application/pdf",
+            ),
+        )
+        process_formatting_template(template)
+        template.refresh_from_db()
+
+        rules = template.extracted_rules
+        document_rules = rules["document"]
+        self.assertTrue(document_rules["rules_reliable"])
+        self.assertEqual(document_rules["publisher_profile"], "mdpi_sensors")
+        self.assertEqual(document_rules["auto_format_mode"], "safe_typography")
+        self.assertFalse(document_rules["latex_generation_allowed"])
+        self.assertEqual(rules["page"], {"size": "A4", "orientation": "portrait"})
+        self.assertEqual(rules["body"]["font_family"], "Palatino Linotype")
+        self.assertEqual(rules["body"]["font_size_pt"], 10)
+        self.assertEqual(rules["body"]["line_spacing"], 1)
+        self.assertEqual(rules["body"]["alignment"], "justify")
+        self.assertEqual(rules["structure"]["required_sections"], [])
+        self.assertNotIn("margins_cm", rules["page"])
+        self.assertIn("Автоматическое оформление DOCX включено", template.analysis_message)
+
     def test_docx_builder_really_changes_page_size_to_a4(self):
         from io import BytesIO
 

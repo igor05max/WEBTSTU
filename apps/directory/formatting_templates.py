@@ -564,6 +564,74 @@ def _sample_manuscript_rules(deterministic_rules, classification, text):
     }
 
 
+def _publisher_sample_profile(file_name, text):
+    """
+    Return a conservative formatting profile for a recognised publisher sample.
+
+    A published article is not a normative template: its text column and section
+    names must not become mandatory rules.  Some publisher samples can still be
+    used safely for typography when the publisher and journal are unambiguous.
+    """
+
+    name = Path(file_name or "").name.casefold()
+    source = str(text or "").casefold()
+    mdpi_sensors_name = bool(
+        re.search(r"(?:^|[/\\])?sensors-\d+-peer-review-v\d+\.pdf$", name)
+    )
+    mdpi_sensors_text = (
+        "mdpi" in source
+        and (
+            re.search(r"\bsensors\b", source)
+            or "mdpi.com/journal/sensors" in source
+        )
+    )
+    if not (mdpi_sensors_name or mdpi_sensors_text):
+        return {}
+
+    return {
+        "page": {"size": "A4", "orientation": "portrait"},
+        "body": {
+            "font_family": "Palatino Linotype",
+            "font_size_pt": 10,
+            "line_spacing": 1,
+            "alignment": "justify",
+        },
+        "headings": {
+            "font_family": "Palatino Linotype",
+            "font_size_pt": 10,
+            "title_font_size_pt": 18,
+            "color_hex": "000000",
+        },
+        "document": {
+            "source_kind": "publisher_sample",
+            "publisher_profile": "mdpi_sensors",
+            "auto_format_mode": "safe_typography",
+            "rules_reliable": True,
+            # A standalone generic LaTeX file cannot replace the official MDPI
+            # class and Definitions directory.  DOCX formatting is available.
+            "latex_generation_allowed": False,
+            "source_notice": (
+                "PDF распознан как образец Sensors/MDPI. Автоматическое "
+                "оформление DOCX включено в безопасном режиме: применяются "
+                "типографика и формат страницы, а поля колонки и заголовки "
+                "конкретной статьи не становятся обязательными."
+            ),
+        },
+        "structure": {"required_sections": [], "section_order": []},
+        "metadata": {"required_fields": []},
+        "languages": ["en"],
+        "notes": [
+            "Поля журнальной колонки и боковая издательская панель не копируются.",
+            "Для LaTeX требуется официальный MDPI TEX/ZIP с каталогом Definitions.",
+        ],
+        "source_classification": {
+            "kind": "publisher_sample",
+            "confidence": 0.99,
+            "publisher_profile": "mdpi_sensors",
+        },
+    }
+
+
 def _extract_docx_rules(data):
     try:
         from docx import Document
@@ -839,9 +907,11 @@ def process_formatting_template(template):
         text, deterministic_rules, parse_warning = _extract_template_content(template)
         classification = _classify_template_source(template.file.name, text)
         if classification["kind"] == "sample_manuscript":
+            publisher_profile = _publisher_sample_profile(template.file.name, text)
             template.source_text = text
             template.extracted_rules = normalize_template_rules(
-                _sample_manuscript_rules(
+                publisher_profile
+                or _sample_manuscript_rules(
                     deterministic_rules,
                     classification,
                     text,
@@ -849,12 +919,19 @@ def process_formatting_template(template):
             )
             template.rule_conflicts = []
             template.analysis_status = FormattingTemplateStatus.PARTIAL
-            template.analysis_message = (
-                "PDF распознан как готовая свёрстанная статья, а не как "
-                "нормативный шаблон. Автоматическое применение полей, шрифтов "
-                "и разделов отключено. Загрузите официальный TEX/ZIP-шаблон "
-                "или текст требований издателя."
-            )
+            if publisher_profile:
+                template.analysis_message = (
+                    "PDF распознан как образец Sensors/MDPI. Автоматическое "
+                    "оформление DOCX включено в безопасном режиме без ложных "
+                    "полей и обязательных заголовков конкретной статьи."
+                )
+            else:
+                template.analysis_message = (
+                    "PDF распознан как готовая свёрстанная статья, а не как "
+                    "нормативный шаблон. Автоматическое применение полей, шрифтов "
+                    "и разделов отключено. Загрузите официальный TEX/ZIP-шаблон "
+                    "или текст требований издателя."
+                )
             template.save(
                 update_fields=[
                     "analysis_status",
