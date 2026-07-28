@@ -74,6 +74,164 @@
     white-space: nowrap;
 }
 
+.document-preview-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.document-preview-download.secondary {
+    color: #31517f;
+    border-color: #d3def0;
+    background: #fff;
+}
+
+.latex-project-summary {
+    padding: 18px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    border-bottom: 1px solid #dce4ef;
+    background: #f7f9fd;
+}
+
+.latex-project-summary > div:first-child {
+    display: grid;
+    gap: 4px;
+}
+
+.latex-project-summary strong {
+    color: #1b2a41;
+}
+
+.latex-project-summary span {
+    color: #64748b;
+    font-size: 0.78rem;
+}
+
+.latex-project-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.latex-project-metrics span {
+    padding: 6px 9px;
+    border: 1px solid #d8e3f5;
+    border-radius: 999px;
+    color: #31517f;
+    background: #fff;
+    font-weight: 700;
+}
+
+.latex-project-warnings {
+    padding: 12px 22px;
+    display: grid;
+    gap: 5px;
+    color: #805b12;
+    border-bottom: 1px solid #f0dba8;
+    background: #fff8e8;
+    font-size: 0.78rem;
+}
+
+.latex-preview-error {
+    margin-top: 24px;
+    margin-bottom: 24px;
+}
+
+.latex-project-files,
+.latex-source-preview {
+    margin: 18px 22px;
+    border: 1px solid #dce4ef;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.latex-project-files summary,
+.latex-source-preview summary {
+    padding: 14px 16px;
+    cursor: pointer;
+    color: #263a58;
+    font-weight: 800;
+}
+
+.latex-project-files > div {
+    padding: 0 16px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.latex-project-files a {
+    padding: 7px 10px;
+    border-radius: 8px;
+    color: #2858a5;
+    background: #eef4ff;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.latex-source-preview pre {
+    max-height: 620px;
+    margin: 0;
+    padding: 18px;
+    overflow: auto;
+    border-top: 1px solid #dce4ef;
+    color: #d7e4ff;
+    background: #111b2e;
+    font: 500 0.78rem/1.6 Consolas, "Courier New", monospace;
+    white-space: pre;
+}
+
+.latex-editor-shell {
+    overflow: hidden;
+}
+
+.latex-editor-form {
+    padding: 22px;
+    display: grid;
+    gap: 18px;
+}
+
+.latex-editor-field {
+    display: grid;
+    gap: 8px;
+}
+
+.latex-editor-field label {
+    color: #24344f;
+    font-weight: 800;
+}
+
+.latex-editor-field textarea {
+    width: 100%;
+    min-height: 620px;
+    padding: 18px;
+    resize: vertical;
+    border: 1px solid #cad7ea;
+    border-radius: 12px;
+    color: #d7e4ff;
+    background: #111b2e;
+    font: 500 0.82rem/1.55 Consolas, "Courier New", monospace;
+    tab-size: 4;
+}
+
+.latex-editor-field.compact textarea {
+    min-height: 84px;
+    color: #24344f;
+    background: #fff;
+    font: inherit;
+}
+
+.latex-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
 .document-preview-download:hover {
     color: #fff;
     transform: translateY(-1px);
@@ -423,6 +581,13 @@
 
 @media (max-width: 760px) {
     .document-preview-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .document-preview-header-actions,
+    .latex-project-summary,
+    .latex-editor-actions {
         align-items: stretch;
         flex-direction: column;
     }

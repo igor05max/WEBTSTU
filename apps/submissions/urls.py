@@ -35,6 +35,21 @@ urlpatterns = [
         views.submission_version_download,
         name="version_download",
     ),
+    path(
+        "<int:pk>/versions/<int:version_pk>/project/",
+        views.submission_version_project_download,
+        name="version_project_download",
+    ),
+    path(
+        "<int:pk>/versions/<int:version_pk>/project-files/<path:asset_path>",
+        views.submission_version_project_file,
+        name="version_project_file",
+    ),
+    path(
+        "<int:pk>/versions/<int:version_pk>/latex/edit/",
+        views.submission_version_latex_editor,
+        name="version_latex_editor",
+    ),
     path("<int:pk>/progress/", views.submission_progress_view, name="progress"),
     path("<int:pk>/start-checks/", views.start_submission_checks_view, name="start_checks"),
     path("<int:pk>/checks-report/", views.submission_checks_report_view, name="checks_report"),

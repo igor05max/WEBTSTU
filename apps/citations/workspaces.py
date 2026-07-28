@@ -565,18 +565,188 @@ def apply_to_docx(*, user_id, token, selections):
     return output, f"{original_stem}_with_citations.docx"
 
 
-def prepare_docx_result(*, user_id, token, selections):
-    output, file_name = apply_to_docx(
+def _latex_without_comments(source):
+    output = list(source)
+    escaped = False
+    in_comment = False
+    for index, character in enumerate(source):
+        if in_comment:
+            if character == "\n":
+                in_comment = False
+            else:
+                output[index] = " "
+            continue
+        if character == "%" and not escaped:
+            output[index] = " "
+            in_comment = True
+            continue
+        if character == "\\":
+            escaped = not escaped
+        else:
+            escaped = False
+    return "".join(output)
+
+
+def _latex_claim_match(source, claim):
+    target = " ".join(str(claim.get("text") or "").split())
+    if not target:
+        return None
+    tokens = target.split()
+    candidates = [tokens]
+    if len(tokens) > 12:
+        candidates.append(tokens[:12])
+    searchable = _latex_without_comments(source)
+    for candidate in candidates:
+        pattern = r"(?:\s+|~+)".join(re.escape(token) for token in candidate)
+        match = re.search(pattern, searchable, flags=re.IGNORECASE)
+        if match is not None:
+            return match
+    return None
+
+
+def _latex_escape_bibliography(value):
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+    }
+    return "".join(replacements.get(character, character) for character in str(value or ""))
+
+
+def apply_to_latex(*, user_id, token, selections):
+    payload = load_workspace(user_id=user_id, token=token)
+    if payload.get("suffix") != ".tex" or not payload.get("source_name"):
+        raise ValueError("Автоматическая вставка LaTeX-ссылок доступна только для TEX.")
+    selected, article_offsets = _selected_sources(payload, selections)
+    if not selected:
+        raise ValueError("Не выбрано ни одного источника.")
+
+    source_path = payload["_directory"] / payload["source_name"]
+    source = source_path.read_text(encoding="utf-8-sig", errors="replace")
+    existing_keys = set(
+        re.findall(r"\\bibitem(?:\s*\[[^\]]*\])?\s*\{\s*([^}]+)\s*\}", source)
+    )
+    key_by_article = {}
+    next_number = len(existing_keys) + 1
+    for article_id, offset in article_offsets.items():
+        candidate = f"rag{next_number + offset}"
+        while candidate in existing_keys:
+            next_number += 1
+            candidate = f"rag{next_number + offset}"
+        existing_keys.add(candidate)
+        key_by_article[article_id] = candidate
+
+    selected_by_placement = {}
+    for claim, result, article_id in selected:
+        target_text = " ".join(str(claim.get("text") or "").split())
+        placement_key = (
+            int(claim.get("paragraph_index") or -1),
+            target_text.casefold().replace("ё", "е"),
+        )
+        group = selected_by_placement.setdefault(
+            placement_key,
+            {"claim": claim, "items": []},
+        )
+        group["items"].append((claim, result, article_id))
+
+    insertions = []
+    for group in selected_by_placement.values():
+        match = _latex_claim_match(source, group["claim"])
+        if match is None:
+            raise ValueError(
+                "Не удалось найти выбранное предложение в главном TEX-файле. "
+                "Документ не создан: источник без маркера не добавляется."
+            )
+        keys = sorted(
+            {
+                key_by_article[article_id]
+                for _claim, _result, article_id in group["items"]
+            }
+        )
+        following = source[match.end() :]
+        existing_cite = re.match(r"\s*\\cite\s*\{\s*([^}]+?)\s*\}", following)
+        if existing_cite:
+            current_keys = [
+                value.strip()
+                for value in existing_cite.group(1).split(",")
+                if value.strip()
+            ]
+            merged = list(dict.fromkeys([*current_keys, *keys]))
+            start = match.end() + existing_cite.start()
+            end = match.end() + existing_cite.end()
+            leading = following[existing_cite.start() : existing_cite.end()]
+            prefix = leading[: len(leading) - len(leading.lstrip())]
+            insertions.append((start, end, f"{prefix}\\cite{{{','.join(merged)}}}"))
+        else:
+            insertions.append((match.end(), match.end(), f" \\cite{{{','.join(keys)}}}"))
+
+    for start, end, replacement in sorted(insertions, reverse=True):
+        source = f"{source[:start]}{replacement}{source[end:]}"
+
+    unique_results = {}
+    for _claim, result, article_id in selected:
+        unique_results.setdefault(article_id, result)
+    entries = []
+    for article_id, result in sorted(
+        unique_results.items(),
+        key=lambda item: key_by_article[item[0]],
+    ):
+        citation = str(result.get("citation") or result.get("title") or "").strip()
+        entries.append(
+            f"\\bibitem{{{key_by_article[article_id]}}} "
+            f"{_latex_escape_bibliography(citation)}"
+        )
+    bibliography_block = "\n".join(entries)
+    end_bibliography = re.search(r"\\end\s*\{\s*thebibliography\s*\}", source)
+    if end_bibliography is not None:
+        source = (
+            f"{source[:end_bibliography.start()]}\n{bibliography_block}\n"
+            f"{source[end_bibliography.start():]}"
+        )
+    else:
+        end_document = re.search(r"\\end\s*\{\s*document\s*\}", source)
+        if end_document is None:
+            raise ValueError("В TEX-файле не найдено завершение окружения document.")
+        block = (
+            "\n\\begin{thebibliography}{99}\n"
+            f"{bibliography_block}\n"
+            "\\end{thebibliography}\n\n"
+        )
+        source = f"{source[:end_document.start()]}{block}{source[end_document.start():]}"
+
+    output = BytesIO(source.encode("utf-8"))
+    original_stem = Path(payload.get("file_name") or "article").stem
+    return output, f"{original_stem}_with_citations.tex"
+
+
+def apply_to_source(*, user_id, token, selections):
+    payload = load_workspace(user_id=user_id, token=token)
+    if payload.get("suffix") == ".docx":
+        return apply_to_docx(user_id=user_id, token=token, selections=selections)
+    if payload.get("suffix") == ".tex":
+        return apply_to_latex(user_id=user_id, token=token, selections=selections)
+    raise ValueError("Автоматическая вставка доступна для DOCX и TEX.")
+
+
+def prepare_result(*, user_id, token, selections):
+    output, file_name = apply_to_source(
         user_id=user_id,
         token=token,
         selections=selections,
     )
     payload = load_workspace(user_id=user_id, token=token)
     selected, _article_numbers = _selected_sources(payload, selections)
-    result_name = "result.docx"
+    result_suffix = Path(file_name).suffix.casefold()
+    result_name = f"result{result_suffix}"
     (payload["_directory"] / result_name).write_bytes(output.getvalue())
     payload["result_name"] = result_name
     payload["result_file_name"] = file_name
+    payload["result_suffix"] = result_suffix
     payload["selections"] = [
         {
             "claim_id": str(claim.get("id") or ""),
@@ -591,6 +761,13 @@ def prepare_docx_result(*, user_id, token, selections):
         encoding="utf-8",
     )
     return payload
+
+
+def prepare_docx_result(*, user_id, token, selections):
+    payload = load_workspace(user_id=user_id, token=token)
+    if payload.get("suffix") != ".docx":
+        raise ValueError("Автоматическая вставка DOCX доступна только для DOCX.")
+    return prepare_result(user_id=user_id, token=token, selections=selections)
 
 
 def read_prepared_result(*, user_id, token):

@@ -25,7 +25,7 @@
     </div>
     <div class="corrected-document-actions">
         <a class="corrected-document-action secondary" href="{% url 'citations:workspace' %}?submission={{ submission.pk }}&amp;workspace={{ workspace_token }}">Назад</a>
-        <a class="corrected-document-action secondary" href="{% url 'citations:submission_result_download' workspace_token %}">Скачать DOCX</a>
+        <a class="corrected-document-action secondary" href="{% url 'citations:submission_result_download' workspace_token %}">Скачать {% if is_latex %}TEX{% else %}DOCX{% endif %}</a>
         <form method="post" action="{% url 'citations:use_submission_result' workspace_token %}"
               data-site-loading data-site-loading-title="Сохраняем документ"
               data-site-loading-message="Создаём новую версию материала и запускаем проверки.">
@@ -46,8 +46,20 @@
                 <span>Предварительная версия с выбранными источниками</span>
             </div>
         </div>
-        <span class="document-preview-format">DOCX</span>
+        <span class="document-preview-format">{% if is_latex %}TEX{% else %}DOCX{% endif %}</span>
     </div>
+    {% if is_latex %}
+    <div class="latex-project-summary">
+        <div>
+            <strong>Маркеры добавлены как \cite{…}</strong>
+            <span>Новые записи добавлены в окружение thebibliography. После подтверждения остальные файлы проекта сохранятся.</span>
+        </div>
+    </div>
+    <details class="latex-source-preview" open>
+        <summary>Проверить исходный код с источниками</summary>
+        <pre>{{ latex_source }}</pre>
+    </details>
+    {% else %}
     <div class="document-preview-pdf" data-corrected-preview-shell>
         <div class="document-preview-loading" data-corrected-preview-loading role="status">
             <span class="document-preview-loading-spinner" aria-hidden="true"></span>
@@ -60,6 +72,7 @@
             src="{% url 'citations:submission_result_content' workspace_token %}#toolbar=1&amp;navpanes=0"
         ></iframe>
     </div>
+    {% endif %}
 </section>
 {% endblock %}
 

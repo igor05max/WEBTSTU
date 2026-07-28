@@ -18,6 +18,12 @@ from apps.directory.models import (
 )
 from apps.submissions.models import Submission
 from apps.submissions.document_analysis import SUPPORTED_EXTENSIONS
+from apps.submissions.latex_projects import (
+    LATEX_ARCHIVE_EXTENSION,
+    LATEX_MAX_ARCHIVE_BYTES,
+    LatexProjectError,
+    prepare_material_upload,
+)
 from apps.submissions.route_suggestions import (
     get_selectable_directions_queryset,
     get_selectable_route_templates_queryset,
@@ -135,6 +141,20 @@ class SubmissionCreateForm(forms.ModelForm):
         help_text="Проверка необязательна и не блокирует отправку.",
     )
     file = forms.FileField(label="Файл материала")
+    latex_main_path = forms.CharField(
+        label="Главный TEX-файл внутри ZIP",
+        required=False,
+        max_length=1000,
+        help_text=(
+            "Необязательно. Например: ARTICLE.tex или manuscript/main.tex. "
+            "Если поле пустое, главный файл определяется автоматически."
+        ),
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "Оставьте пустым для автоматического определения",
+            }
+        ),
+    )
     authors = forms.ModelMultipleChoiceField(
         label="Авторы",
         queryset=User.objects.none(),
@@ -158,6 +178,7 @@ class SubmissionCreateForm(forms.ModelForm):
 
     def __init__(self, *args, current_user=None, **kwargs):
         self.current_user = current_user
+        self.prepared_latex_upload = None
         super().__init__(*args, **kwargs)
         queryset = (
             User.objects.filter(is_active=True)
@@ -195,6 +216,9 @@ class SubmissionCreateForm(forms.ModelForm):
         self.fields["file"].widget.attrs["data-metadata-extract-url"] = reverse(
             "submissions:extract_metadata"
         )
+        self.fields["file"].widget.attrs["accept"] = ",".join(
+            sorted({*SUPPORTED_EXTENSIONS, LATEX_ARCHIVE_EXTENSION})
+        )
         self.fields["title"].required = False
         self.fields["abstract"].required = False
 
@@ -203,14 +227,28 @@ class SubmissionCreateForm(forms.ModelForm):
         if uploaded_file is None:
             return uploaded_file
         suffix = Path(uploaded_file.name).suffix.casefold()
-        if suffix not in SUPPORTED_EXTENSIONS:
-            allowed = ", ".join(sorted(value.lstrip(".").upper() for value in SUPPORTED_EXTENSIONS))
+        allowed_extensions = {*SUPPORTED_EXTENSIONS, LATEX_ARCHIVE_EXTENSION}
+        if suffix not in allowed_extensions:
+            allowed = ", ".join(sorted(value.lstrip(".").upper() for value in allowed_extensions))
             raise forms.ValidationError(f"Формат не поддерживается. Разрешены: {allowed}.")
-        maximum_size = int(getattr(settings, "SUBMISSION_FILE_MAX_SIZE", 50 * 1024 * 1024))
+        maximum_size = (
+            int(getattr(settings, "SUBMISSION_LATEX_ARCHIVE_MAX_SIZE", LATEX_MAX_ARCHIVE_BYTES))
+            if suffix == LATEX_ARCHIVE_EXTENSION
+            else int(getattr(settings, "SUBMISSION_FILE_MAX_SIZE", 50 * 1024 * 1024))
+        )
         if uploaded_file.size > maximum_size:
             raise forms.ValidationError(
                 f"Размер файла превышает {round(maximum_size / 1024 / 1024)} МБ."
             )
+        if suffix in {".tex", LATEX_ARCHIVE_EXTENSION}:
+            try:
+                self.prepared_latex_upload = prepare_material_upload(
+                    uploaded_file,
+                    requested_main_path=str(self.data.get("latex_main_path") or "").strip(),
+                )
+            except LatexProjectError as exc:
+                raise forms.ValidationError(str(exc)) from exc
+            return self.prepared_latex_upload.main_file
         return uploaded_file
 
     def clean_formatting_template_file(self):
@@ -691,11 +729,84 @@ class FormattingRulesForm(forms.Form):
 
 class SubmissionVersionUploadForm(forms.Form):
     file = forms.FileField(label="Новая версия файла")
+    latex_main_path = forms.CharField(
+        label="Главный TEX-файл внутри ZIP",
+        required=False,
+        max_length=1000,
+        help_text="Необязательно: путь внутри ZIP, если его нельзя определить автоматически.",
+    )
     comment = forms.CharField(
         label="Комментарий к версии",
         required=False,
         widget=forms.Textarea(attrs={"rows": 3}),
     )
+
+    def __init__(self, *args, **kwargs):
+        self.prepared_latex_upload = None
+        super().__init__(*args, **kwargs)
+        self.fields["file"].widget.attrs["accept"] = ",".join(
+            sorted({*SUPPORTED_EXTENSIONS, LATEX_ARCHIVE_EXTENSION})
+        )
+
+    def clean_file(self):
+        uploaded_file = self.cleaned_data.get("file")
+        if uploaded_file is None:
+            return uploaded_file
+        suffix = Path(uploaded_file.name).suffix.casefold()
+        allowed_extensions = {*SUPPORTED_EXTENSIONS, LATEX_ARCHIVE_EXTENSION}
+        if suffix not in allowed_extensions:
+            allowed = ", ".join(
+                sorted(value.lstrip(".").upper() for value in allowed_extensions)
+            )
+            raise forms.ValidationError(f"Формат не поддерживается. Разрешены: {allowed}.")
+        maximum_size = (
+            int(getattr(settings, "SUBMISSION_LATEX_ARCHIVE_MAX_SIZE", LATEX_MAX_ARCHIVE_BYTES))
+            if suffix == LATEX_ARCHIVE_EXTENSION
+            else int(getattr(settings, "SUBMISSION_FILE_MAX_SIZE", 50 * 1024 * 1024))
+        )
+        if uploaded_file.size > maximum_size:
+            raise forms.ValidationError(
+                f"Размер файла превышает {round(maximum_size / 1024 / 1024)} МБ."
+            )
+        if suffix in {".tex", LATEX_ARCHIVE_EXTENSION}:
+            try:
+                self.prepared_latex_upload = prepare_material_upload(
+                    uploaded_file,
+                    requested_main_path=str(self.data.get("latex_main_path") or "").strip(),
+                )
+            except LatexProjectError as exc:
+                raise forms.ValidationError(str(exc)) from exc
+            return self.prepared_latex_upload.main_file
+        return uploaded_file
+
+
+class LatexSourceEditForm(forms.Form):
+    source = forms.CharField(
+        label="Исходный код главного TEX-файла",
+        max_length=4_000_000,
+        widget=forms.Textarea(
+            attrs={
+                "rows": 34,
+                "spellcheck": "false",
+                "autocomplete": "off",
+            }
+        ),
+    )
+    comment = forms.CharField(
+        label="Комментарий к новой версии",
+        required=False,
+        max_length=2000,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+
+    def clean_source(self):
+        source = str(self.cleaned_data.get("source") or "")
+        lowered = source.casefold()
+        if "\\begin{document}" not in lowered.replace(" ", ""):
+            raise forms.ValidationError("В исходнике не найдено \\begin{document}.")
+        if "\\end{document}" not in lowered.replace(" ", ""):
+            raise forms.ValidationError("В исходнике не найдено \\end{document}.")
+        return source
 
 
 class SubmissionSubmitForm(forms.Form):

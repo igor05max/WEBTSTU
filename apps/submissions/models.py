@@ -7,6 +7,16 @@ def submission_version_upload_to(instance, filename):
     return f"submission_versions/{submission_id}/v{instance.version_number}/{filename}"
 
 
+def submission_project_upload_to(instance, filename):
+    submission_id = instance.submission_id or "draft"
+    return f"submission_versions/{submission_id}/v{instance.version_number}/project/{filename}"
+
+
+def submission_rendered_upload_to(instance, filename):
+    submission_id = instance.submission_id or "draft"
+    return f"submission_versions/{submission_id}/v{instance.version_number}/rendered/{filename}"
+
+
 def submission_appeal_upload_to(instance, filename):
     submission_id = instance.submission_id or "submission"
     return f"submission_appeals/{submission_id}/{filename}"
@@ -175,6 +185,42 @@ class SubmissionVersion(models.Model):
     )
     version_number = models.PositiveIntegerField(verbose_name="Номер версии")
     file = models.FileField(upload_to=submission_version_upload_to, verbose_name="Файл")
+    project_archive = models.FileField(
+        upload_to=submission_project_upload_to,
+        blank=True,
+        verbose_name="Архив LaTeX-проекта",
+    )
+    project_main_path = models.CharField(
+        max_length=1000,
+        blank=True,
+        verbose_name="Главный файл LaTeX-проекта",
+    )
+    project_manifest = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Состав LaTeX-проекта",
+    )
+    rendered_pdf = models.FileField(
+        upload_to=submission_rendered_upload_to,
+        blank=True,
+        verbose_name="Собранный PDF",
+    )
+    latex_compile_status = models.CharField(
+        max_length=16,
+        choices=(
+            ("pending", "Ожидает сборки"),
+            ("ready", "PDF собран"),
+            ("error", "Ошибка сборки"),
+            ("blocked", "Сборка заблокирована"),
+            ("unavailable", "Компилятор недоступен"),
+        ),
+        default="pending",
+        verbose_name="Состояние сборки LaTeX",
+    )
+    latex_compile_message = models.TextField(
+        blank=True,
+        verbose_name="Сообщение сборки LaTeX",
+    )
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -197,6 +243,14 @@ class SubmissionVersion(models.Model):
 
     def __str__(self):
         return f"{self.submission_id} / v{self.version_number}"
+
+    @property
+    def is_latex(self):
+        return self.file.name.casefold().endswith(".tex")
+
+    @property
+    def is_latex_project(self):
+        return bool(self.is_latex and self.project_archive)
 
 
 class SubmissionAppealStatus(models.TextChoices):

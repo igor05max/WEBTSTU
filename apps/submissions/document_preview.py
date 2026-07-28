@@ -24,6 +24,7 @@ PREVIEW_KINDS = {
     ".txt": "text",
     ".doc": "legacy_doc",
     ".docx": "docx",
+    ".tex": "latex",
 }
 
 WORD_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"

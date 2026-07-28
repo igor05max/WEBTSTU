@@ -1,0 +1,53 @@
+{% extends "workspace_base.html" %}
+{% load static workspace_navigation %}
+
+{% block title %}Редактор LaTeX — {{ submission.title }}{% endblock %}
+{% block sidebar %}{% workspace_sidebar "submissions" %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'submissions/version-preview.css' %}?v=20260728a">{% endblock %}
+
+{% block content %}
+<header class="document-preview-header">
+    <div>
+        <a class="document-preview-back" href="{% url 'submissions:version_preview' submission.pk version.pk %}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            К просмотру
+        </a>
+        <div class="document-preview-kicker">Версия {{ version.version_number }}</div>
+        <h1>Редактор LaTeX</h1>
+        <p>Изменяется главный TEX-файл. Рисунки, стили, библиография и остальные файлы проекта сохранятся в новой версии.</p>
+    </div>
+</header>
+
+<section class="surface latex-editor-shell">
+    <div class="latex-project-summary">
+        <div>
+            <strong>{{ version.project_main_path|default:"Главный TEX-файл" }}</strong>
+            <span>{% if version.project_archive %}Полный проект будет пересобран без потери дополнительных файлов.{% else %}Отдельный TEX-файл без внешнего пакета.{% endif %}</span>
+        </div>
+        <div class="latex-project-metrics">
+            <span>{{ project_manifest.file_count|default:1 }} файлов</span>
+            <span>{{ project_manifest.asset_files|length }} изображений</span>
+        </div>
+    </div>
+    <form method="post" class="latex-editor-form" data-site-loading
+          data-site-loading-title="Сохраняем LaTeX"
+          data-site-loading-message="Создаём новую версию и сохраняем все дополнительные файлы проекта.">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="latex-editor-field">
+            {{ form.source.label_tag }}
+            {{ form.source.errors }}
+            {{ form.source }}
+        </div>
+        <div class="latex-editor-field compact">
+            {{ form.comment.label_tag }}
+            {{ form.comment.errors }}
+            {{ form.comment }}
+        </div>
+        <div class="latex-editor-actions">
+            <a class="button secondary" href="{% url 'submissions:version_preview' submission.pk version.pk %}">Отменить</a>
+            <button type="submit">Сохранить как новую версию</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

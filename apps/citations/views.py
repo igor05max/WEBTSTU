@@ -23,10 +23,10 @@ from apps.citations.matching import (
 )
 from apps.citations.rerank import rerank_claims
 from apps.citations.workspaces import (
-    apply_to_docx,
+    apply_to_source,
     create_workspace,
     load_workspace,
-    prepare_docx_result,
+    prepare_result,
     read_prepared_result,
 )
 from apps.submissions.models import Submission, SubmissionStatus
@@ -35,6 +35,10 @@ from apps.submissions.document_preview import (
     build_docx_bytes_pdf,
 )
 from apps.submissions.services import add_submission_version
+from apps.submissions.latex_projects import (
+    LatexProjectError,
+    replace_project_main_source,
+)
 from apps.submissions.template_processing import prepare_submission_template_by_id
 
 
@@ -93,6 +97,7 @@ def _workspace_result(payload, *, source_title):
         "file_name": payload.get("file_name") or "",
         "token": payload["token"],
         "can_apply_docx": payload.get("suffix") == ".docx",
+        "can_apply_latex": payload.get("suffix") == ".tex",
         "claims": claims,
         "analyzed_claim_count": payload.get("analyzed_claim_count", len(claims)),
         "analysis": payload.get("analysis") or {},
@@ -280,7 +285,7 @@ def apply_citations(request):
         selections = json.loads(request.POST.get("selections") or "[]")
         if not isinstance(selections, list):
             raise ValueError("Некорректный список выбранных источников.")
-        output, file_name = apply_to_docx(
+        output, file_name = apply_to_source(
             user_id=request.user.pk,
             token=token,
             selections=selections,
@@ -297,11 +302,16 @@ def apply_citations(request):
             },
             status=400,
         )
+    is_latex = file_name.casefold().endswith(".tex")
     return FileResponse(
         output,
         as_attachment=True,
         filename=file_name,
-        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        content_type=(
+            "application/x-tex; charset=utf-8"
+            if is_latex
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
     )
 
 
@@ -315,7 +325,7 @@ def prepare_submission_result(request):
             raise ValueError("Некорректный список выбранных источников.")
         payload = load_workspace(user_id=request.user.pk, token=token)
         _workspace_submission(request, payload)
-        prepare_docx_result(
+        prepare_result(
             user_id=request.user.pk,
             token=token,
             selections=selections,
@@ -330,7 +340,7 @@ def prepare_submission_result(request):
 @require_GET
 def submission_result_preview(request, token):
     try:
-        payload, _result_bytes = read_prepared_result(
+        payload, result_bytes = read_prepared_result(
             user_id=request.user.pk,
             token=token,
         )
@@ -345,6 +355,12 @@ def submission_result_preview(request, token):
             "submission": submission,
             "workspace_token": token,
             "display_filename": payload.get("result_file_name") or "material-with-sources.docx",
+            "is_latex": payload.get("result_suffix") == ".tex",
+            "latex_source": (
+                result_bytes.decode("utf-8", errors="replace")
+                if payload.get("result_suffix") == ".tex"
+                else ""
+            ),
         },
     )
 
@@ -359,6 +375,11 @@ def submission_result_content(request, token):
             token=token,
         )
         _workspace_submission(request, payload)
+        if payload.get("result_suffix") == ".tex":
+            return HttpResponse(
+                result_bytes,
+                content_type="application/x-tex; charset=utf-8",
+            )
         preview_bytes = build_docx_bytes_pdf(result_bytes)
     except (ValueError, PermissionError, FileNotFoundError) as exc:
         return HttpResponse(str(exc), status=404)
@@ -390,11 +411,16 @@ def submission_result_download(request, token):
     except (ValueError, PermissionError, FileNotFoundError) as exc:
         messages.error(request, str(exc))
         return redirect("citations:workspace")
+    is_latex = payload.get("result_suffix") == ".tex"
     return FileResponse(
         BytesIO(result_bytes),
         as_attachment=True,
         filename=payload.get("result_file_name") or "material-with-sources.docx",
-        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        content_type=(
+            "application/x-tex; charset=utf-8"
+            if is_latex
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
     )
 
 
@@ -409,7 +435,8 @@ def use_submission_result(request, token):
         submission = _workspace_submission(request, payload)
         if submission.status != SubmissionStatus.DRAFT:
             raise ValueError("Источники можно добавить только до запуска проверок.")
-        if submission.formatting_template_id:
+        result_is_latex = payload.get("result_suffix") == ".tex"
+        if submission.formatting_template_id and not result_is_latex:
             prepare_submission_template_by_id(
                 submission.pk,
                 template_id=submission.formatting_template_id,
@@ -417,17 +444,27 @@ def use_submission_result(request, token):
                 start_checks=False,
             )
             submission.refresh_from_db()
+        if result_is_latex:
+            prepared = replace_project_main_source(
+                submission.current_version,
+                result_bytes.decode("utf-8", errors="replace"),
+            )
+            material_file = prepared.main_file
+        else:
+            prepared = None
+            material_file = ContentFile(
+                result_bytes,
+                name=payload.get("result_file_name") or "material-with-sources.docx",
+            )
         add_submission_version(
             submission,
             request.user,
-            ContentFile(
-                result_bytes,
-                name=payload.get("result_file_name") or "material-with-sources.docx",
-            ),
+            material_file,
             comment="Добавлены выбранные источники из локальной RAG-системы.",
             expected_current_version_id=payload.get("source_version_id"),
+            latex_project=prepared,
         )
-    except (ValueError, PermissionError, FileNotFoundError) as exc:
+    except (LatexProjectError, ValueError, PermissionError, FileNotFoundError) as exc:
         messages.error(request, str(exc))
         return redirect("citations:workspace")
     messages.success(

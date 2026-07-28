@@ -18,10 +18,22 @@
             <h1>Просмотр файла</h1>
             <p>{{ submission.title }}</p>
         </div>
-        <a class="document-preview-download" href="{% url 'submissions:version_download' submission.pk version.pk %}">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
-            Скачать оригинал
-        </a>
+        <div class="document-preview-header-actions">
+            {% if can_edit_latex %}
+                <a class="document-preview-download secondary" href="{% url 'submissions:version_latex_editor' submission.pk version.pk %}">
+                    Редактировать TEX
+                </a>
+            {% endif %}
+            {% if version.project_archive %}
+                <a class="document-preview-download secondary" href="{% url 'submissions:version_project_download' submission.pk version.pk %}">
+                    Скачать весь проект
+                </a>
+            {% endif %}
+            <a class="document-preview-download" href="{% url 'submissions:version_download' submission.pk version.pk %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+                Скачать оригинал
+            </a>
+        </div>
     </header>
 
     <section class="surface document-preview-shell" aria-labelledby="document-preview-name">
@@ -38,7 +50,52 @@
             <span class="document-preview-format">{{ preview_label }}</span>
         </div>
 
-        {% if preview_error %}
+        {% if preview_kind == "latex" or preview_kind == "latex_pdf" %}
+            <div class="latex-project-summary">
+                <div>
+                    <strong>{% if version.project_archive %}LaTeX-проект{% else %}Отдельный TEX-файл{% endif %}</strong>
+                    <span>Главный файл: {{ version.project_main_path|default:display_filename }}</span>
+                </div>
+                <div class="latex-project-metrics">
+                    <span>{{ project_manifest.file_count|default:1 }} файлов</span>
+                    <span>{{ project_manifest.asset_files|length }} изображений</span>
+                    <span>{{ project_manifest.tex_files|length }} TEX</span>
+                </div>
+            </div>
+            {% if project_manifest.warnings %}
+                <div class="latex-project-warnings">
+                    {% for warning in project_manifest.warnings %}<div>{{ warning }}</div>{% endfor %}
+                </div>
+            {% endif %}
+            {% if preview_error %}
+                <div class="document-preview-message error latex-preview-error">
+                    <strong>PDF пока не собран</strong>
+                    <span>{{ preview_error }}</span>
+                    <span>Исходный код и дополнительные файлы доступны ниже и не потеряны.</span>
+                </div>
+            {% else %}
+                <div class="document-preview-pdf">
+                    <iframe
+                        title="Предпросмотр {{ display_filename }}"
+                        src="{% url 'submissions:version_content' submission.pk version.pk %}?render=2#toolbar=1&amp;navpanes=0"
+                    ></iframe>
+                </div>
+            {% endif %}
+            {% if project_manifest.asset_files %}
+                <details class="latex-project-files">
+                    <summary>Рисунки и дополнительные материалы ({{ project_manifest.asset_files|length }})</summary>
+                    <div>
+                        {% for asset in project_manifest.asset_files %}
+                            <a href="{% url 'submissions:version_project_file' submission.pk version.pk asset %}" target="_blank" rel="noreferrer">{{ asset }}</a>
+                        {% endfor %}
+                    </div>
+                </details>
+            {% endif %}
+            <details class="latex-source-preview"{% if preview_error %} open{% endif %}>
+                <summary>Исходный код {{ version.project_main_path|default:display_filename }}</summary>
+                <pre>{{ latex_source }}</pre>
+            </details>
+        {% elif preview_error %}
             <div class="document-preview-message error">
                 <strong>Не удалось показать файл</strong>
                 <span>{{ preview_error }}</span>

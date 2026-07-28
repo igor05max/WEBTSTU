@@ -94,7 +94,7 @@
                     <span class="submission-section-number">02</span>
                     <div>
                         <h2 id="material-file-title">Загрузите материал</h2>
-                        <p>Сейчас нужен только сам документ. Пока вы продолжаете, система распознает название, авторов, аннотацию и другие сведения.</p>
+                        <p>Можно загрузить отдельный документ, TEX-файл или ZIP с полным LaTeX-проектом, рисунками, стилями и библиографией.</p>
                     </div>
                 </div>
 
@@ -107,12 +107,18 @@
                         <div class="submission-file-copy">
                             <strong data-file-title>Перетащите файл сюда</strong>
                             <span data-file-meta>или выберите его на компьютере</span>
-                            <small>Поддерживаются DOCX, DOC, PDF, TXT и другие разрешённые форматы.</small>
+                            <small>Поддерживаются DOCX, DOC, PDF, TEX и ZIP с полным LaTeX-проектом.</small>
                         </div>
                         <label class="submission-file-button" for="{{ form.file.id_for_label }}">Выбрать файл</label>
                         {{ form.file }}
                     </div>
                     {% if form.file.errors %}<div class="submission-field-errors">{{ form.file.errors }}</div>{% endif %}
+                </div>
+
+                <div class="submission-field{% if form.latex_main_path.errors %} has-error{% endif %}">
+                    <label for="{{ form.latex_main_path.id_for_label }}">{{ form.latex_main_path.label }}</label>
+                    {{ form.latex_main_path }}
+                    {% if form.latex_main_path.errors %}<div class="submission-field-errors">{{ form.latex_main_path.errors }}</div>{% else %}<small>{{ form.latex_main_path.help_text }}</small>{% endif %}
                 </div>
 
                 <div class="submission-wizard-actions">

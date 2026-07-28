@@ -1,5 +1,8 @@
 import logging
+import mimetypes
+from io import BytesIO
 from pathlib import Path
+from zipfile import BadZipFile, ZipFile
 
 from django.conf import settings
 from django.contrib import messages
@@ -30,6 +33,7 @@ from apps.directory.publication_topics import resolve_or_create_publication_topi
 from apps.submissions.forms import (
     FormattingTemplateAttachForm,
     FormattingRulesForm,
+    LatexSourceEditForm,
     SubmissionAppealDecisionForm,
     SubmissionAppealForm,
     SubmissionCreateForm,
@@ -55,6 +59,14 @@ from apps.submissions.document_ai import analyze_document
 from apps.submissions.document_analysis import match_authors_to_users, read_file_bytes
 from apps.submissions.article_extraction import filter_probable_person_names
 from apps.submissions.models import Submission, SubmissionAppeal, SubmissionStatus, SubmissionVersion
+from apps.submissions.latex_projects import (
+    LATEX_MAX_ARCHIVE_BYTES,
+    LatexProjectError,
+    build_latex_project_pdf,
+    prepare_material_upload,
+    read_version_latex_source,
+    replace_project_main_source,
+)
 from apps.submissions.template_processing import (
     prepare_submission_template_by_id,
     queue_submission_template_processing,
@@ -955,6 +967,7 @@ def submission_create(request):
                 keywords=form.cleaned_data["keywords"] or metadata.get("keywords", ""),
                 defer_checks=True,
                 mark_as_checking=False,
+                latex_project=form.prepared_latex_upload,
             )
             if template_requires_processing:
                 queue_submission_template_processing(
@@ -1051,16 +1064,33 @@ def extract_submission_metadata_view(request):
     uploaded_file = request.FILES.get("file")
     if uploaded_file is None:
         return JsonResponse({"error": "Файл не передан."}, status=400)
-    maximum_size = int(getattr(settings, "SUBMISSION_FILE_MAX_SIZE", 50 * 1024 * 1024))
+    maximum_size = (
+        int(getattr(settings, "SUBMISSION_LATEX_ARCHIVE_MAX_SIZE", LATEX_MAX_ARCHIVE_BYTES))
+        if Path(uploaded_file.name).suffix.casefold() == ".zip"
+        else int(getattr(settings, "SUBMISSION_FILE_MAX_SIZE", 50 * 1024 * 1024))
+    )
     if uploaded_file.size > maximum_size:
         return JsonResponse(
             {"error": f"Файл превышает лимит {round(maximum_size / 1024 / 1024)} МБ."},
             status=400,
         )
     semantic_requested = request.POST.get("semantic") == "1"
+    try:
+        prepared_latex = prepare_material_upload(
+            uploaded_file,
+            requested_main_path=str(request.POST.get("latex_main_path") or "").strip(),
+        )
+    except LatexProjectError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    if prepared_latex is not None:
+        analyzed_file = prepared_latex.main_file
+        project_analysis = prepared_latex.manifest
+    else:
+        analyzed_file = uploaded_file
+        project_analysis = {}
     snapshot = analyze_document(
-        read_file_bytes(uploaded_file),
-        uploaded_file.name,
+        read_file_bytes(analyzed_file),
+        analyzed_file.name,
         use_ai=semantic_requested,
     )
     metadata = snapshot.get("metadata") or {}
@@ -1101,6 +1131,7 @@ def extract_submission_metadata_view(request):
                 "references": len((snapshot.get("article") or {}).get("references") or []),
                 "needs_review": metadata.get("needs_review") or [],
                 "semantic_refinement": snapshot.get("semantic_refinement") or {},
+                "latex_project": project_analysis,
             },
         }
     )
@@ -1481,6 +1512,8 @@ def submission_version_preview(request, pk, version_pk):
     rendered_preview_kind = preview_kind
     text_content = ""
     document_blocks = []
+    latex_source = ""
+    project_manifest = {}
     is_truncated = False
     try:
         if preview_kind == "text":
@@ -1496,6 +1529,14 @@ def submission_version_preview(request, pk, version_pk):
                 document_blocks, is_truncated = read_docx_preview(version.file)
         elif preview_kind == "legacy_doc":
             build_legacy_doc_pdf(version)
+        elif preview_kind == "latex":
+            latex_source = read_version_latex_source(version)
+            project_manifest = version.project_manifest or {}
+            try:
+                build_latex_project_pdf(version)
+                rendered_preview_kind = "latex_pdf"
+            except LatexProjectError as exc:
+                preview_error = str(exc)
     except (DocumentPreviewError, OSError) as exc:
         preview_error = str(exc) or "Не удалось открыть файл для просмотра."
 
@@ -1509,9 +1550,18 @@ def submission_version_preview(request, pk, version_pk):
             "preview_error": preview_error,
             "text_content": text_content,
             "document_blocks": document_blocks,
+            "latex_source": latex_source,
+            "project_manifest": project_manifest,
             "is_truncated": is_truncated,
             "display_filename": get_display_filename(version.file.name),
             "preview_label": "DOC" if preview_kind == "legacy_doc" else preview_kind.upper(),
+            "can_edit_latex": bool(
+                version.is_latex
+                and (
+                    version.submission.author_id == request.user.id
+                    or request.user.is_superuser
+                )
+            ),
         },
     )
 
@@ -1521,7 +1571,7 @@ def submission_version_preview(request, pk, version_pk):
 def submission_version_content(request, pk, version_pk):
     version = _get_viewable_submission_version(request, pk, version_pk)
     preview_kind = get_preview_kind(version.file.name)
-    if preview_kind not in {"pdf", "legacy_doc", "docx"}:
+    if preview_kind not in {"pdf", "legacy_doc", "docx", "latex"}:
         raise Http404
     try:
         if preview_kind == "legacy_doc":
@@ -1532,10 +1582,13 @@ def submission_version_content(request, pk, version_pk):
             filename = f"{get_display_filename(version.file.name)}.pdf"
         elif preview_kind == "docx":
             raise Http404
+        elif preview_kind == "latex":
+            source = build_latex_project_pdf(version).open("rb")
+            filename = f"{Path(version.file.name).stem}.pdf"
         else:
             source = version.file.open("rb")
             filename = get_display_filename(version.file.name)
-    except (DocumentPreviewError, OSError) as exc:
+    except (DocumentPreviewError, LatexProjectError, OSError) as exc:
         raise Http404 from exc
     response = FileResponse(
         source,
@@ -1559,6 +1612,118 @@ def submission_version_download(request, pk, version_pk):
         as_attachment=True,
         filename=get_display_filename(version.file.name),
         content_type="application/octet-stream",
+    )
+
+
+@login_required
+def submission_version_project_download(request, pk, version_pk):
+    version = _get_viewable_submission_version(request, pk, version_pk)
+    if not version.project_archive:
+        raise Http404
+    try:
+        source = version.project_archive.open("rb")
+    except OSError as exc:
+        raise Http404 from exc
+    return FileResponse(
+        source,
+        as_attachment=True,
+        filename=Path(version.project_archive.name).name,
+        content_type="application/zip",
+    )
+
+
+@login_required
+def submission_version_project_file(request, pk, version_pk, asset_path):
+    version = _get_viewable_submission_version(request, pk, version_pk)
+    if not version.project_archive:
+        raise Http404
+    normalized = str(asset_path or "").replace("\\", "/").lstrip("/")
+    manifest_paths = {
+        str(path)
+        for path in [
+            *((version.project_manifest or {}).get("asset_files") or []),
+            *((version.project_manifest or {}).get("tex_files") or []),
+        ]
+    }
+    if normalized not in manifest_paths:
+        raise Http404
+    try:
+        with version.project_archive.open("rb") as source, ZipFile(source) as archive:
+            payload = archive.read(normalized)
+    except (BadZipFile, KeyError, OSError) as exc:
+        raise Http404 from exc
+    content_type = mimetypes.guess_type(normalized)[0] or "application/octet-stream"
+    response = FileResponse(
+        BytesIO(payload),
+        as_attachment=False,
+        filename=Path(normalized).name,
+        content_type=content_type,
+    )
+    patch_cache_control(response, private=True, no_store=True)
+    return response
+
+
+@login_required
+def submission_version_latex_editor(request, pk, version_pk):
+    version = _get_viewable_submission_version(request, pk, version_pk)
+    submission = version.submission
+    if not version.is_latex:
+        raise Http404
+    if submission.author_id != request.user.id and not request.user.is_superuser:
+        return HttpResponseForbidden("Редактор доступен только автору.")
+    if request.method == "POST":
+        if submission.current_version_id != version.pk:
+            messages.error(request, "Редактировать можно только текущую версию.")
+            return redirect("submissions:detail", pk=submission.pk)
+        if submission.status not in _CORRECTED_VERSION_CREATION_STATUSES:
+            messages.error(request, "Сейчас нельзя создать новую версию материала.")
+            return redirect("submissions:detail", pk=submission.pk)
+        form = LatexSourceEditForm(request.POST)
+        if form.is_valid():
+            try:
+                prepared = replace_project_main_source(
+                    version,
+                    form.cleaned_data["source"],
+                )
+                new_version = add_submission_version(
+                    submission=submission,
+                    uploaded_by=request.user,
+                    file=prepared.main_file,
+                    comment=(
+                        form.cleaned_data["comment"]
+                        or "Главный TEX-файл изменён во встроенном редакторе."
+                    ),
+                    expected_current_version_id=version.pk,
+                    latex_project=prepared,
+                )
+            except (LatexProjectError, PermissionError, ValueError) as exc:
+                form.add_error(None, str(exc))
+            else:
+                messages.success(
+                    request,
+                    f"Создана версия v{new_version.version_number}; дополнительные файлы проекта сохранены.",
+                )
+                return redirect(
+                    "submissions:version_preview",
+                    pk=submission.pk,
+                    version_pk=new_version.pk,
+                )
+    else:
+        form = LatexSourceEditForm(
+            initial={
+                "source": read_version_latex_source(version),
+                "comment": "",
+            }
+        )
+    return render(
+        request,
+        "submissions/latex_editor.html",
+        {
+            "submission": submission,
+            "version": version,
+            "form": form,
+            "project_manifest": version.project_manifest or {},
+        },
     )
 
 
@@ -1778,6 +1943,7 @@ def upload_submission_version(request, pk):
                 uploaded_by=request.user,
                 file=form.cleaned_data["file"],
                 comment=form.cleaned_data["comment"],
+                latex_project=form.prepared_latex_upload,
             )
         except (PermissionError, ValueError) as exc:
             messages.error(request, str(exc))

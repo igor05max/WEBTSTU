@@ -77,7 +77,7 @@
         <div>
             <h2>Что нужно проанализировать</h2>
         </div>
-        <p>Выберите один вариант. DOC будет преобразован в DOCX, после подбора файл можно скачать с уже добавленными ссылками.</p>
+        <p>Выберите один вариант. Источники можно автоматически вставить в DOCX или TEX; полный LaTeX-проект при этом сохраняет рисунки и дополнительные файлы.</p>
     </div>
     <form method="post" enctype="multipart/form-data" class="citation-search-form" data-citation-source-form data-no-site-loading>
         {% csrf_token %}
@@ -250,17 +250,17 @@
             <ol class="citation-plan-list" data-plan-list></ol>
             {{ result.selections|json_script:"citation-initial-selections" }}
             <button class="citation-copy-button" type="button" data-copy-plan hidden>Скопировать оформленный список</button>
-            {% if result.can_apply_docx %}
+            {% if result.can_apply_docx or result.can_apply_latex %}
             <form method="post" action="{% if result.submission_id %}{% url 'citations:prepare_submission_result' %}{% else %}{% url 'citations:apply' %}{% endif %}"
                   data-apply-form data-site-loading data-site-loading-title="Добавляем источники"
-                  data-site-loading-message="Формируем новую копию DOCX со ссылками и списком литературы." hidden>
+                  data-site-loading-message="Формируем новую копию материала со ссылками и списком литературы." hidden>
                 {% csrf_token %}
                 <input type="hidden" name="workspace_token" value="{{ result.token }}">
                 <input type="hidden" name="selections" value="[]" data-selection-input>
-                <button class="citation-primary-action" type="submit">{% if result.submission_id %}Сформировать документ с источниками{% else %}Скачать DOCX со ссылками{% endif %}</button>
+                <button class="citation-primary-action" type="submit">{% if result.submission_id %}Сформировать документ с источниками{% elif result.can_apply_latex %}Скачать TEX со ссылками{% else %}Скачать DOCX со ссылками{% endif %}</button>
             </form>
             {% else %}
-            <div class="citation-docx-hint">Автоматическая вставка в файл доступна при анализе DOCX. Для этого материала можно скопировать готовый план.</div>
+            <div class="citation-docx-hint">Автоматическая вставка в файл доступна для DOCX и TEX. Для остальных форматов можно скопировать готовый план.</div>
             {% endif %}
         </aside>
     </div>

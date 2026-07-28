@@ -10,12 +10,17 @@ systemd. Nginx принимает HTTP-запросы и раздаёт толь
 ```bash
 apt-get install -y --no-install-recommends \
   libreoffice-writer libreoffice-math \
+  latexmk texlive-latex-extra texlive-fonts-recommended texlive-lang-cyrillic \
   fonts-dejavu-core fonts-liberation \
   fonts-crosextra-carlito fonts-crosextra-caladea
 ```
 
 `libreoffice-math` обязателен: без него LibreOffice оставляет номера формул, но
 не рисует сами объекты Office Math из DOCX.
+
+`latexmk` и пакеты `texlive-*` используются для безопасного просмотра
+загруженных TEX-файлов и полных ZIP-проектов. Компиляция выполняется без
+shell-escape, с ограничением времени и доступа к файлам вне проекта.
 
 Каталоги на сервере:
 

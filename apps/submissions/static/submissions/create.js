@@ -760,6 +760,7 @@
         var fileInput = document.getElementById("id_file");
         var panel = document.querySelector("[data-metadata-extraction]");
         var optionalDetails = document.querySelector("[data-optional-details]");
+        var latexMainPath = document.getElementById("id_latex_main_path");
         if (!fileInput || !panel) {
             return;
         }
@@ -868,6 +869,9 @@
             );
             var body = new FormData();
             body.append("file", file, file.name);
+            if (latexMainPath && latexMainPath.value.trim()) {
+                body.append("latex_main_path", latexMainPath.value.trim());
+            }
             fetch(endpoint, {
                 method: "POST",
                 body: body,
@@ -929,6 +933,11 @@
         fileInput.addEventListener("change", function () {
             runExtraction();
         });
+        if (latexMainPath) {
+            latexMainPath.addEventListener("change", function () {
+                runExtraction();
+            });
+        }
         if (fileInput.files && fileInput.files.length) {
             runExtraction();
         }

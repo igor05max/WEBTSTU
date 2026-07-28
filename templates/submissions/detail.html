@@ -555,6 +555,12 @@
                                         Посмотреть
                                     </a>
                                 {% endif %}
+                                {% if version.is_latex and submission.current_version_id == version.id and can_edit %}
+                                    <a class="submission-inline-link" href="{% url 'submissions:version_latex_editor' submission.pk version.pk %}">Редактировать TEX</a>
+                                {% endif %}
+                                {% if version.project_archive %}
+                                    <a class="submission-inline-link" href="{% url 'submissions:version_project_download' submission.pk version.pk %}">Скачать проект</a>
+                                {% endif %}
                                 <a class="submission-inline-link" href="{% url 'submissions:version_download' submission.pk version.pk %}">Скачать</a>
                             </div>
                         </div>
