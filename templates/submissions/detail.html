@@ -104,6 +104,17 @@
                 <div class="submission-note-text">
                     Можно закрыть эту страницу: сервер продолжит проверку документа и работу локальных моделей. Результаты появятся здесь автоматически.
                 </div>
+                {% if can_edit and checks_waiting_to_start %}
+                    <form class="stack-top-sm" method="post" action="{% url 'submissions:start_checks' submission.pk %}">
+                        {% csrf_token %}
+                        <button class="button secondary" type="submit"
+                                data-site-loading
+                                data-site-loading-title="Восстанавливаем запуск"
+                                data-site-loading-message="Подготавливаем шаблон и повторно ставим проверки в очередь.">
+                            Перезапустить, если ожидание затянулось
+                        </button>
+                    </form>
+                {% endif %}
             </div>
         {% endif %}
 

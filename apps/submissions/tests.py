@@ -1,4 +1,5 @@
 from django.contrib.auth.models import Group
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,6 +16,7 @@ from django.utils import timezone
 from apps.accounts.roles import CHAIR_HEAD_ROLE_NAME, ensure_chair_head_role_for_org_unit
 from apps.checks.formatting_compliance import build_formatting_compliance_report
 from apps.checks.models import CheckRunStatus
+from apps.checks.services import recover_stalled_submission_checks
 from apps.directory.models import (
     ArticleType,
     Direction,
@@ -843,6 +845,120 @@ class SubmissionCreateViewTests(TestCase):
         )
         self.assertContains(response, "Начать проверки без добавления источников")
         self.assertNotContains(response, "Ожидает запуска.")
+
+    @patch("apps.submissions.views.queue_submission_checks")
+    @patch("apps.submissions.views.prepare_submission_template_by_id")
+    def test_start_checks_recovers_auto_checking_submission_without_runs(
+        self,
+        prepare_template,
+        queue_checks,
+    ):
+        template = FormattingTemplate.objects.create(
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("requirements.txt", b"Formatting requirements"),
+            uploaded_by=self.user,
+        )
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Зависшая проверка",
+            abstract="",
+            journal=self.journal,
+            article_type=self.article_type,
+            formatting_template=template,
+            file=SimpleUploadedFile("article.txt", b"content"),
+            defer_checks=True,
+            mark_as_checking=True,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("submissions:start_checks", args=[submission.pk])
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("submissions:detail", args=[submission.pk]),
+        )
+        prepare_template.assert_called_once_with(
+            submission.pk,
+            template_id=template.pk,
+            expected_version_id=submission.current_version_id,
+            start_checks=False,
+        )
+        queue_checks.assert_called_once()
+        detail_response = self.client.get(
+            reverse("submissions:detail", args=[submission.pk])
+        )
+        self.assertContains(
+            detail_response,
+            "Перезапустить, если ожидание затянулось",
+        )
+
+    @patch("apps.submissions.views.queue_submission_checks")
+    def test_start_checks_does_not_duplicate_existing_current_version_runs(
+        self,
+        queue_checks,
+    ):
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Уже запущенная проверка",
+            abstract="",
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("article.txt", b"content"),
+        )
+        submission.status = SubmissionStatus.AUTO_CHECKING
+        submission.save(update_fields=["status", "updated_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("submissions:start_checks", args=[submission.pk])
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("submissions:detail", args=[submission.pk]),
+        )
+        queue_checks.assert_not_called()
+
+    @patch("apps.checks.services.run_mock_checks", return_value=True)
+    def test_watchdog_claims_auto_checking_submission_without_runs(
+        self,
+        run_checks,
+    ):
+        submission = create_submission_with_initial_version(
+            author=self.user,
+            title="Потерянный фоновый процесс",
+            abstract="",
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("article.txt", b"content"),
+            defer_checks=True,
+            mark_as_checking=True,
+        )
+        Submission.objects.filter(pk=submission.pk).update(
+            updated_at=timezone.now() - timedelta(minutes=5)
+        )
+
+        result = recover_stalled_submission_checks(
+            no_run_grace_seconds=90,
+            submission_ids=[submission.pk],
+        )
+
+        submission.refresh_from_db()
+        self.assertEqual(
+            submission.check_runs.filter(
+                version=submission.current_version,
+            ).count(),
+            5,
+        )
+        self.assertEqual(result["recovered"], [(submission.pk, True)])
+        run_checks.assert_called_once_with(
+            submission,
+            expected_version_id=submission.current_version_id,
+            resume_workflow_after_success=False,
+        )
 
     def test_create_submission_runs_checks_immediately(self):
         submission = create_submission_with_initial_version(

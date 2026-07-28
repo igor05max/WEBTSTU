@@ -1162,7 +1162,19 @@ def start_submission_checks_view(request, pk):
     )
     if submission.author_id != request.user.pk and not request.user.is_superuser:
         return HttpResponseForbidden("Только автор может запустить проверки.")
-    if submission.status != SubmissionStatus.DRAFT:
+    current_version_runs_exist = submission.check_runs.filter(
+        version_id=submission.current_version_id,
+    ).exclude(
+        check_definition__code__in=RETIRED_CHECK_CODES,
+    ).exists()
+    can_recover_stalled_checks = (
+        submission.status == SubmissionStatus.AUTO_CHECKING
+        and not current_version_runs_exist
+    )
+    if (
+        submission.status != SubmissionStatus.DRAFT
+        and not can_recover_stalled_checks
+    ):
         messages.info(request, "Проверки для этого материала уже запущены.")
         return redirect("submissions:detail", pk=submission.pk)
     if submission.current_version is None:
@@ -1178,7 +1190,14 @@ def start_submission_checks_view(request, pk):
         )
         submission.refresh_from_db()
     queue_submission_checks(submission)
-    messages.success(request, "Автоматические проверки текущей версии запущены.")
+    messages.success(
+        request,
+        (
+            "Зависший запуск восстановлен. Автоматические проверки текущей версии запущены."
+            if can_recover_stalled_checks
+            else "Автоматические проверки текущей версии запущены."
+        ),
+    )
     return redirect("submissions:detail", pk=submission.pk)
 
 
@@ -1227,6 +1246,14 @@ def submission_detail(request, pk):
         for run in submission.check_runs.all()
         if run.check_definition.code not in RETIRED_CHECK_CODES
     ]
+    checks_waiting_to_start = bool(
+        submission.status == SubmissionStatus.AUTO_CHECKING
+        and submission.current_version_id
+        and not any(
+            run.version_id == submission.current_version_id
+            for run in check_runs
+        )
+    )
     check_entries = _build_check_entries(submission, check_runs)
     recommendation_run = _get_latest_check_run_for_current_version(
         submission,
@@ -1460,6 +1487,7 @@ def submission_detail(request, pk):
             "route_review_preview_payload": route_review_preview_payload,
             "selected_route_preview_template": selected_route_preview_template,
             "is_auto_checking": submission.status == SubmissionStatus.AUTO_CHECKING,
+            "checks_waiting_to_start": checks_waiting_to_start,
             "is_route_approval_pending": is_route_approval_pending,
             "route_approval_reviewer_name": route_approval_reviewer_name,
             "status_tone": _get_submission_status_tone(submission.status),

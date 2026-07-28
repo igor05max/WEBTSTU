@@ -1,0 +1,16 @@
+[Unit]
+Description=Recover stalled WEBTSTU submission checks
+After=network.target webtstu.service
+
+[Service]
+Type=oneshot
+User=webtstu
+Group=www-data
+WorkingDirectory=/opt/webtstu/app
+EnvironmentFile=/opt/webtstu/shared/.env
+UMask=0027
+ExecStart=/opt/webtstu/venv/bin/python manage.py recover_stalled_submission_checks
+TimeoutStartSec=30min
+PrivateTmp=true
+NoNewPrivileges=true
+

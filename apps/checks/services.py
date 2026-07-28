@@ -2,6 +2,7 @@ import os
 import logging
 import subprocess
 import sys
+from datetime import timedelta
 
 from django.conf import settings
 from django.utils import timezone
@@ -225,6 +226,99 @@ def queue_submission_checks(submission, *, resume_workflow_after_success=False):
             resume_workflow_after_success,
         )
     )
+
+
+def recover_stalled_submission_checks(
+    *,
+    no_run_grace_seconds=90,
+    pending_grace_seconds=600,
+    submission_ids=None,
+):
+    """Synchronously recover auto-checking submissions whose worker never started.
+
+    The normal path remains asynchronous.  This recovery path is intended for a
+    periodic watchdog and deliberately handles only two unambiguous states:
+    there are no runs at all, or every run is still pending long after dispatch.
+    A currently running check is never interrupted.
+    """
+    now = timezone.now()
+    queryset = Submission.objects.filter(
+        status=SubmissionStatus.AUTO_CHECKING,
+        current_version__isnull=False,
+    ).select_related(
+        "current_version",
+        "formatting_template",
+    )
+    if submission_ids is not None:
+        queryset = queryset.filter(pk__in=submission_ids)
+
+    recovered = []
+    skipped = []
+    for submission in queryset.order_by("updated_at", "pk"):
+        version = submission.current_version
+        runs = list(
+            CheckRun.objects.filter(
+                submission=submission,
+                version=version,
+            ).select_related("check_definition")
+        )
+        active_runs = [
+            run
+            for run in runs
+            if run.check_definition.code not in RETIRED_CHECK_CODES
+        ]
+        if any(
+            run.status in {
+                CheckRunStatus.RUNNING,
+                CheckRunStatus.PASSED,
+                CheckRunStatus.FAILED,
+                CheckRunStatus.PARTIAL,
+                CheckRunStatus.NOT_PERFORMED,
+            }
+            for run in active_runs
+        ):
+            skipped.append((submission.id, "active_or_finished"))
+            continue
+
+        if not active_runs:
+            stalled_before = now - timedelta(seconds=no_run_grace_seconds)
+            if submission.updated_at > stalled_before:
+                skipped.append((submission.id, "grace_period"))
+                continue
+        else:
+            oldest_pending_at = min(run.created_at for run in active_runs)
+            stalled_before = now - timedelta(seconds=pending_grace_seconds)
+            if oldest_pending_at > stalled_before:
+                skipped.append((submission.id, "pending_worker"))
+                continue
+
+        # Create pending rows first.  They serve as a durable claim, so a
+        # concurrent retry sees that this submission is already being recovered.
+        prepare_submission_checks(submission, version=version)
+
+        if submission.formatting_template_id:
+            from apps.submissions.template_processing import (
+                prepare_submission_template_by_id,
+            )
+
+            prepare_submission_template_by_id(
+                submission.id,
+                template_id=submission.formatting_template_id,
+                expected_version_id=version.id,
+                start_checks=False,
+            )
+
+        completed = run_mock_checks(
+            submission,
+            expected_version_id=version.id,
+            resume_workflow_after_success=False,
+        )
+        recovered.append((submission.id, bool(completed)))
+
+    return {
+        "recovered": recovered,
+        "skipped": skipped,
+    }
 
 
 def run_mock_checks(submission, *, expected_version_id=None, resume_workflow_after_success=False):
