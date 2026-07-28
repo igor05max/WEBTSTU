@@ -17,7 +17,7 @@
             <div class="document-preview-kicker">Исправленная версия</div>
             <h1>Проверьте документ перед отправкой</h1>
             <p>
-                Пока вы не нажали «Отправить на проверку», текущая версия v{{ source_version.version_number }}
+                Пока вы не нажали «Применить оформление и начать проверки», текущая версия v{{ source_version.version_number }}
                 остаётся без изменений.
             </p>
         </div>
@@ -43,7 +43,7 @@
                   data-site-loading-message="Сохраняем исправленный документ и запускаем проверки.">
                 {% csrf_token %}
                 <button class="corrected-document-action primary" type="submit">
-                    Отправить на проверку
+                    Применить оформление и начать проверки
                 </button>
             </form>
         </div>

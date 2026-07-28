@@ -2689,7 +2689,7 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertEqual(submission.versions.count(), 1)
         self.assertContains(response, "Проверьте документ перед отправкой")
         self.assertContains(response, "Назад, не отправлять")
-        self.assertContains(response, "Отправить на проверку")
+        self.assertContains(response, "Применить оформление и начать проверки")
         self.assertContains(response, 'data-site-loading-title="Создаём новую версию"')
         self.assertContains(response, "Страница уже готова")
         self.assertContains(
