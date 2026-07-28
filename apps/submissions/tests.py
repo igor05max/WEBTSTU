@@ -2585,7 +2585,17 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertNotContains(response, "Отдельный модуль")
         self.assertNotContains(response, "Конструктор документа по шаблону")
         self.assertContains(response, "Структура документа")
-        self.assertContains(response, "В порядке их расположения в готовом файле")
+        self.assertContains(response, "Правила распознаны")
+        self.assertContains(
+            response,
+            "Ниже перечислены требования выбранного шаблона",
+        )
+        self.assertContains(
+            response,
+            "В порядке, указанном в шаблоне оформления",
+        )
+        self.assertNotContains(response, "Готов к сборке")
+        self.assertNotContains(response, "Проверим при сборке")
         self.assertContains(response, "accounts/global-loading.js")
         self.assertContains(response, "Посмотреть и отправить отредактированную")
         self.assertContains(response, "Скачать LaTeX")

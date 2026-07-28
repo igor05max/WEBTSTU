@@ -242,14 +242,19 @@
             <div class="submission-template-builder">
                 <div class="submission-template-builder-head">
                     <strong>Структура документа</strong>
-                    <span class="status-pill success">Готов к сборке</span>
+                    <span class="status-pill success">Правила распознаны</span>
                 </div>
+                <p>
+                    Ниже перечислены требования выбранного шаблона, а не результаты
+                    проверки текущего файла. Фактические замечания показаны в разделе
+                    «Проверки».
+                </p>
 
                 <div class="submission-template-builder-grid">
                     <div>
                         <div class="submission-template-section-head">
                             <span class="submission-formatting-label">Элементы документа</span>
-                            <small>В порядке их расположения в готовом файле</small>
+                            <small>В порядке, указанном в шаблоне оформления</small>
                         </div>
                         <ol class="submission-template-blocks">
                             {% for block in document_template_plan.blocks %}
@@ -265,19 +270,19 @@
                                             {% endif %}
                                         </small>
                                     </span>
-                                    <span class="submission-template-block-status">
-                                        {% if block.validation_deferred %}
-                                            Проверим при сборке
-                                        {% elif block.found %}
-                                            Найден
-                                        {% elif block.can_fill %}
-                                            Будет заполнен
-                                        {% elif block.required %}
-                                            Нужно заполнить
-                                        {% else %}
-                                            Не указан
-                                        {% endif %}
-                                    </span>
+                                    {% if not block.validation_deferred %}
+                                        <span class="submission-template-block-status">
+                                            {% if block.found %}
+                                                Найден
+                                            {% elif block.can_fill %}
+                                                Будет заполнен
+                                            {% elif block.required %}
+                                                Нужно заполнить
+                                            {% else %}
+                                                Не указан
+                                            {% endif %}
+                                        </span>
+                                    {% endif %}
                                 </li>
                             {% endfor %}
                         </ol>
