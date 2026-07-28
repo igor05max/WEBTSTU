@@ -107,11 +107,11 @@ def _validate_assignment_membership(assigned_unit, assigned_group, assigned_user
 
 
 def _resolve_author_chair_head_assignment(submission):
-    author = submission.routing_author
-    chair_org_unit = getattr(author, "chair_org_unit", None)
+    sender = submission.author
+    chair_org_unit = getattr(sender, "chair_org_unit", None)
     if chair_org_unit is None:
         raise ValueError(
-            "У ответственного автора не указана кафедра, поэтому нельзя "
+            "У отправителя не указана кафедра, поэтому нельзя "
             "выбрать заведующего кафедрой."
         )
 
