@@ -266,7 +266,9 @@
                                         </small>
                                     </span>
                                     <span class="submission-template-block-status">
-                                        {% if block.found %}
+                                        {% if block.validation_deferred %}
+                                            Проверим при сборке
+                                        {% elif block.found %}
                                             Найден
                                         {% elif block.can_fill %}
                                             Будет заполнен

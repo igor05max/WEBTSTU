@@ -43,7 +43,6 @@ from apps.submissions.forms import (
 from apps.submissions.formatting_correction import (
     FormattingCorrectionError,
     build_corrected_docx,
-    build_document_template_plan,
 )
 from apps.submissions.document_preview import (
     DocumentPreviewError,
@@ -69,7 +68,6 @@ from apps.submissions.latex_projects import (
     replace_project_main_source,
 )
 from apps.submissions.template_processing import (
-    prepare_submission_template_by_id,
     queue_submission_template_processing,
 )
 from apps.submissions.route_suggestions import (
@@ -621,6 +619,41 @@ def _build_formatting_rule_rows(snapshot):
     if limits.get("max_words") is not None:
         add("Максимальный объём", f"{limits['max_words']} слов")
     return rows
+
+
+def _build_document_template_summary(rules):
+    """Build the detail-page summary without opening and parsing a large DOCX."""
+
+    normalized = normalize_template_rules(rules)
+    document_rules = normalized.get("document") or {}
+    if document_rules.get("rules_reliable") is False:
+        return None, (
+            str(document_rules.get("source_notice") or "")
+            or "Правила оформления требуют подтверждения."
+        )
+    blocks = []
+    for block in document_rules.get("blocks") or []:
+        blocks.append(
+            {
+                **block,
+                "status": "pending",
+                "found": False,
+                "can_fill": False,
+                "validation_deferred": True,
+            }
+        )
+    return {
+        "blocks": blocks,
+        "missing_blocks": [],
+        "validation_deferred": True,
+        "operations": [
+            "Сохранить исходный научный текст, таблицы, рисунки и ссылки.",
+            "Применить параметры страницы из выбранного шаблона.",
+            "Оформить титульный блок отдельно от основного текста.",
+            "Применить абзацный отступ и выравнивание к основному тексту.",
+            "Сохранить список литературы без шаблонных заглушек.",
+        ],
+    }, ""
 
 
 def _can_view_submission(user, submission):
@@ -1182,13 +1215,32 @@ def start_submission_checks_view(request, pk):
         return redirect("submissions:detail", pk=submission.pk)
 
     if submission.formatting_template_id:
-        prepare_submission_template_by_id(
-            submission.pk,
-            template_id=submission.formatting_template_id,
-            expected_version_id=submission.current_version_id,
-            start_checks=False,
-        )
-        submission.refresh_from_db()
+        template = submission.formatting_template
+        if (
+            template.analysis_status in {"ready", "partial"}
+            and template.extracted_rules
+        ):
+            submission.formatting_rules_snapshot = build_rules_snapshot(
+                article_type=submission.article_type,
+                template=template,
+                journal=submission.journal,
+            )
+            submission.save(
+                update_fields=["formatting_rules_snapshot", "updated_at"]
+            )
+        else:
+            submission.status = SubmissionStatus.AUTO_CHECKING
+            submission.save(update_fields=["status", "updated_at"])
+            queue_submission_template_processing(
+                submission,
+                template,
+                start_checks=True,
+            )
+            messages.success(
+                request,
+                "Подготовка шаблона и проверки запущены в фоне.",
+            )
+            return redirect("submissions:detail", pk=submission.pk)
     queue_submission_checks(submission)
     messages.success(
         request,
@@ -1391,10 +1443,10 @@ def submission_detail(request, pk):
         and submission.formatting_template_id
         and (submission.formatting_rules_snapshot or {}).get("effective")
     ):
-        try:
-            document_template_plan = build_document_template_plan(submission)
-        except FormattingCorrectionError as exc:
-            document_template_plan_error = str(exc)
+        (
+            document_template_plan,
+            document_template_plan_error,
+        ) = _build_document_template_summary(formatting_rules_effective)
     formatting_rules_form = None
     can_edit_formatting_rules = can_edit and submission.status in _DELETABLE_DRAFT_STATUSES
     formatting_template_attach_form = (

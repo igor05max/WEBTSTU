@@ -850,12 +850,12 @@ class SubmissionCreateViewTests(TestCase):
         self.assertContains(response, "Начать проверки без добавления источников")
         self.assertNotContains(response, "Ожидает запуска.")
 
+    @patch("apps.submissions.views.queue_submission_template_processing")
     @patch("apps.submissions.views.queue_submission_checks")
-    @patch("apps.submissions.views.prepare_submission_template_by_id")
     def test_start_checks_recovers_auto_checking_submission_without_runs(
         self,
-        prepare_template,
         queue_checks,
+        queue_template_processing,
     ):
         template = FormattingTemplate.objects.create(
             journal=self.journal,
@@ -884,13 +884,12 @@ class SubmissionCreateViewTests(TestCase):
             response,
             reverse("submissions:detail", args=[submission.pk]),
         )
-        prepare_template.assert_called_once_with(
-            submission.pk,
-            template_id=template.pk,
-            expected_version_id=submission.current_version_id,
-            start_checks=False,
+        queue_template_processing.assert_called_once_with(
+            submission,
+            template,
+            start_checks=True,
         )
-        queue_checks.assert_called_once()
+        queue_checks.assert_not_called()
         detail_response = self.client.get(
             reverse("submissions:detail", args=[submission.pk])
         )

@@ -281,13 +281,29 @@
 <section class="citation-search-card citation-next-step">
     <div>
         <span class="citation-kicker">Следующий этап</span>
-        <h2>Можно продолжить без добавления источников</h2>
-        <p>Рекомендации необязательны. Проверки продолжатся в фоне, поэтому страницу можно закрыть.</p>
+        {% if selected_submission.status == "draft" %}
+            <h2>Можно продолжить без добавления источников</h2>
+            <p>Рекомендации необязательны. Запуск выполняется в фоне, а карточка откроется сразу.</p>
+        {% elif selected_submission.status == "auto_checking" %}
+            <h2>Проверки уже выполняются</h2>
+            <p>Повторный запуск не нужен. Результаты появятся в карточке автоматически.</p>
+        {% else %}
+            <h2>Проверки уже завершены или запущены</h2>
+            <p>Повторно запускать их с этой страницы не нужно.</p>
+        {% endif %}
     </div>
-    <form method="post" action="{% url 'submissions:start_checks' selected_submission.pk %}">
-        {% csrf_token %}
-        <button class="citation-primary-action" type="submit">Начать проверки</button>
-    </form>
+    {% if selected_submission.status == "draft" %}
+        <form method="post" action="{% url 'submissions:start_checks' selected_submission.pk %}"
+              data-site-loading data-site-loading-title="Запускаем проверки"
+              data-site-loading-message="Открываем карточку, проверки продолжатся в фоне.">
+            {% csrf_token %}
+            <button class="citation-primary-action" type="submit">Начать проверки</button>
+        </form>
+    {% else %}
+        <a class="citation-primary-action" href="{% url 'submissions:detail' selected_submission.pk %}">
+            Открыть карточку материала
+        </a>
+    {% endif %}
 </section>
 {% endif %}
 {% endblock %}
