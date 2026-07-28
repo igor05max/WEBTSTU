@@ -965,19 +965,21 @@ def submission_create(request):
                 organizations=form.cleaned_data["organizations"] or metadata.get("organizations", ""),
                 contact_emails=form.cleaned_data["contact_emails"] or metadata.get("contact_emails", ""),
                 keywords=form.cleaned_data["keywords"] or metadata.get("keywords", ""),
-                defer_checks=True,
-                mark_as_checking=False,
+                # A newly uploaded template must be parsed before formatting
+                # checks start.  All other checks can be queued immediately.
+                defer_checks=template_requires_processing,
+                mark_as_checking=True,
                 latex_project=form.prepared_latex_upload,
             )
             if template_requires_processing:
                 queue_submission_template_processing(
                     submission,
                     formatting_template,
-                    start_checks=False,
+                    start_checks=True,
                 )
             messages.success(
                 request,
-                "Материал создан, данные из файла распознаны. Теперь проверьте источники перед запуском автопроверок.",
+                "Материал создан, данные из файла распознаны. Автопроверки запущены в фоне; источники можно подбирать параллельно.",
             )
             return redirect(
                 f"{reverse('citations:workspace')}?submission={submission.pk}&auto=1"

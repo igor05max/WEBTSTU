@@ -433,8 +433,14 @@ def use_submission_result(request, token):
             token=token,
         )
         submission = _workspace_submission(request, payload)
-        if submission.status != SubmissionStatus.DRAFT:
-            raise ValueError("Источники можно добавить только до запуска проверок.")
+        if submission.status not in {
+            SubmissionStatus.DRAFT,
+            SubmissionStatus.AUTO_CHECKING,
+            SubmissionStatus.SUBMITTED,
+        }:
+            raise ValueError(
+                "Источники можно добавить только до запуска маршрута согласования."
+            )
         result_is_latex = payload.get("result_suffix") == ".tex"
         if submission.formatting_template_id and not result_is_latex:
             prepare_submission_template_by_id(

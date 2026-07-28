@@ -33,6 +33,7 @@ def add_submission_version(
     was_revision_requested = submission.status == SubmissionStatus.REVISION_REQUESTED
     allowed_statuses = {
         SubmissionStatus.DRAFT,
+        SubmissionStatus.AUTO_CHECKING,
         SubmissionStatus.SUBMITTED,
         SubmissionStatus.REVISION_REQUESTED,
     }

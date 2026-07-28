@@ -802,7 +802,7 @@ class SubmissionCreateViewTests(TestCase):
             f"{reverse('citations:workspace')}?submission={submission.pk}&auto=1",
             fetch_redirect_response=False,
         )
-        self.assertEqual(submission.status, SubmissionStatus.DRAFT)
+        self.assertEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
         self.assertFalse(submission.authors.filter(pk=self.user.pk).exists())
         self.assertTrue(submission.authors.filter(pk=self.chair_head.pk).exists())
         self.assertEqual(template.analysis_status, "pending")
@@ -812,7 +812,7 @@ class SubmissionCreateViewTests(TestCase):
         queued_submission, queued_template = queue_processing.call_args.args
         self.assertEqual(queued_submission.pk, submission.pk)
         self.assertEqual(queued_template.pk, template.pk)
-        self.assertFalse(queue_processing.call_args.kwargs["start_checks"])
+        self.assertTrue(queue_processing.call_args.kwargs["start_checks"])
 
     def test_draft_detail_explains_checks_are_not_started_and_offers_direct_start(self):
         from apps.checks.services import ensure_default_check_definitions

@@ -1013,6 +1013,8 @@ class CitationSystemTests(TestCase):
         self.assertIn("inline", preview_content["Content-Disposition"])
         self.assertEqual(preview_content.content[:5], b"%PDF-")
 
+        submission.status = SubmissionStatus.AUTO_CHECKING
+        submission.save(update_fields=["status", "updated_at"])
         with patch("apps.checks.services.queue_submission_checks") as mocked_queue:
             applied = self.client.post(
                 reverse("citations:use_submission_result", args=[result["token"]])
@@ -1023,7 +1025,7 @@ class CitationSystemTests(TestCase):
             fetch_redirect_response=False,
         )
         submission.refresh_from_db()
-        self.assertEqual(submission.status, SubmissionStatus.DRAFT)
+        self.assertEqual(submission.status, SubmissionStatus.AUTO_CHECKING)
         self.assertEqual(submission.versions.count(), 2)
         mocked_queue.assert_called_once()
 
