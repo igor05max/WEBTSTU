@@ -6,6 +6,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.directory.formatting_templates import (
+    _classify_template_source,
     _extract_pdf_rules,
     create_formatting_template,
     get_latest_formatting_template,
@@ -183,6 +184,88 @@ class PublicationTopicAndTemplateTests(TestCase):
         self.assertEqual(rules["body"]["alignment"], "justify")
         self.assertEqual(rules["headings"]["color_hex"], "000000")
         self.assertAlmostEqual(rules["headings"]["title_font_size_pt"], 18, places=1)
+
+    def test_peer_review_pdf_is_not_treated_as_normative_template(self):
+        from io import BytesIO
+
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen.canvas import Canvas
+
+        output = BytesIO()
+        canvas = Canvas(output, pagesize=A4)
+        canvas.drawString(72, 790, "Version July 5, 2026 submitted to Journal Not Specified")
+        canvas.drawString(72, 750, "A Finished Scientific Manuscript")
+        canvas.drawString(72, 720, "Abstract")
+        canvas.drawString(72, 700, "The article abstract text.")
+        canvas.drawString(72, 680, "Keywords: sensor; calibration")
+        canvas.drawString(72, 640, "1. Introduction")
+        canvas.drawString(72, 620, "2. Experiments")
+        canvas.drawString(72, 600, "3. Conclusions")
+        canvas.drawString(72, 560, "References")
+        canvas.drawString(72, 540, "https://doi.org/10.3390/example")
+        canvas.save()
+
+        classification = _classify_template_source(
+            "sensors-peer-review-v1.pdf",
+            (
+                "Version July 5, 2026 submitted to Journal Not Specified\n"
+                "Abstract\nKeywords\n1. Introduction\n2. Experiments\n"
+                "3. Conclusions\nReferences\nhttps://doi.org/10.3390/example"
+            ),
+        )
+        self.assertEqual(classification["kind"], "sample_manuscript")
+
+        template = create_formatting_template(
+            article_type=self.article_type,
+            publication_topic=resolve_or_create_publication_topic(
+                "Sensors sample",
+                created_by=self.user,
+            )[0],
+            uploaded_by=self.user,
+            file=SimpleUploadedFile(
+                "sensors-peer-review-v1.pdf",
+                output.getvalue(),
+                content_type="application/pdf",
+            ),
+        )
+        process_formatting_template(template)
+        template.refresh_from_db()
+
+        document_rules = template.extracted_rules["document"]
+        self.assertEqual(template.analysis_status, "partial")
+        self.assertEqual(document_rules["source_kind"], "sample_manuscript")
+        self.assertFalse(document_rules["rules_reliable"])
+        self.assertFalse(document_rules["latex_generation_allowed"])
+        self.assertEqual(
+            template.extracted_rules["structure"]["required_sections"],
+            [],
+        )
+        self.assertNotIn(
+            "margins_cm",
+            template.extracted_rules.get("page") or {},
+        )
+
+        self.client.force_login(self.user)
+        preview = self.client.get(
+            reverse(
+                "directory:formatting_template_latex_preview",
+                args=[template.pk],
+            )
+        )
+        download = self.client.get(
+            reverse(
+                "directory:formatting_template_latex_download",
+                args=[template.pk],
+            )
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertContains(preview, "LaTeX не сформирован")
+        self.assertEqual(download.status_code, 422)
+        self.assertContains(
+            download,
+            "готовую свёрстанную статью",
+            status_code=422,
+        )
 
     def test_docx_builder_really_changes_page_size_to_a4(self):
         from io import BytesIO

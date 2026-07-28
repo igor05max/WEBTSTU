@@ -18,7 +18,7 @@ from django.utils import timezone
 from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_POST
 from django.views.decorators.clickjacking import xframe_options_sameorigin
-from document_template_engine import build_latex_template
+from document_template_engine import DocumentTemplateEngineError, build_latex_template
 
 from apps.accounts.roles import has_chair_head_role
 from apps.accounts.models import User
@@ -1324,13 +1324,27 @@ def submission_detail(request, pk):
         (entry for entry in check_entries if entry["code"] == "formatting_compliance"),
         None,
     )
+    formatting_rules_effective = (
+        (submission.formatting_rules_snapshot or {}).get("effective") or {}
+    )
+    formatting_latex_available = bool(
+        formatting_rules_effective
+        and (formatting_rules_effective.get("document") or {}).get(
+            "latex_generation_allowed"
+        )
+        is not False
+    )
     can_generate_corrected_document = bool(
         can_edit
         and submission.status in _CORRECTED_VERSION_CREATION_STATUSES
         and submission.current_version_id
         and Path(submission.current_version.file.name).suffix.casefold() == ".docx"
         and submission.formatting_template_id
-        and (submission.formatting_rules_snapshot or {}).get("effective")
+        and formatting_rules_effective
+        and (formatting_rules_effective.get("document") or {}).get(
+            "rules_reliable"
+        )
+        is not False
     )
     document_template_plan = None
     document_template_plan_error = ""
@@ -1453,7 +1467,8 @@ def submission_detail(request, pk):
             "can_edit": can_edit,
             "formatting_rules_form": formatting_rules_form,
             "formatting_template_attach_form": formatting_template_attach_form,
-            "formatting_rules": (submission.formatting_rules_snapshot or {}).get("effective") or {},
+            "formatting_rules": formatting_rules_effective,
+            "formatting_latex_available": formatting_latex_available,
             "formatting_template_is_processing": bool(
                 submission.formatting_template_id
                 and submission.formatting_template.analysis_status in {"pending", "processing"}
@@ -1803,16 +1818,20 @@ def submission_latex_template_download_view(request, pk):
             "LaTeX-шаблон пока нельзя сформировать: для работы не сохранены правила оформления.",
         )
         return redirect("submissions:detail", pk=submission.pk)
-    source = build_latex_template(
-        rules,
-        metadata={
-            "title": submission.title,
-            "authors": submission.document_authors or submission.get_authors_display(),
-            "institution": submission.organizations,
-            "abstract": submission.abstract,
-            "keywords": submission.keywords,
-        },
-    )
+    try:
+        source = build_latex_template(
+            rules,
+            metadata={
+                "title": submission.title,
+                "authors": submission.document_authors or submission.get_authors_display(),
+                "institution": submission.organizations,
+                "abstract": submission.abstract,
+                "keywords": submission.keywords,
+            },
+        )
+    except DocumentTemplateEngineError as exc:
+        messages.error(request, str(exc))
+        return redirect("submissions:detail", pk=submission.pk)
     response = HttpResponse(source, content_type="application/x-tex; charset=utf-8")
     response["Content-Disposition"] = (
         f'attachment; filename="submission-{submission.pk}-template.tex"'

@@ -11,12 +11,20 @@
         <h1>LaTeX-шаблон</h1>
         <p>{{ formatting_template.file_basename }} · версия {{ formatting_template.version_number }}</p>
     </div>
-    <a class="button" href="{% url 'directory:formatting_template_latex_download' formatting_template.pk %}">
-        Скачать .tex
-    </a>
+    {% if not latex_unavailable_reason %}
+        <a class="button" href="{% url 'directory:formatting_template_latex_download' formatting_template.pk %}">
+            Скачать .tex
+        </a>
+    {% endif %}
 </header>
 
 <section class="surface">
+    {% if latex_unavailable_reason %}
+        <div class="alert warning">
+            <strong>LaTeX не сформирован.</strong>
+            <p>{{ latex_unavailable_reason }}</p>
+        </div>
+    {% else %}
     <div class="section-head">
         <div>
             <h2>Предпросмотр исходного кода</h2>
@@ -24,5 +32,6 @@
         </div>
     </div>
     <pre style="overflow:auto;max-height:70vh;padding:20px;border-radius:12px;background:#111827;color:#e5e7eb;white-space:pre-wrap"><code>{{ latex_source }}</code></pre>
+    {% endif %}
 </section>
 {% endblock %}

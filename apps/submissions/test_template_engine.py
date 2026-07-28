@@ -94,6 +94,45 @@ def _sample_docx():
 
 
 class ReusableTemplateEngineTests(SimpleTestCase):
+    def test_latex_generation_is_blocked_for_sample_manuscript_pdf(self):
+        from document_template_engine import DocumentTemplateEngineError
+
+        with self.assertRaisesMessage(
+            DocumentTemplateEngineError,
+            "готовую свёрстанную статью",
+        ):
+            build_latex_template(
+                {
+                    "document": {
+                        "source_kind": "sample_manuscript",
+                        "latex_generation_allowed": False,
+                        "source_notice": (
+                            "PDF похож на готовую свёрстанную статью."
+                        ),
+                    }
+                }
+            )
+
+    def test_english_rules_generate_english_latex_labels(self):
+        source = build_latex_template(
+            {
+                "languages": ["en"],
+                "document": {
+                    "blocks": [
+                        {"role": "title", "required": True},
+                        {"role": "keywords", "required": True},
+                        {"role": "body", "required": True},
+                        {"role": "references", "required": True},
+                    ]
+                },
+            }
+        ).decode("utf-8")
+
+        self.assertIn(r"\setdefaultlanguage{english}", source)
+        self.assertIn(r"\textbf{Keywords:}", source)
+        self.assertIn("Author. Source title. Year.", source)
+        self.assertNotIn("Ключевые слова:", source)
+
     def test_full_name_author_is_found_after_copyright_and_identifiers(self):
         from docx import Document
 

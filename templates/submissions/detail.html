@@ -173,7 +173,7 @@
                         <a class="button secondary" href="{% url 'directory:formatting_template_download' submission.formatting_template.pk %}">
                             Скачать исходный
                         </a>
-                        {% if formatting_rules and not formatting_template_is_processing %}
+                        {% if formatting_latex_available and not formatting_template_is_processing %}
                             <a class="button secondary" href="{% url 'directory:formatting_template_latex_download' submission.formatting_template.pk %}">
                                 Скачать LaTeX
                             </a>
@@ -189,7 +189,7 @@
                         {% endif %}
                     </span>
                 {% endif %}
-                {% if formatting_rules and not formatting_template_is_processing %}
+                {% if formatting_latex_available and not formatting_template_is_processing %}
                     {% if not submission.formatting_template %}
                         <div class="submission-template-download-actions">
                             <a class="button secondary" href="{% url 'submissions:latex_template_download' submission.pk %}">

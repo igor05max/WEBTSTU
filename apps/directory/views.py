@@ -9,7 +9,7 @@ from apps.directory.formatting_templates import get_latest_formatting_template
 from apps.directory.journal_search import search_journals
 from apps.directory.models import ArticleType, FormattingTemplate
 from apps.directory.publication_topics import search_publication_topics
-from document_template_engine import build_latex_template
+from document_template_engine import DocumentTemplateEngineError, build_latex_template
 
 
 def _get_article_type(request):
@@ -22,6 +22,10 @@ def _get_article_type(request):
 def _template_payload(template):
     if template is None:
         return None
+    rules = template.extracted_rules or {}
+    latex_available = (
+        (rules.get("document") or {}).get("latex_generation_allowed") is not False
+    )
     return {
         "id": template.id,
         "version": template.version_number,
@@ -29,17 +33,26 @@ def _template_payload(template):
         "status": template.analysis_status,
         "status_label": template.get_analysis_status_display(),
         "message": template.analysis_message,
-        "rules": template.extracted_rules or {},
+        "rules": rules,
         "created_at": template.created_at.isoformat(),
         "uploaded_by": str(template.uploaded_by),
         "download_url": reverse("directory:formatting_template_download", args=[template.id]),
-        "latex_download_url": reverse(
-            "directory:formatting_template_latex_download",
-            args=[template.id],
+        "latex_available": latex_available,
+        "latex_download_url": (
+            reverse(
+                "directory:formatting_template_latex_download",
+                args=[template.id],
+            )
+            if latex_available
+            else ""
         ),
-        "latex_preview_url": reverse(
-            "directory:formatting_template_latex_preview",
-            args=[template.id],
+        "latex_preview_url": (
+            reverse(
+                "directory:formatting_template_latex_preview",
+                args=[template.id],
+            )
+            if latex_available
+            else ""
         ),
     }
 
@@ -118,7 +131,14 @@ def formatting_template_download(request, pk):
 @login_required
 def formatting_template_latex_download(request, pk):
     template = get_object_or_404(FormattingTemplate, pk=pk)
-    source = build_latex_template(template.extracted_rules or {})
+    try:
+        source = build_latex_template(template.extracted_rules or {})
+    except DocumentTemplateEngineError as exc:
+        return HttpResponse(
+            str(exc),
+            status=422,
+            content_type="text/plain; charset=utf-8",
+        )
     response = HttpResponse(source, content_type="application/x-tex; charset=utf-8")
     response["Content-Disposition"] = (
         f'attachment; filename="formatting-template-{template.pk}-v{template.version_number}.tex"'
@@ -129,7 +149,12 @@ def formatting_template_latex_download(request, pk):
 @login_required
 def formatting_template_latex_preview(request, pk):
     template = get_object_or_404(FormattingTemplate, pk=pk)
-    latex_source = build_latex_template(template.extracted_rules or {})
+    unavailable_reason = ""
+    try:
+        latex_source = build_latex_template(template.extracted_rules or {})
+    except DocumentTemplateEngineError as exc:
+        latex_source = ""
+        unavailable_reason = str(exc)
     if isinstance(latex_source, bytes):
         latex_source = latex_source.decode("utf-8", errors="replace")
     return render(
@@ -138,5 +163,6 @@ def formatting_template_latex_preview(request, pk):
         {
             "formatting_template": template,
             "latex_source": latex_source,
+            "latex_unavailable_reason": unavailable_reason,
         },
     )

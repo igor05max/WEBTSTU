@@ -476,6 +476,94 @@ def _extract_pdf_rules(data):
     }
 
 
+def _classify_template_source(file_name, text):
+    suffix = Path(file_name or "").suffix.casefold()
+    if suffix != ".pdf":
+        return {"kind": "normative_template", "confidence": 1.0, "reasons": []}
+
+    source = str(text or "").casefold().replace("ё", "е")
+    name = Path(file_name or "").name.casefold()
+    manuscript_signals = []
+    if re.search(r"(?:peer[-_ ]?review|proof|manuscript)", name):
+        manuscript_signals.append("filename")
+    if re.search(r"\bsubmitted\s+to\b|\bversion\b.{0,80}\bsubmitted\s+to\b", source):
+        manuscript_signals.append("submission_footer")
+    if re.search(r"\babstract\b", source) and re.search(r"\bkeywords?\b", source):
+        manuscript_signals.append("article_front_matter")
+    if re.search(r"\b(?:references|bibliography)\b", source):
+        manuscript_signals.append("references")
+    if re.search(r"https?://doi\.org/10\.|doi\s*:", source):
+        manuscript_signals.append("doi")
+    numbered_sections = len(
+        re.findall(
+            r"(?:^|\n)\s*\d+(?:\.\d+)*\.?\s+[A-ZА-ЯЁ][^\n]{2,80}",
+            str(text or ""),
+        )
+    )
+    if numbered_sections >= 3:
+        manuscript_signals.append("numbered_article_sections")
+
+    instruction_signals = []
+    for pattern, label in (
+        (
+            r"\b(?:instructions?\s+for\s+authors?|author\s+guidelines?|"
+            r"manuscript\s+preparation|use\s+this\s+template)\b",
+            "author_instructions",
+        ),
+        (
+            r"\b(?:требовани\w*\s+к\s+оформлени\w*|инструкци\w*\s+для\s+автор\w*|"
+            r"используйте\s+(?:этот\s+)?шаблон)\b",
+            "author_instructions_ru",
+        ),
+    ):
+        if re.search(pattern, source):
+            instruction_signals.append(label)
+
+    if len(manuscript_signals) >= 3 and not instruction_signals:
+        return {
+            "kind": "sample_manuscript",
+            "confidence": min(0.99, 0.7 + len(manuscript_signals) * 0.05),
+            "reasons": manuscript_signals,
+        }
+    return {
+        "kind": "normative_template",
+        "confidence": 0.75 if manuscript_signals else 0.9,
+        "reasons": instruction_signals,
+    }
+
+
+def _sample_manuscript_rules(deterministic_rules, classification, text):
+    page = deterministic_rules.get("page") or {}
+    safe_page = {
+        key: page.get(key)
+        for key in ("size", "orientation")
+        if page.get(key) not in (None, "")
+    }
+    letters = [character for character in str(text or "") if character.isalpha()]
+    cyrillic = sum("а" <= character.casefold() <= "я" or character in "Ёё" for character in letters)
+    languages = ["ru"] if letters and cyrillic / len(letters) >= 0.35 else ["en"]
+    return {
+        "page": safe_page,
+        "document": {
+            "source_kind": "sample_manuscript",
+            "rules_reliable": False,
+            "latex_generation_allowed": False,
+            "source_notice": (
+                "Загруженный PDF похож на готовую свёрстанную статью, а не на "
+                "нормативный шаблон. Разделы, поля и шрифты конкретной статьи "
+                "не применяются как обязательные требования."
+            ),
+        },
+        "structure": {"required_sections": [], "section_order": []},
+        "metadata": {"required_fields": []},
+        "languages": languages,
+        "notes": [
+            "Для точного LaTeX используйте официальный TEX/ZIP-шаблон издателя."
+        ],
+        "source_classification": classification,
+    }
+
+
 def _extract_docx_rules(data):
     try:
         from docx import Document
@@ -749,6 +837,34 @@ def process_formatting_template(template):
     template.save(update_fields=["analysis_status", "analysis_message"])
     try:
         text, deterministic_rules, parse_warning = _extract_template_content(template)
+        classification = _classify_template_source(template.file.name, text)
+        if classification["kind"] == "sample_manuscript":
+            template.source_text = text
+            template.extracted_rules = normalize_template_rules(
+                _sample_manuscript_rules(
+                    deterministic_rules,
+                    classification,
+                    text,
+                )
+            )
+            template.rule_conflicts = []
+            template.analysis_status = FormattingTemplateStatus.PARTIAL
+            template.analysis_message = (
+                "PDF распознан как готовая свёрстанная статья, а не как "
+                "нормативный шаблон. Автоматическое применение полей, шрифтов "
+                "и разделов отключено. Загрузите официальный TEX/ZIP-шаблон "
+                "или текст требований издателя."
+            )
+            template.save(
+                update_fields=[
+                    "analysis_status",
+                    "analysis_message",
+                    "source_text",
+                    "extracted_rules",
+                    "rule_conflicts",
+                ]
+            )
+            return template
         ai_rules = {}
         ai_warning = ""
         try:

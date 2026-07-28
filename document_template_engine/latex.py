@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .engine import DocumentTemplateEngineError
 from .schema import BLOCK_CATALOG, get_document_blocks, normalize_template_rules
 
 
@@ -684,13 +685,30 @@ def build_latex_template(
     """Build a standalone UTF-8 XeLaTeX/LuaLaTeX template from normalized rules."""
 
     normalized = normalize_template_rules(rules)
+    document_rules = normalized.get("document") or {}
+    if document_rules.get("latex_generation_allowed") is False:
+        raise DocumentTemplateEngineError(
+            str(document_rules.get("source_notice") or "")
+            or (
+                "LaTeX нельзя надёжно сформировать из готовой свёрстанной статьи. "
+                "Загрузите официальный TEX/ZIP-шаблон издателя."
+            )
+        )
     metadata = metadata or {}
     page = normalized.get("page") or {}
     margins = page.get("margins_cm") or {}
     body = normalized.get("body") or {}
     blocks = get_document_blocks(normalized)
     block_map = {item["role"]: item for item in blocks}
-    block_order = list((normalized.get("document") or {}).get("block_order") or [])
+    block_order = list(document_rules.get("block_order") or [])
+    languages = {
+        str(value or "").casefold()
+        for value in normalized.get("languages") or []
+    }
+    english_primary = bool(
+        languages.intersection({"en", "eng", "english"})
+        and not languages.intersection({"ru", "rus", "russian", "русский"})
+    )
 
     orientation = (
         ",landscape"
@@ -711,15 +729,32 @@ def build_latex_template(
     indent = _number(body.get("first_line_indent_cm"), 1)
     baseline = max(font_size * 1.2, font_size + 2)
 
+    fallbacks = (
+        {
+            "udc": "UDC 000.000",
+            "title": "SCIENTIFIC PAPER TITLE",
+            "authors": "Author Name",
+            "supervisor": "Supervisor Name, academic degree",
+            "institution": "Institution name",
+            "city_country": "City, Country",
+            "abstract": "Abstract text.",
+            "keywords": "keyword; keyword",
+        }
+        if english_primary
+        else {
+            "udc": "УДК 000.000",
+            "title": "НАЗВАНИЕ НАУЧНОЙ РАБОТЫ",
+            "authors": "И.О. Фамилия автора",
+            "supervisor": "И.О. Фамилия, учёная степень",
+            "institution": "Название организации",
+            "city_country": "Город, страна",
+            "abstract": "Текст аннотации.",
+            "keywords": "ключевое слово; ключевое слово",
+        }
+    )
     values = {
-        "udc": _macro_value(metadata, "udc", "УДК 000.000"),
-        "title": _macro_value(metadata, "title", "НАЗВАНИЕ НАУЧНОЙ РАБОТЫ"),
-        "authors": _macro_value(metadata, "authors", "И.О. Фамилия автора"),
-        "supervisor": _macro_value(metadata, "supervisor", "И.О. Фамилия, учёная степень"),
-        "institution": _macro_value(metadata, "institution", "Название организации"),
-        "city_country": _macro_value(metadata, "city_country", "Город, страна"),
-        "abstract": _macro_value(metadata, "abstract", "Текст аннотации."),
-        "keywords": _macro_value(metadata, "keywords", "ключевое слово; ключевое слово"),
+        role: _macro_value(metadata, role, fallback)
+        for role, fallback in fallbacks.items()
     }
     macro_names = {
         "udc": "SubmissionUDC",
@@ -744,8 +779,16 @@ def build_latex_template(
         r"\usepackage{fontspec}",
         rf"\IfFontExistsTF{{{_latex_escape(font_family)}}}{{\setmainfont{{{_latex_escape(font_family)}}}}}{{\setmainfont{{TeX Gyre Termes}}}}",
         r"\usepackage{polyglossia}",
-        r"\setdefaultlanguage{russian}",
-        r"\setotherlanguage{english}",
+        (
+            r"\setdefaultlanguage{english}"
+            if english_primary
+            else r"\setdefaultlanguage{russian}"
+        ),
+        (
+            r"\setotherlanguage{russian}"
+            if english_primary
+            else r"\setotherlanguage{english}"
+        ),
         rf"\usepackage[{geometry_line}]{{geometry}}",
         r"\usepackage{setspace}",
         r"\usepackage{ragged2e}",
@@ -787,7 +830,8 @@ def build_latex_template(
         elif role == "authors":
             content = [r"\SubmissionAuthors\par"]
         elif role == "supervisor":
-            content = [r"\textit{Научный руководитель: \SubmissionSupervisor}\par"]
+            label = "Supervisor" if english_primary else "Научный руководитель"
+            content = [rf"\textit{{{label}: \SubmissionSupervisor}}\par"]
         elif role == "institution":
             content = [r"\SubmissionInstitution\par"]
         elif role == "city_country":
@@ -799,7 +843,8 @@ def build_latex_template(
                 r"\end{abstract}",
             ]
         elif role == "keywords":
-            content = [r"\noindent\textbf{Ключевые слова:} \SubmissionKeywords\par"]
+            label = "Keywords" if english_primary else "Ключевые слова"
+            content = [rf"\noindent\textbf{{{label}:}} \SubmissionKeywords\par"]
         elif role == "body":
             required_sections = (normalized.get("structure") or {}).get("required_sections") or []
             if required_sections:
@@ -815,9 +860,14 @@ def build_latex_template(
             else:
                 content = [r"\SubmissionBody"]
         elif role == "references":
+            placeholder = (
+                "Author. Source title. Year."
+                if english_primary
+                else "Автор. Название источника. Год."
+            )
             content = [
                 r"\begin{thebibliography}{9}",
-                r"\bibitem{source1} Автор. Название источника. Год.",
+                rf"\bibitem{{source1}} {placeholder}",
                 r"\end{thebibliography}",
             ]
         else:

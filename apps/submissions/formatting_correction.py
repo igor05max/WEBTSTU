@@ -35,6 +35,15 @@ def _source_docx_and_rules(submission):
     )
     if not rules:
         raise FormattingCorrectionError("Для этой заявки не сохранены правила оформления.")
+    document_rules = rules.get("document") or {}
+    if document_rules.get("rules_reliable") is False:
+        raise FormattingCorrectionError(
+            str(document_rules.get("source_notice") or "")
+            or (
+                "Загруженный PDF похож на готовую статью, поэтому его поля и "
+                "разделы нельзя безопасно применять как шаблон."
+            )
+        )
     with version.file.open("rb") as source:
         original_bytes = read_file_bytes(source)
     return original_bytes, rules
