@@ -2,9 +2,13 @@ import os
 import logging
 import subprocess
 import sys
+from contextlib import contextmanager
 from datetime import timedelta
+from threading import Event, Thread
+from uuid import uuid4
 
 from django.conf import settings
+from django.db import close_old_connections, transaction
 from django.utils import timezone
 
 from apps.checks.models import CheckDefinition, CheckRun, CheckRunStatus
@@ -20,6 +24,15 @@ from apps.submissions.models import Submission, SubmissionStatus
 from apps.submissions.subject_area import detect_direction_for_submission
 
 RETIRED_CHECK_CODES = frozenset({"article_recommendations"})
+TERMINAL_CHECK_RUN_STATUSES = frozenset(
+    {
+        CheckRunStatus.PASSED,
+        CheckRunStatus.FAILED,
+        CheckRunStatus.PARTIAL,
+        CheckRunStatus.NOT_PERFORMED,
+    }
+)
+CHECK_RUN_HEARTBEAT_SECONDS = 30
 
 DEFAULT_CHECK_DEFINITIONS = (
     {
@@ -28,7 +41,7 @@ DEFAULT_CHECK_DEFINITIONS = (
         "description": "AI-модель оценивает связность, адекватность и признаки опасного содержания без проверки плагиата.",
         "order": 10,
         "is_blocking": False,
-        "backend_code": "gemini_content_review",
+        "backend_code": "local_ai_content_review",
     },
     {
         "code": "metadata_complete",
@@ -140,33 +153,116 @@ def _evaluate_check(check_definition, submission, version, *, snapshot=None):
     }
 
 
-def prepare_submission_checks(submission, *, version=None):
+def ensure_submission_checks(
+    submission,
+    *,
+    version=None,
+    definitions=None,
+):
+    """Create only missing active check rows and preserve existing results."""
+
     submission.refresh_from_db()
     version = version or submission.current_version
     if version is None:
         raise ValueError("Submission must have a current version before checks.")
+    if (
+        version.submission_id != submission.pk
+        or submission.current_version_id != version.id
+    ):
+        raise ValueError("Check version must be the submission's current version.")
 
-    submission.status = SubmissionStatus.AUTO_CHECKING
-    submission.save(update_fields=["status", "updated_at"])
+    if definitions is None:
+        definitions = get_active_check_definitions()
+    else:
+        definitions = list(definitions)
 
-    definitions = get_active_check_definitions()
-    CheckRun.objects.filter(
-        submission=submission,
-        version=version,
-    ).delete()
-    check_runs = []
-    now = timezone.now()
-    for definition in definitions:
-        check_runs.append(
-            CheckRun.objects.create(
+    with transaction.atomic():
+        for definition in definitions:
+            CheckRun.objects.get_or_create(
                 submission=submission,
                 version=version,
                 check_definition=definition,
-                status=CheckRunStatus.PENDING,
-                created_at=now,
+                defaults={
+                    "status": CheckRunStatus.PENDING,
+                    "result_payload": {},
+                },
             )
+
+    definition_ids = [definition.id for definition in definitions]
+    runs_by_definition_id = {
+        run.check_definition_id: run
+        for run in CheckRun.objects.filter(
+            submission=submission,
+            version=version,
+            check_definition_id__in=definition_ids,
+        ).select_related("check_definition")
+    }
+    return [runs_by_definition_id[definition.id] for definition in definitions]
+
+
+def prepare_submission_checks(submission, *, version=None):
+    """Reset active checks for an explicit new run without replacing rows."""
+
+    submission.refresh_from_db()
+    version = version or submission.current_version
+    if version is None:
+        raise ValueError("Submission must have a current version before checks.")
+    if (
+        version.submission_id != submission.pk
+        or submission.current_version_id != version.id
+    ):
+        raise ValueError("Check version must be the submission's current version.")
+
+    definitions = get_active_check_definitions()
+    now = timezone.now()
+    definition_ids = [definition.id for definition in definitions]
+    with transaction.atomic():
+        locked_submission = Submission.objects.select_for_update().get(
+            pk=submission.pk,
         )
-    return check_runs
+        if locked_submission.current_version_id != version.id:
+            raise ValueError(
+                "Check version must be the submission's current version."
+            )
+        locked_submission.status = SubmissionStatus.AUTO_CHECKING
+        locked_submission.updated_at = now
+        locked_submission.save(
+            update_fields=["status", "updated_at"],
+        )
+        CheckRun.objects.filter(
+            submission=submission,
+            version=version,
+            check_definition_id__in=definition_ids,
+        ).update(
+            status=CheckRunStatus.PENDING,
+            result_payload={},
+            started_at=None,
+            finished_at=None,
+            claim_token=None,
+            heartbeat_at=None,
+        )
+        for definition in definitions:
+            CheckRun.objects.get_or_create(
+                submission=submission,
+                version=version,
+                check_definition=definition,
+                defaults={
+                    "status": CheckRunStatus.PENDING,
+                    "result_payload": {},
+                },
+            )
+
+    submission.status = SubmissionStatus.AUTO_CHECKING
+    submission.updated_at = now
+    runs_by_definition_id = {
+        run.check_definition_id: run
+        for run in CheckRun.objects.filter(
+            submission=submission,
+            version=version,
+            check_definition_id__in=definition_ids,
+        ).select_related("check_definition")
+    }
+    return [runs_by_definition_id[definition.id] for definition in definitions]
 
 
 def launch_submission_checks_process(submission_id, version_id, resume_workflow_after_success):
@@ -231,17 +327,19 @@ def queue_submission_checks(submission, *, resume_workflow_after_success=False):
 def recover_stalled_submission_checks(
     *,
     no_run_grace_seconds=90,
-    pending_grace_seconds=600,
+    pending_grace_seconds=300,
+    processing_template_grace_seconds=600,
     submission_ids=None,
 ):
-    """Synchronously recover auto-checking submissions whose worker never started.
+    """Resume checks only after their recorded activity has gone stale.
 
-    The normal path remains asynchronous.  This recovery path is intended for a
-    periodic watchdog and deliberately handles only two unambiguous states:
-    there are no runs at all, or every run is still pending long after dispatch.
-    A currently running check is never interrupted.
+    Existing terminal results are preserved.  A stale running row is returned
+    to pending with a claim-token compare-and-swap, so a superseded worker
+    cannot later overwrite the recovered result.
     """
     now = timezone.now()
+    definitions = get_active_check_definitions()
+    definition_ids = [definition.id for definition in definitions]
     queryset = Submission.objects.filter(
         status=SubmissionStatus.AUTO_CHECKING,
         current_version__isnull=False,
@@ -260,43 +358,129 @@ def recover_stalled_submission_checks(
             CheckRun.objects.filter(
                 submission=submission,
                 version=version,
+                check_definition_id__in=definition_ids,
             ).select_related("check_definition")
         )
-        active_runs = [
+        active_runs = runs
+        unfinished_runs = [
             run
-            for run in runs
-            if run.check_definition.code not in RETIRED_CHECK_CODES
-        ]
-        if any(
-            run.status in {
-                CheckRunStatus.RUNNING,
-                CheckRunStatus.PASSED,
-                CheckRunStatus.FAILED,
-                CheckRunStatus.PARTIAL,
-                CheckRunStatus.NOT_PERFORMED,
-            }
             for run in active_runs
-        ):
-            skipped.append((submission.id, "active_or_finished"))
-            continue
-
+            if run.status in {
+                CheckRunStatus.PENDING,
+                CheckRunStatus.RUNNING,
+            }
+        ]
+        checks_not_started = not active_runs or all(
+            run.status == CheckRunStatus.PENDING
+            and run.started_at is None
+            and run.finished_at is None
+            for run in active_runs
+        )
+        template_is_processing = bool(
+            submission.formatting_template_id
+            and submission.formatting_template.analysis_status == "processing"
+        )
         if not active_runs:
-            stalled_before = now - timedelta(seconds=no_run_grace_seconds)
+            grace_seconds = (
+                processing_template_grace_seconds
+                if template_is_processing and checks_not_started
+                else no_run_grace_seconds
+            )
+            stalled_before = now - timedelta(seconds=grace_seconds)
             if submission.updated_at > stalled_before:
-                skipped.append((submission.id, "grace_period"))
+                reason = (
+                    "template_processing"
+                    if template_is_processing
+                    else "grace_period"
+                )
+                skipped.append((submission.id, reason))
                 continue
         else:
-            oldest_pending_at = min(run.created_at for run in active_runs)
-            stalled_before = now - timedelta(seconds=pending_grace_seconds)
-            if oldest_pending_at > stalled_before:
-                skipped.append((submission.id, "pending_worker"))
+            progress_times = [submission.updated_at]
+            for run in active_runs:
+                progress_times.append(run.created_at)
+                if run.started_at is not None:
+                    progress_times.append(run.started_at)
+                if run.heartbeat_at is not None:
+                    progress_times.append(run.heartbeat_at)
+                if run.finished_at is not None:
+                    progress_times.append(run.finished_at)
+            last_progress_at = max(progress_times)
+            grace_seconds = (
+                processing_template_grace_seconds
+                if template_is_processing and checks_not_started
+                else pending_grace_seconds
+            )
+            stalled_before = now - timedelta(seconds=grace_seconds)
+            if last_progress_at > stalled_before:
+                if template_is_processing and checks_not_started:
+                    reason = "template_processing"
+                elif not unfinished_runs:
+                    reason = "finishing_worker"
+                else:
+                    reason = (
+                        "running_worker"
+                        if any(
+                            run.status == CheckRunStatus.RUNNING
+                            for run in unfinished_runs
+                        )
+                        else "pending_worker"
+                    )
+                skipped.append((submission.id, reason))
                 continue
 
-        # Create pending rows first.  They serve as a durable claim, so a
-        # concurrent retry sees that this submission is already being recovered.
-        prepare_submission_checks(submission, version=version)
+            running_runs = [
+                run
+                for run in unfinished_runs
+                if run.status == CheckRunStatus.RUNNING
+            ]
+            worker_progress_race = False
+            with transaction.atomic():
+                for run in running_runs:
+                    filters = {
+                        "pk": run.pk,
+                        "status": CheckRunStatus.RUNNING,
+                        "claim_token": run.claim_token,
+                        "started_at": run.started_at,
+                        "heartbeat_at": run.heartbeat_at,
+                    }
+                    if run.heartbeat_at is not None:
+                        filters["heartbeat_at__lte"] = stalled_before
+                    elif run.started_at is None:
+                        filters["created_at"] = run.created_at
+                        filters["created_at__lte"] = stalled_before
+                    else:
+                        filters["started_at__lte"] = stalled_before
+                    updated = CheckRun.objects.filter(**filters).update(
+                        status=CheckRunStatus.PENDING,
+                        result_payload={},
+                        started_at=None,
+                        finished_at=None,
+                        claim_token=None,
+                        heartbeat_at=None,
+                    )
+                    if updated != 1:
+                        worker_progress_race = True
+                        transaction.set_rollback(True)
+                        break
+            if worker_progress_race:
+                skipped.append((submission.id, "worker_progress_race"))
+                continue
 
-        if submission.formatting_template_id:
+        try:
+            current_runs = ensure_submission_checks(
+                submission,
+                version=version,
+                definitions=definitions,
+            )
+        except ValueError:
+            skipped.append((submission.id, "version_changed"))
+            continue
+
+        if submission.formatting_template_id and any(
+            run.status not in TERMINAL_CHECK_RUN_STATUSES
+            for run in current_runs
+        ):
             from apps.submissions.template_processing import (
                 prepare_submission_template_by_id,
             )
@@ -321,7 +505,145 @@ def recover_stalled_submission_checks(
     }
 
 
-def run_mock_checks(submission, *, expected_version_id=None, resume_workflow_after_success=False):
+@contextmanager
+def _maintain_check_run_heartbeat(
+    run_id,
+    claim_token,
+    *,
+    interval_seconds=None,
+):
+    if interval_seconds is None:
+        interval_seconds = CHECK_RUN_HEARTBEAT_SECONDS
+    stop = Event()
+
+    def heartbeat():
+        close_old_connections()
+        try:
+            while not stop.wait(interval_seconds):
+                try:
+                    updated = CheckRun.objects.filter(
+                        pk=run_id,
+                        status=CheckRunStatus.RUNNING,
+                        claim_token=claim_token,
+                    ).update(heartbeat_at=timezone.now())
+                except Exception:
+                    logger.exception(
+                        "Failed to update heartbeat for check run %s.",
+                        run_id,
+                    )
+                    close_old_connections()
+                    continue
+                if updated != 1:
+                    break
+        finally:
+            close_old_connections()
+
+    thread = Thread(
+        target=heartbeat,
+        name=f"check-run-heartbeat-{run_id}",
+        daemon=True,
+    )
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1)
+
+
+def _technical_check_error_payload(definition, exc):
+    return {
+        "schema_version": "1.0",
+        "check_code": definition.code,
+        "message": "Проверка завершилась технической ошибкой. Это не блокирует отправку.",
+        "summary": {
+            "info": 0,
+            "warning": 1,
+            "error": 0,
+            "critical": 0,
+            "total": 1,
+        },
+        "issues": [
+            {
+                "code": "technical_error",
+                "title": "Техническая ошибка проверки",
+                "severity": "warning",
+                "message": (
+                    "Автоматическая проверка не завершилась; эксперт может "
+                    "проверить материал вручную."
+                ),
+                "location": "Система проверок",
+                "context": "",
+                "context_before": "",
+                "context_highlight": "",
+                "context_after": "",
+                "suggestion": (
+                    "Повторите проверку после устранения технической причины."
+                ),
+            }
+        ],
+        "metrics": {},
+        "extracted_metadata": {},
+        "details": {"error_type": type(exc).__name__},
+        "execution_status": "not_performed",
+    }
+
+
+def _finalize_submission_checks_if_complete(
+    submission,
+    version,
+    definitions,
+    *,
+    resume_workflow_after_success=False,
+):
+    definition_ids = [definition.id for definition in definitions]
+    with transaction.atomic():
+        locked_submission = Submission.objects.select_for_update().get(
+            pk=submission.pk,
+        )
+        if locked_submission.current_version_id != version.id:
+            return False
+        statuses = list(
+            CheckRun.objects.filter(
+                submission_id=locked_submission.pk,
+                version=version,
+                check_definition_id__in=definition_ids,
+            ).values_list("status", flat=True)
+        )
+        if len(statuses) != len(definition_ids) or any(
+            status not in TERMINAL_CHECK_RUN_STATUSES
+            for status in statuses
+        ):
+            return False
+        transitioned = (
+            locked_submission.status == SubmissionStatus.AUTO_CHECKING
+        )
+        if transitioned:
+            locked_submission.status = SubmissionStatus.SUBMITTED
+            locked_submission.save(
+                update_fields=["status", "updated_at"],
+            )
+        elif locked_submission.status != SubmissionStatus.SUBMITTED:
+            return False
+
+    submission.refresh_from_db()
+
+    ensure_submission_route_suggestion(submission)
+    if resume_workflow_after_success and transitioned:
+        from apps.workflow.services import resume_or_start_workflow
+
+        submission.refresh_from_db()
+        if submission.current_version_id == version.id:
+            resume_or_start_workflow(submission)
+    return True
+
+
+def run_mock_checks(
+    submission,
+    *,
+    expected_version_id=None,
+    resume_workflow_after_success=False,
+):
     submission.refresh_from_db()
     version = submission.current_version
     if version is None:
@@ -331,95 +653,126 @@ def run_mock_checks(submission, *, expected_version_id=None, resume_workflow_aft
         return False
 
     definitions = get_active_check_definitions()
-    runs_by_definition_id = {
-        run.check_definition_id: run
-        for run in CheckRun.objects.filter(
-            submission=submission,
+    try:
+        ensure_submission_checks(
+            submission,
             version=version,
-        ).select_related("check_definition")
-    }
-
-    if len(runs_by_definition_id) != len(definitions):
-        prepare_submission_checks(submission, version=version)
-        runs_by_definition_id = {
-            run.check_definition_id: run
-            for run in CheckRun.objects.filter(
-                submission=submission,
-                version=version,
-            ).select_related("check_definition")
-        }
-
-    snapshot = build_snapshot(version)
+            definitions=definitions,
+        )
+    except ValueError:
+        return False
+    snapshot = None
+    snapshot_loaded = False
     for definition in definitions:
         submission.refresh_from_db(fields=["current_version"])
         if submission.current_version_id != version.id:
             return False
 
-        started_at = timezone.now()
-        run = runs_by_definition_id[definition.id]
-        run.status = CheckRunStatus.RUNNING
-        run.started_at = started_at
-        run.finished_at = None
-        run.save(update_fields=["status", "started_at", "finished_at"])
-        try:
-            passed, payload = _evaluate_check(
-                definition,
-                submission,
-                version,
-                snapshot=snapshot,
+        run = CheckRun.objects.filter(
+            submission=submission,
+            version=version,
+            check_definition=definition,
+        ).first()
+        if run is None:
+            try:
+                ensure_submission_checks(
+                    submission,
+                    version=version,
+                    definitions=[definition],
+                )
+            except ValueError:
+                return False
+            run = CheckRun.objects.get(
+                submission=submission,
+                version=version,
+                check_definition=definition,
             )
-        except Exception as exc:
-            logger.exception("Submission check %s failed", definition.code)
-            passed = False
-            payload = {
-                "schema_version": "1.0",
-                "check_code": definition.code,
-                "message": "Проверка завершилась технической ошибкой. Это не блокирует отправку.",
-                "summary": {"info": 0, "warning": 1, "error": 0, "critical": 0, "total": 1},
-                "issues": [
-                    {
-                        "code": "technical_error",
-                        "title": "Техническая ошибка проверки",
-                        "severity": "warning",
-                        "message": "Автоматическая проверка не завершилась; эксперт может проверить материал вручную.",
-                        "location": "Система проверок",
-                        "context": "",
-                        "context_before": "",
-                        "context_highlight": "",
-                        "context_after": "",
-                        "suggestion": "Повторите проверку после устранения технической причины.",
-                    }
-                ],
-                "metrics": {},
-                "extracted_metadata": {},
-                "details": {"error_type": type(exc).__name__},
-                "execution_status": "not_performed",
-            }
-        execution_status = str(payload.get("execution_status") or "").strip()
-        if execution_status == "not_performed":
-            run.status = CheckRunStatus.NOT_PERFORMED
-        elif execution_status == "partial":
-            run.status = CheckRunStatus.PARTIAL
-        else:
-            run.status = CheckRunStatus.PASSED if passed else CheckRunStatus.FAILED
-        run.result_payload = payload
-        run.finished_at = timezone.now()
-        run.save(update_fields=["status", "result_payload", "finished_at"])
+        if run.status in TERMINAL_CHECK_RUN_STATUSES:
+            continue
+        if (
+            run.status != CheckRunStatus.PENDING
+            or run.claim_token is not None
+            or run.heartbeat_at is not None
+        ):
+            return False
 
-    submission.refresh_from_db(fields=["current_version"])
-    if submission.current_version_id != version.id:
-        return False
+        claim_token = uuid4()
+        started_at = timezone.now()
+        claimed = CheckRun.objects.filter(
+            pk=run.pk,
+            status=CheckRunStatus.PENDING,
+            claim_token__isnull=True,
+            heartbeat_at__isnull=True,
+        ).update(
+            status=CheckRunStatus.RUNNING,
+            result_payload={},
+            started_at=started_at,
+            finished_at=None,
+            claim_token=claim_token,
+            heartbeat_at=started_at,
+        )
+        if claimed != 1:
+            latest_status = CheckRun.objects.filter(
+                pk=run.pk,
+            ).values_list("status", flat=True).first()
+            if latest_status in TERMINAL_CHECK_RUN_STATUSES:
+                continue
+            return False
 
-    submission.status = SubmissionStatus.SUBMITTED
-    submission.save(update_fields=["status", "updated_at"])
-    ensure_submission_route_suggestion(submission)
-    if resume_workflow_after_success:
-        from apps.workflow.services import resume_or_start_workflow
+        with _maintain_check_run_heartbeat(run.pk, claim_token):
+            try:
+                if not snapshot_loaded:
+                    snapshot = build_snapshot(version)
+                    snapshot_loaded = True
+                passed, payload = _evaluate_check(
+                    definition,
+                    submission,
+                    version,
+                    snapshot=snapshot,
+                )
+                if not isinstance(payload, dict):
+                    raise TypeError("Check payload must be a dictionary.")
+                execution_status = str(
+                    payload.get("execution_status") or ""
+                ).strip()
+                if execution_status == "not_performed":
+                    terminal_status = CheckRunStatus.NOT_PERFORMED
+                elif execution_status == "partial":
+                    terminal_status = CheckRunStatus.PARTIAL
+                else:
+                    terminal_status = (
+                        CheckRunStatus.PASSED
+                        if passed
+                        else CheckRunStatus.FAILED
+                    )
+            except Exception as exc:
+                logger.exception(
+                    "Submission check %s failed",
+                    definition.code,
+                )
+                payload = _technical_check_error_payload(definition, exc)
+                terminal_status = CheckRunStatus.NOT_PERFORMED
 
-        submission.refresh_from_db()
-        if submission.current_version_id == version.id:
-            resume_or_start_workflow(submission)
-    return True
+        finished = CheckRun.objects.filter(
+            pk=run.pk,
+            status=CheckRunStatus.RUNNING,
+            claim_token=claim_token,
+        ).update(
+            status=terminal_status,
+            result_payload=payload,
+            finished_at=timezone.now(),
+            claim_token=None,
+            heartbeat_at=None,
+        )
+        if finished != 1:
+            return False
+
+    return _finalize_submission_checks_if_complete(
+        submission,
+        version,
+        definitions,
+        resume_workflow_after_success=resume_workflow_after_success,
+    )
 
 
 def run_submission_checks_by_id(submission_id, *, version_id, resume_workflow_after_success=False):

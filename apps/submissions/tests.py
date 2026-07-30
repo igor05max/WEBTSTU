@@ -532,8 +532,7 @@ class SubmissionRouteSelectionTests(TestCase):
     SUBMISSION_SELECTABLE_ROUTE_TEMPLATE_IDS=(),
     SUBMISSION_ROUTE_SUGGESTION_ENABLED=False,
     SUBMISSION_CHECKS_ASYNC=False,
-    AI_PROVIDER="gemini",
-    GEMINI_API_KEY="",
+    AI_BASE_URL="",
 )
 class SubmissionCreateViewTests(TestCase):
     def setUp(self):
@@ -1085,6 +1084,427 @@ class SubmissionCreateViewTests(TestCase):
             expected_version_id=submission.current_version_id,
             resume_workflow_after_success=False,
         )
+
+    def _create_watchdog_submission(self, title):
+        return create_submission_with_initial_version(
+            author=self.user,
+            title=title,
+            abstract="",
+            journal=self.journal,
+            article_type=self.article_type,
+            file=SimpleUploadedFile("article.txt", b"content"),
+            defer_checks=True,
+            mark_as_checking=True,
+        )
+
+    def _age_watchdog_submission(self, submission, *, seconds):
+        stalled_at = timezone.now() - timedelta(seconds=seconds)
+        Submission.objects.filter(pk=submission.pk).update(
+            updated_at=stalled_at,
+        )
+        submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        ).update(created_at=stalled_at)
+        submission.refresh_from_db()
+        return stalled_at
+
+    def _successful_watchdog_evaluation(
+        self,
+        check_definition,
+        submission,
+        version,
+        *,
+        snapshot=None,
+    ):
+        return True, {
+            "schema_version": "1.0",
+            "check_code": check_definition.code,
+            "message": "ok",
+            "summary": {
+                "info": 0,
+                "warning": 0,
+                "error": 0,
+                "critical": 0,
+                "total": 0,
+            },
+            "issues": [],
+            "metrics": {},
+            "extracted_metadata": {},
+            "details": {},
+        }
+
+    @patch("apps.checks.services._evaluate_check")
+    def test_watchdog_leaves_fresh_pending_runs_for_worker(self, evaluate):
+        submission = self._create_watchdog_submission(
+            "Шаблон ещё обрабатывается",
+        )
+        self._age_watchdog_submission(submission, seconds=120)
+
+        result = recover_stalled_submission_checks(
+            submission_ids=[submission.pk],
+        )
+
+        self.assertEqual(
+            result["skipped"],
+            [(submission.pk, "pending_worker")],
+        )
+        evaluate.assert_not_called()
+
+    @patch("apps.checks.services._evaluate_check")
+    def test_watchdog_recovers_stale_pending_runs(self, evaluate):
+        evaluate.side_effect = self._successful_watchdog_evaluation
+        submission = self._create_watchdog_submission(
+            "Ожидающие проверки зависли",
+        )
+        self._age_watchdog_submission(submission, seconds=10 * 60)
+        run_count = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        ).count()
+
+        result = recover_stalled_submission_checks(
+            submission_ids=[submission.pk],
+        )
+
+        self.assertEqual(result["recovered"], [(submission.pk, True)])
+        self.assertEqual(evaluate.call_count, run_count)
+
+    @patch("apps.checks.services._evaluate_check")
+    def test_watchdog_leaves_fresh_running_run_and_old_pending_runs(
+        self,
+        evaluate,
+    ):
+        from uuid import uuid4
+
+        submission = self._create_watchdog_submission(
+            "Проверка выполняется",
+        )
+        self._age_watchdog_submission(submission, seconds=10 * 60)
+        running = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        ).first()
+        heartbeat_at = timezone.now() - timedelta(seconds=120)
+        running.status = CheckRunStatus.RUNNING
+        running.started_at = timezone.now() - timedelta(minutes=10)
+        running.heartbeat_at = heartbeat_at
+        running.claim_token = uuid4()
+        running.save(
+            update_fields=[
+                "status",
+                "started_at",
+                "heartbeat_at",
+                "claim_token",
+            ]
+        )
+
+        result = recover_stalled_submission_checks(
+            submission_ids=[submission.pk],
+        )
+
+        self.assertEqual(
+            result["skipped"],
+            [(submission.pk, "running_worker")],
+        )
+        evaluate.assert_not_called()
+
+    @patch("apps.checks.services._evaluate_check")
+    def test_watchdog_reclaims_stale_running_run(self, evaluate):
+        from uuid import uuid4
+
+        evaluate.side_effect = self._successful_watchdog_evaluation
+        submission = self._create_watchdog_submission(
+            "Запущенная проверка зависла",
+        )
+        stalled_at = self._age_watchdog_submission(
+            submission,
+            seconds=10 * 60,
+        )
+        running = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        ).first()
+        run_ids = set(
+            submission.check_runs.filter(
+                version_id=submission.current_version_id,
+            ).values_list("id", flat=True)
+        )
+        running.status = CheckRunStatus.RUNNING
+        running.started_at = stalled_at
+        running.heartbeat_at = stalled_at
+        running.claim_token = uuid4()
+        running.save(
+            update_fields=[
+                "status",
+                "started_at",
+                "heartbeat_at",
+                "claim_token",
+            ]
+        )
+
+        result = recover_stalled_submission_checks(
+            submission_ids=[submission.pk],
+        )
+
+        current_runs = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        )
+        self.assertEqual(current_runs.count(), 5)
+        self.assertEqual(
+            set(current_runs.values_list("id", flat=True)),
+            run_ids,
+        )
+        self.assertTrue(current_runs.filter(pk=running.pk).exists())
+        self.assertFalse(
+            current_runs.filter(status=CheckRunStatus.RUNNING).exists()
+        )
+        self.assertEqual(result["recovered"], [(submission.pk, True)])
+        self.assertEqual(evaluate.call_count, 5)
+
+    @patch("apps.checks.services._evaluate_check")
+    def test_watchdog_recovers_stale_pending_runs_after_terminal_sibling(
+        self,
+        evaluate,
+    ):
+        evaluate.side_effect = self._successful_watchdog_evaluation
+        submission = self._create_watchdog_submission(
+            "Часть проверок завершилась",
+        )
+        stalled_at = self._age_watchdog_submission(
+            submission,
+            seconds=10 * 60,
+        )
+        current_runs = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        )
+        finished = current_runs.first()
+        terminal_payload = {
+            "schema_version": "1.0",
+            "check_code": finished.check_definition.code,
+            "message": "terminal payload must survive",
+        }
+        finished.status = CheckRunStatus.PASSED
+        finished.finished_at = stalled_at
+        finished.result_payload = terminal_payload
+        finished.save(
+            update_fields=["status", "finished_at", "result_payload"]
+        )
+        run_ids = set(current_runs.values_list("id", flat=True))
+        pending_count = current_runs.exclude(pk=finished.pk).count()
+
+        result = recover_stalled_submission_checks(
+            submission_ids=[submission.pk],
+        )
+
+        finished.refresh_from_db()
+        current_runs = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        )
+        self.assertEqual(result["recovered"], [(submission.pk, True)])
+        self.assertEqual(evaluate.call_count, pending_count)
+        self.assertEqual(finished.status, CheckRunStatus.PASSED)
+        self.assertEqual(finished.result_payload, terminal_payload)
+        self.assertEqual(
+            set(current_runs.values_list("id", flat=True)),
+            run_ids,
+        )
+
+    @patch("apps.checks.services._evaluate_check")
+    def test_watchdog_leaves_fresh_terminal_runs_for_workflow_transition(
+        self,
+        evaluate,
+    ):
+        submission = self._create_watchdog_submission(
+            "Проверки только что завершились",
+        )
+        finished_at = self._age_watchdog_submission(
+            submission,
+            seconds=120,
+        )
+        submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        ).update(
+            status=CheckRunStatus.PASSED,
+            finished_at=finished_at,
+        )
+
+        result = recover_stalled_submission_checks(
+            submission_ids=[submission.pk],
+        )
+
+        self.assertEqual(
+            result["skipped"],
+            [(submission.pk, "finishing_worker")],
+        )
+        evaluate.assert_not_called()
+
+    @patch("apps.checks.services._evaluate_check")
+    def test_watchdog_recovers_stale_terminal_runs_before_status_transition(
+        self,
+        evaluate,
+    ):
+        submission = self._create_watchdog_submission(
+            "Переход после проверок завис",
+        )
+        stalled_at = self._age_watchdog_submission(
+            submission,
+            seconds=10 * 60,
+        )
+        current_runs = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        )
+        preserved = current_runs.first()
+        preserved_payload = {
+            "schema_version": "1.0",
+            "check_code": preserved.check_definition.code,
+            "message": "completed before workflow crash",
+            "details": {"marker": "preserve-me"},
+        }
+        current_runs.exclude(pk=preserved.pk).update(
+            status=CheckRunStatus.PASSED,
+            finished_at=stalled_at,
+        )
+        preserved.status = CheckRunStatus.PASSED
+        preserved.finished_at = stalled_at
+        preserved.result_payload = preserved_payload
+        preserved.save(
+            update_fields=["status", "finished_at", "result_payload"]
+        )
+        run_ids = set(current_runs.values_list("id", flat=True))
+
+        result = recover_stalled_submission_checks(
+            submission_ids=[submission.pk],
+        )
+
+        preserved.refresh_from_db()
+        current_runs = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        )
+        self.assertEqual(result["recovered"], [(submission.pk, True)])
+        evaluate.assert_not_called()
+        self.assertEqual(preserved.result_payload, preserved_payload)
+        self.assertEqual(
+            set(current_runs.values_list("id", flat=True)),
+            run_ids,
+        )
+
+    def test_run_mock_checks_second_worker_does_not_execute_running_claim(self):
+        from apps.checks.services import run_mock_checks
+
+        submission = self._create_watchdog_submission(
+            "Два worker одновременно забирают проверки",
+        )
+        current_runs = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        )
+        claimed_run = current_runs.first()
+        current_runs.exclude(pk=claimed_run.pk).update(
+            status=CheckRunStatus.PASSED,
+            finished_at=timezone.now(),
+        )
+        nested_results = []
+
+        def evaluate_once(
+            check_definition,
+            evaluated_submission,
+            version,
+            *,
+            snapshot=None,
+        ):
+            nested_results.append(
+                run_mock_checks(
+                    evaluated_submission,
+                    expected_version_id=version.id,
+                    resume_workflow_after_success=False,
+                )
+            )
+            return self._successful_watchdog_evaluation(
+                check_definition,
+                evaluated_submission,
+                version,
+                snapshot=snapshot,
+            )
+
+        with patch(
+            "apps.checks.services._evaluate_check",
+            side_effect=evaluate_once,
+        ) as evaluate:
+            completed = run_mock_checks(
+                submission,
+                expected_version_id=submission.current_version_id,
+                resume_workflow_after_success=False,
+            )
+
+        self.assertTrue(completed)
+        self.assertEqual(nested_results, [False])
+        self.assertEqual(evaluate.call_count, 1)
+
+    def test_run_mock_checks_old_claim_cannot_overwrite_reclaimed_run(self):
+        from uuid import uuid4
+
+        from apps.checks.services import run_mock_checks
+
+        submission = self._create_watchdog_submission(
+            "Старый worker завершился после повторного захвата",
+        )
+        current_runs = submission.check_runs.filter(
+            version_id=submission.current_version_id,
+        )
+        claimed_run = current_runs.first()
+        current_runs.exclude(pk=claimed_run.pk).update(
+            status=CheckRunStatus.PASSED,
+            finished_at=timezone.now(),
+        )
+        reclaimed_payload = {
+            "schema_version": "1.0",
+            "message": "new worker owns this result",
+        }
+        observed_tokens = {}
+        reclaimed_at = timezone.now()
+
+        def replace_claim_before_old_worker_finishes(
+            check_definition,
+            evaluated_submission,
+            version,
+            *,
+            snapshot=None,
+        ):
+            running = evaluated_submission.check_runs.get(
+                version=version,
+                check_definition=check_definition,
+            )
+            observed_tokens["old"] = running.claim_token
+            observed_tokens["new"] = uuid4()
+            evaluated_submission.check_runs.filter(pk=running.pk).update(
+                status=CheckRunStatus.RUNNING,
+                claim_token=observed_tokens["new"],
+                started_at=reclaimed_at,
+                heartbeat_at=reclaimed_at,
+                result_payload=reclaimed_payload,
+            )
+            return self._successful_watchdog_evaluation(
+                check_definition,
+                evaluated_submission,
+                version,
+                snapshot=snapshot,
+            )
+
+        with patch(
+            "apps.checks.services._evaluate_check",
+            side_effect=replace_claim_before_old_worker_finishes,
+        ) as evaluate:
+            completed = run_mock_checks(
+                submission,
+                expected_version_id=submission.current_version_id,
+                resume_workflow_after_success=False,
+            )
+
+        claimed_run.refresh_from_db()
+        self.assertFalse(completed)
+        self.assertEqual(evaluate.call_count, 1)
+        self.assertIsNotNone(observed_tokens["old"])
+        self.assertNotEqual(observed_tokens["old"], observed_tokens["new"])
+        self.assertEqual(claimed_run.status, CheckRunStatus.RUNNING)
+        self.assertEqual(claimed_run.claim_token, observed_tokens["new"])
+        self.assertEqual(claimed_run.heartbeat_at, reclaimed_at)
+        self.assertEqual(claimed_run.result_payload, reclaimed_payload)
 
     def test_create_submission_runs_checks_immediately(self):
         submission = create_submission_with_initial_version(
@@ -1772,8 +2192,8 @@ class SubmissionAutomaticRouteSelectionTests(TestCase):
         )
         self.subject_area_payload = {
             "matched": True,
-            "source": "gemini",
-            "message": "Gemini определил предметную область по материалу.",
+            "source": "ai",
+            "message": "Локальная AI-модель определила предметную область по материалу.",
             "direction_code": self.direction_other.code,
             "direction_name": self.direction_other.name,
             "confidence": 92,
@@ -1860,7 +2280,7 @@ class SubmissionAutomaticRouteSelectionTests(TestCase):
 @override_settings(
     SUBMISSION_SELECTABLE_ROUTE_TEMPLATE_IDS=(),
     SUBMISSION_ROUTE_SUGGESTION_ENABLED=True,
-    GEMINI_API_KEY="test-key",
+    AI_BASE_URL="http://127.0.0.1:8088/v1",
 )
 class SubmissionSubjectAreaDetectionTests(TestCase):
     def setUp(self):
@@ -1874,9 +2294,9 @@ class SubmissionSubjectAreaDetectionTests(TestCase):
             name="Информатика, вычислительная техника и информационная безопасность",
         )
 
-    @patch("apps.submissions.subject_area._call_gemini")
-    def test_detect_direction_accepts_truncated_json_from_gemini(self, mocked_call_gemini):
-        mocked_call_gemini.return_value = {
+    @patch("apps.submissions.subject_area._call_ai_model")
+    def test_detect_direction_accepts_truncated_json_from_local_ai(self, mocked_call_ai):
+        mocked_call_ai.return_value = {
             "candidates": [
                 {
                     "content": {
@@ -1910,9 +2330,9 @@ class SubmissionSubjectAreaDetectionTests(TestCase):
         self.assertEqual(payload["direction_name"], self.direction.name)
         self.assertEqual(payload["confidence"], 95)
 
-    @patch("apps.submissions.subject_area._call_gemini")
-    def test_detect_direction_falls_back_to_local_keywords_when_gemini_times_out(self, mocked_call_gemini):
-        mocked_call_gemini.side_effect = TimeoutError("The read operation timed out")
+    @patch("apps.submissions.subject_area._call_ai_model")
+    def test_detect_direction_falls_back_when_local_ai_times_out(self, mocked_call_ai):
+        mocked_call_ai.side_effect = TimeoutError("The read operation timed out")
         submission = Submission(
             title="Алгоритм анализа ОКТ-изображений для картирования потоков биологических жидкостей",
             abstract=(
@@ -1933,7 +2353,7 @@ class SubmissionSubjectAreaDetectionTests(TestCase):
         self.assertFalse(payload["ai_check_performed"])
         self.assertEqual(payload["direction_code"], self.direction.code)
         self.assertEqual(payload["direction_name"], self.direction.name)
-        self.assertIn("Gemini недоступен", payload["message"])
+        self.assertIn("Локальная AI-модель недоступна", payload["message"])
 
 
 @override_settings(

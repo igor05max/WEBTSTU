@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.checks.models import CheckDefinition, CheckRun, GeminiConfiguration
+from apps.checks.models import CheckDefinition, CheckRun, AIConfiguration
 
 
 class HiddenFromAdminIndexMixin:
@@ -34,6 +34,6 @@ class CheckRunAdmin(HiddenFromAdminIndexMixin, ReadOnlyAdmin):
     autocomplete_fields = ("submission", "version", "check_definition")
 
 
-@admin.register(GeminiConfiguration)
-class GeminiConfigurationAdmin(HiddenFromAdminIndexMixin, ReadOnlyAdmin):
+@admin.register(AIConfiguration)
+class AIConfigurationAdmin(HiddenFromAdminIndexMixin, ReadOnlyAdmin):
     list_display = ("model_name", "models_refreshed_at", "last_test_status", "updated_at")

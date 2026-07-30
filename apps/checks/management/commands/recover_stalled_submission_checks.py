@@ -25,6 +25,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--pending-grace-seconds",
             type=int,
+            default=300,
+        )
+        parser.add_argument(
+            "--processing-template-grace-seconds",
+            type=int,
             default=600,
         )
 
@@ -32,6 +37,10 @@ class Command(BaseCommand):
         result = recover_stalled_submission_checks(
             no_run_grace_seconds=max(0, options["no_run_grace_seconds"]),
             pending_grace_seconds=max(0, options["pending_grace_seconds"]),
+            processing_template_grace_seconds=max(
+                0,
+                options["processing_template_grace_seconds"],
+            ),
             submission_ids=options.get("submission_ids"),
         )
         recovered = ", ".join(

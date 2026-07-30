@@ -1,5 +1,4 @@
 import json
-import re
 import socket
 import urllib.error
 import urllib.request
@@ -9,34 +8,23 @@ from django.conf import settings
 from django.db import OperationalError, ProgrammingError
 
 
-GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-GEMINI_MODELS_ENDPOINT = f"{GEMINI_API_BASE_URL}/models"
-PREFERRED_MODELS = (
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-flash-lite-latest",
-)
-_KEY_QUERY_RE = re.compile(r"([?&]key=)[^&\s]+", re.I)
-_OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai_compatible", "llama_cpp", "local"}
+PREFERRED_MODEL_MARKERS = ("qwen",)
 
 
 def get_provider():
-    provider = str(getattr(settings, "AI_PROVIDER", "gemini") or "gemini").strip().lower()
-    return "openai_compatible" if provider in _OPENAI_COMPATIBLE_PROVIDERS else "gemini"
+    return "openai_compatible"
 
 
 def get_provider_label():
-    return "Локальная AI-модель" if get_provider() == "openai_compatible" else "Gemini"
+    return "Локальная модель Qwen"
 
 
 def get_ai_source():
-    return "ai" if get_provider() == "openai_compatible" else "gemini"
+    return "ai"
 
 
 def get_api_base_url():
-    if get_provider() == "openai_compatible":
-        return str(getattr(settings, "AI_BASE_URL", "") or "").strip().rstrip("/")
-    return GEMINI_API_BASE_URL
+    return str(getattr(settings, "AI_BASE_URL", "") or "").strip().rstrip("/")
 
 
 def get_models_endpoint():
@@ -47,72 +35,59 @@ def get_models_endpoint():
 def get_api_key(api_key=None):
     if api_key is not None:
         return str(api_key or "").strip()
-    if get_provider() == "openai_compatible":
-        return str(getattr(settings, "AI_API_KEY", "") or "").strip()
-    return str(getattr(settings, "GEMINI_API_KEY", "") or "").strip()
+    return str(getattr(settings, "AI_API_KEY", "") or "").strip()
 
 
 def is_ai_configured():
-    if get_provider() == "openai_compatible":
-        return bool(get_api_base_url())
-    return bool(get_api_key())
+    return bool(get_api_base_url())
 
 
 def validate_api_key(api_key):
-    """Validate only properties required by Gemini, not a historical key prefix."""
-    normalized = (api_key or "").strip()
-    if not normalized:
-        raise ValueError("Ключ Gemini API не задан.")
+    normalized = str(api_key or "").strip()
     if any(character.isspace() for character in normalized):
-        raise ValueError("Ключ Gemini API содержит пробельные символы.")
+        raise ValueError("Ключ локального AI API содержит пробельные символы.")
     return normalized
 
 
 def _validate_configuration(api_key=None):
-    if get_provider() == "openai_compatible":
-        if not get_api_base_url():
-            raise ValueError("Адрес локального AI API не задан в AI_BASE_URL.")
-        return get_api_key(api_key)
+    if not get_api_base_url():
+        raise ValueError("Адрес локального AI API не задан в AI_BASE_URL.")
     return validate_api_key(get_api_key(api_key))
 
 
 def normalize_model_id(model_name):
-    normalized = (model_name or "").strip()
+    normalized = str(model_name or "").strip()
     if normalized.startswith("models/"):
         normalized = normalized[len("models/") :]
     return normalized.strip("/")
-
-
-def model_resource_name(model_name):
-    model_id = normalize_model_id(model_name)
-    return f"models/{model_id}" if model_id else ""
 
 
 def redact_sensitive(value, *, api_key=""):
     safe_value = str(value or "")
     if api_key:
         safe_value = safe_value.replace(api_key, "[API_KEY_REDACTED]")
-    return _KEY_QUERY_RE.sub(r"\1[API_KEY_REDACTED]", safe_value)
+    return safe_value
 
 
 def _http_error_hint(status):
-    service_name = get_provider_label()
     return {
-        400: "Сервис отклонил параметры запроса.",
-        401: "Сервис не принял учётные данные API.",
-        403: "Нет доступа к операции.",
-        404: "Модель или endpoint не найдены.",
-        429: "Превышена квота или частота запросов.",
+        400: "Локальный AI-сервис отклонил параметры запроса.",
+        401: "Локальный AI-сервис не принял учётные данные.",
+        403: "Нет доступа к локальному AI-сервису.",
+        404: "Модель или endpoint локального AI-сервиса не найдены.",
+        429: "Превышена допустимая частота запросов к локальной модели.",
     }.get(
         status,
-        f"{service_name} временно недоступна." if status and status >= 500 else "Запрос AI завершился ошибкой.",
+        (
+            "Локальная модель временно недоступна."
+            if status and status >= 500
+            else "Запрос к локальной модели завершился ошибкой."
+        ),
     )
 
 
 @dataclass
-class GeminiAPIError(Exception):
-    """Compatibility name for errors from either configured AI provider."""
-
+class AIProviderError(Exception):
     stage: str
     kind: str
     message: str
@@ -120,7 +95,7 @@ class GeminiAPIError(Exception):
     status: int | None = None
     error_code: str = ""
     model: str = ""
-    provider: str = ""
+    provider: str = "openai_compatible"
 
     def __str__(self):
         status = f" HTTP {self.status}." if self.status else ""
@@ -132,19 +107,15 @@ class GeminiAPIError(Exception):
             "kind": self.kind,
             "http_status": self.status,
             "provider_message": self.message,
-            "google_message": self.message,
             "error_code": self.error_code,
             "endpoint": self.endpoint,
             "model": self.model,
-            "provider": self.provider or get_provider(),
+            "provider": self.provider,
         }
 
 
-AIProviderError = GeminiAPIError
-
-
 def _parse_api_error(raw_body, *, api_key, fallback_message):
-    message = fallback_message
+    message = str(fallback_message or "HTTP error")
     error_code = ""
     try:
         payload = json.loads(raw_body or "{}")
@@ -153,29 +124,48 @@ def _parse_api_error(raw_body, *, api_key, fallback_message):
     error = payload.get("error") if isinstance(payload, dict) else None
     if isinstance(error, dict):
         message = str(error.get("message") or message)
-        error_code = str(error.get("status") or error.get("code") or error.get("type") or "")
+        error_code = str(
+            error.get("status")
+            or error.get("code")
+            or error.get("type")
+            or ""
+        )
     elif error:
         message = str(error)
-    return redact_sensitive(message, api_key=api_key)[:1500], redact_sensitive(error_code, api_key=api_key)[:120]
+    return (
+        redact_sensitive(message, api_key=api_key)[:1500],
+        redact_sensitive(error_code, api_key=api_key)[:120],
+    )
 
 
-def _request_json(*, method, endpoint, api_key, timeout, stage, model="", payload=None, opener=None):
-    safe_endpoint = redact_sensitive(endpoint, api_key=api_key).split("?", 1)[0]
+def _request_json(
+    *,
+    method,
+    endpoint,
+    api_key,
+    timeout,
+    stage,
+    model="",
+    payload=None,
+    opener=None,
+):
     headers = {"Accept": "application/json"}
-    if get_provider() == "gemini":
-        headers["x-goog-api-key"] = validate_api_key(api_key)
-    elif api_key:
+    if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     data = None
     if payload is not None:
         headers["Content-Type"] = "application/json; charset=utf-8"
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib.request.Request(endpoint, data=data, headers=headers, method=method)
+    request = urllib.request.Request(
+        endpoint,
+        data=data,
+        headers=headers,
+        method=method,
+    )
     open_request = opener or urllib.request.urlopen
     try:
         with open_request(request, timeout=timeout) as response:
-            raw_body = response.read().decode("utf-8")
-            return json.loads(raw_body)
+            return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raw_body = exc.read().decode("utf-8", errors="ignore")
         message, error_code = _parse_api_error(
@@ -183,15 +173,14 @@ def _request_json(*, method, endpoint, api_key, timeout, stage, model="", payloa
             api_key=api_key,
             fallback_message=getattr(exc, "reason", "HTTP error"),
         )
-        raise GeminiAPIError(
+        raise AIProviderError(
             stage=stage,
             kind="http_error",
             status=exc.code,
             message=message,
             error_code=error_code,
-            endpoint=safe_endpoint,
+            endpoint=endpoint,
             model=normalize_model_id(model),
-            provider=get_provider(),
         ) from None
     except urllib.error.URLError as exc:
         reason = exc.reason
@@ -200,77 +189,60 @@ def _request_json(*, method, endpoint, api_key, timeout, stage, model="", payloa
             message = f"Превышено время ожидания ({timeout} с)."
         elif isinstance(reason, socket.gaierror):
             kind = "dns_error"
-            message = "Не удалось определить адрес AI-сервера."
+            message = "Не удалось определить адрес локального AI-сервера."
         else:
             kind = "network_error"
-            message = "Нет соединения с AI API."
-        raise GeminiAPIError(
+            message = "Нет соединения с локальным AI API через VPN."
+        raise AIProviderError(
             stage=stage,
             kind=kind,
             message=message,
-            endpoint=safe_endpoint,
+            endpoint=endpoint,
             model=normalize_model_id(model),
-            provider=get_provider(),
         ) from None
     except (socket.timeout, TimeoutError):
-        raise GeminiAPIError(
+        raise AIProviderError(
             stage=stage,
             kind="timeout",
             message=f"Превышено время ожидания ({timeout} с).",
-            endpoint=safe_endpoint,
+            endpoint=endpoint,
             model=normalize_model_id(model),
-            provider=get_provider(),
         ) from None
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        raise GeminiAPIError(
+        raise AIProviderError(
             stage=stage,
-            kind="invalid_response" if isinstance(exc, (ValueError, json.JSONDecodeError)) else "network_error",
+            kind=(
+                "invalid_response"
+                if isinstance(exc, (ValueError, json.JSONDecodeError))
+                else "network_error"
+            ),
             message=redact_sensitive(str(exc), api_key=api_key)[:1500],
-            endpoint=safe_endpoint,
+            endpoint=endpoint,
             model=normalize_model_id(model),
-            provider=get_provider(),
         ) from None
 
 
 def parse_generation_models(payload):
     result = []
     seen = set()
-    provider = get_provider()
-    if provider == "openai_compatible":
-        raw_models = (payload or {}).get("data") or (payload or {}).get("models") or []
-        for item in raw_models:
-            if not isinstance(item, dict):
-                continue
-            model_id = normalize_model_id(item.get("id") or item.get("name") or item.get("model"))
-            if not model_id or model_id in seen:
-                continue
-            seen.add(model_id)
-            result.append(
-                {
-                    "id": model_id,
-                    "name": model_id,
-                    "display_name": str(item.get("display_name") or item.get("name") or model_id),
-                    "supported_generation_methods": ["chat/completions"],
-                }
-            )
-        return result
-
-    for item in (payload or {}).get("models") or []:
+    raw_models = (payload or {}).get("data") or (payload or {}).get("models") or []
+    for item in raw_models:
         if not isinstance(item, dict):
             continue
-        methods = item.get("supportedGenerationMethods") or []
-        if "generateContent" not in methods:
-            continue
-        model_id = normalize_model_id(item.get("name"))
+        model_id = normalize_model_id(
+            item.get("id") or item.get("name") or item.get("model")
+        )
         if not model_id or model_id in seen:
             continue
         seen.add(model_id)
         result.append(
             {
                 "id": model_id,
-                "name": model_resource_name(model_id),
-                "display_name": str(item.get("displayName") or model_id),
-                "supported_generation_methods": list(methods),
+                "name": model_id,
+                "display_name": str(
+                    item.get("display_name") or item.get("name") or model_id
+                ),
+                "supported_generation_methods": ["chat/completions"],
             }
         )
     return result
@@ -278,12 +250,8 @@ def parse_generation_models(payload):
 
 def fetch_generation_models(*, api_key=None, timeout=None, opener=None):
     api_key = _validate_configuration(api_key)
-    default_timeout = getattr(
-        settings,
-        "AI_MODELS_TIMEOUT",
-        getattr(settings, "GEMINI_MODELS_TIMEOUT", 30),
-    )
-    timeout = max(30, int(timeout if timeout is not None else default_timeout))
+    default_timeout = getattr(settings, "AI_MODELS_TIMEOUT", 30)
+    timeout = max(1, int(timeout if timeout is not None else default_timeout))
     endpoint = get_models_endpoint()
     payload = _request_json(
         method="GET",
@@ -295,58 +263,75 @@ def fetch_generation_models(*, api_key=None, timeout=None, opener=None):
     )
     models = parse_generation_models(payload)
     if not models:
-        raise GeminiAPIError(
+        raise AIProviderError(
             stage="list_models",
             kind="no_compatible_models",
-            message="AI-сервис не вернул моделей для генерации текста.",
+            message="Локальный AI-сервис не вернул моделей для генерации текста.",
             endpoint=endpoint,
-            provider=get_provider(),
         )
     return models
 
 
 def choose_generation_model(models, saved_model=""):
-    available_ids = [normalize_model_id(model.get("id") or model.get("name")) for model in models]
+    available_ids = [
+        normalize_model_id(model.get("id") or model.get("name"))
+        for model in models
+    ]
     saved_id = normalize_model_id(saved_model)
     if saved_id and saved_id in available_ids:
         return saved_id
     configured_id = normalize_model_id(getattr(settings, "AI_MODEL", ""))
     if configured_id and configured_id in available_ids:
         return configured_id
-    for preferred in PREFERRED_MODELS:
-        if preferred in available_ids:
-            return preferred
+    for model_id in available_ids:
+        if any(marker in model_id.casefold() for marker in PREFERRED_MODEL_MARKERS):
+            return model_id
     return available_ids[0] if available_ids else ""
 
 
 def get_configured_model(fallback=""):
     try:
-        from apps.checks.models import GeminiConfiguration
+        from apps.checks.models import AIConfiguration
 
-        configured = GeminiConfiguration.objects.filter(pk=1).values_list("model_name", flat=True).first()
+        configured = (
+            AIConfiguration.objects.filter(pk=1)
+            .values_list("model_name", flat=True)
+            .first()
+        )
     except (OperationalError, ProgrammingError):
         configured = ""
-    return normalize_model_id(configured or fallback or getattr(settings, "AI_MODEL", ""))
+    return normalize_model_id(
+        configured or fallback or getattr(settings, "AI_MODEL", "")
+    )
 
 
 def _ordered_candidates(models, saved_model=""):
-    available_ids = [normalize_model_id(model.get("id") or model.get("name")) for model in models]
+    available_ids = [
+        normalize_model_id(model.get("id") or model.get("name"))
+        for model in models
+    ]
     selected = choose_generation_model(models, saved_model)
     configured_id = normalize_model_id(getattr(settings, "AI_MODEL", ""))
     ordered = []
-    for model_id in (selected, configured_id, *PREFERRED_MODELS, *available_ids):
+    for model_id in (selected, configured_id, *available_ids):
         if model_id and model_id in available_ids and model_id not in ordered:
             ordered.append(model_id)
     return ordered[:5]
 
 
 def _parts_text(parts):
-    return "\n".join(str(part.get("text") or "") for part in (parts or []) if part.get("text")).strip()
+    return "\n".join(
+        str(part.get("text") or "")
+        for part in (parts or [])
+        if isinstance(part, dict) and part.get("text")
+    ).strip()
 
 
-def _to_openai_payload(payload, model_id):
+def _to_openai_payload(payload, model_id, *, include_extensions=True):
     messages = []
-    system_text = _parts_text(((payload or {}).get("systemInstruction") or {}).get("parts"))
+    system_text = _parts_text(
+        ((payload or {}).get("systemInstruction") or {}).get("parts")
+    )
     if system_text:
         messages.append({"role": "system", "content": system_text})
     for content in (payload or {}).get("contents") or []:
@@ -368,12 +353,13 @@ def _to_openai_payload(payload, model_id):
     max_tokens = generation_config.get("maxOutputTokens")
     if max_tokens:
         request_payload["max_tokens"] = int(max_tokens)
-    if generation_config.get("responseMimeType") == "application/json":
-        request_payload["response_format"] = {"type": "json_object"}
-    if getattr(settings, "AI_DISABLE_THINKING", False):
-        request_payload["chat_template_kwargs"] = {"enable_thinking": False}
     if "temperature" in generation_config:
         request_payload["temperature"] = generation_config["temperature"]
+    if include_extensions:
+        if generation_config.get("responseMimeType") == "application/json":
+            request_payload["response_format"] = {"type": "json_object"}
+        if getattr(settings, "AI_DISABLE_THINKING", False):
+            request_payload["chat_template_kwargs"] = {"enable_thinking": False}
     return request_payload
 
 
@@ -387,7 +373,9 @@ def _from_openai_response(payload):
             content = raw_content
         elif isinstance(raw_content, list):
             content = "\n".join(
-                str(item.get("text") or "") for item in raw_content if isinstance(item, dict)
+                str(item.get("text") or "")
+                for item in raw_content
+                if isinstance(item, dict)
             ).strip()
     return {
         "candidates": [{"content": {"parts": [{"text": content}]}}],
@@ -405,52 +393,54 @@ def generate_content(
     opener=None,
 ):
     api_key = _validate_configuration(api_key)
-    default_timeout = getattr(
-        settings,
-        "AI_REQUEST_TIMEOUT",
-        getattr(settings, "GEMINI_REQUEST_TIMEOUT", 60),
-    )
+    default_timeout = getattr(settings, "AI_REQUEST_TIMEOUT", 120)
     timeout = max(1, int(timeout if timeout is not None else default_timeout))
     models = models or fetch_generation_models(api_key=api_key, opener=opener)
     candidates = _ordered_candidates(models, model)
+    endpoint = f"{get_api_base_url()}/chat/completions"
     last_error = None
     for model_id in candidates:
-        if get_provider() == "openai_compatible":
-            endpoint = f"{get_api_base_url()}/chat/completions"
-            request_payload = _to_openai_payload(payload, model_id)
-        else:
-            endpoint = f"{GEMINI_API_BASE_URL}/{model_resource_name(model_id)}:generateContent"
-            request_payload = payload
-        try:
-            response = _request_json(
-                method="POST",
-                endpoint=endpoint,
-                api_key=api_key,
-                timeout=timeout,
-                stage="generate_content",
-                model=model_id,
-                payload=request_payload,
-                opener=opener,
-            )
-            if get_provider() == "openai_compatible":
-                response = _from_openai_response(response)
-            return response, model_id
-        except GeminiAPIError as exc:
-            last_error = exc
-            if exc.kind not in {"http_error", "timeout", "network_error", "dns_error"}:
-                break
-            if exc.kind in {"network_error", "dns_error"}:
-                break
-            if exc.status not in {None, 400, 404, 429} and not (exc.status and exc.status >= 500):
-                break
+        for include_extensions in (True, False):
+            try:
+                response = _request_json(
+                    method="POST",
+                    endpoint=endpoint,
+                    api_key=api_key,
+                    timeout=timeout,
+                    stage="generate_content",
+                    model=model_id,
+                    payload=_to_openai_payload(
+                        payload,
+                        model_id,
+                        include_extensions=include_extensions,
+                    ),
+                    opener=opener,
+                )
+                return _from_openai_response(response), model_id
+            except AIProviderError as exc:
+                last_error = exc
+                if not (include_extensions and exc.status == 400):
+                    break
+        if last_error and last_error.kind in {"network_error", "dns_error"}:
+            break
+        if last_error and last_error.status not in {
+            None,
+            400,
+            404,
+            429,
+            500,
+            502,
+            503,
+            504,
+        }:
+            break
     if last_error is not None:
         raise last_error
-    raise GeminiAPIError(
+    raise AIProviderError(
         stage="generate_content",
         kind="no_compatible_models",
-        message="Не удалось выбрать модель для генерации текста.",
+        message="Не удалось выбрать локальную модель для генерации текста.",
         endpoint=get_models_endpoint(),
-        provider=get_provider(),
     )
 
 
@@ -465,7 +455,11 @@ def extract_response_text(payload):
 
 def test_connection(*, api_key=None, saved_model="", timeout=None, opener=None):
     api_key = _validate_configuration(api_key)
-    models = fetch_generation_models(api_key=api_key, timeout=timeout, opener=opener)
+    models = fetch_generation_models(
+        api_key=api_key,
+        timeout=timeout,
+        opener=opener,
+    )
     selected_model = choose_generation_model(models, saved_model)
     payload = {
         "contents": [
@@ -486,17 +480,12 @@ def test_connection(*, api_key=None, saved_model="", timeout=None, opener=None):
     )
     response_text = extract_response_text(response).strip()
     if not response_text:
-        raise GeminiAPIError(
+        raise AIProviderError(
             stage="generate_content",
             kind="empty_response",
-            message="AI-модель вернула ответ без текста.",
-            endpoint=(
-                f"{get_api_base_url()}/chat/completions"
-                if get_provider() == "openai_compatible"
-                else f"{GEMINI_API_BASE_URL}/{model_resource_name(used_model)}:generateContent"
-            ),
+            message="Локальная модель вернула ответ без текста.",
+            endpoint=f"{get_api_base_url()}/chat/completions",
             model=used_model,
-            provider=get_provider(),
         )
     return {
         "models": models,

@@ -1,10 +1,13 @@
+from contextlib import contextmanager
 import logging
 import os
 import subprocess
 import sys
+import threading
 
 from django.conf import settings
 from django.db import close_old_connections, transaction
+from django.utils import timezone
 
 from apps.directory.formatting_templates import (
     build_rules_snapshot,
@@ -19,6 +22,50 @@ from apps.submissions.models import Submission
 logger = logging.getLogger(__name__)
 
 
+@contextmanager
+def _submission_worker_heartbeat(submission_id, expected_version_id):
+    """Keep the watchdog informed while template parsing or AI is still alive."""
+
+    stop_event = threading.Event()
+    interval_seconds = max(
+        5,
+        int(getattr(settings, "SUBMISSION_WORKER_HEARTBEAT_SECONDS", 30)),
+    )
+
+    def heartbeat():
+        close_old_connections()
+        try:
+            while not stop_event.wait(interval_seconds):
+                try:
+                    updated = Submission.objects.filter(
+                        pk=submission_id,
+                        current_version_id=expected_version_id,
+                    ).update(updated_at=timezone.now())
+                except Exception:
+                    logger.exception(
+                        "Failed to heartbeat template worker for submission %s.",
+                        submission_id,
+                    )
+                    close_old_connections()
+                    continue
+                if updated != 1:
+                    break
+        finally:
+            close_old_connections()
+
+    thread = threading.Thread(
+        target=heartbeat,
+        name=f"submission-template-heartbeat-{submission_id}",
+        daemon=True,
+    )
+    thread.start()
+    try:
+        yield
+    finally:
+        stop_event.set()
+        thread.join(timeout=1)
+
+
 def prepare_submission_template_by_id(
     submission_id,
     *,
@@ -30,9 +77,6 @@ def prepare_submission_template_by_id(
     close_old_connections()
     submission = None
     try:
-        template = FormattingTemplate.objects.get(pk=template_id)
-        if formatting_template_needs_processing(template):
-            process_formatting_template(template)
         submission = Submission.objects.select_related(
             "article_type",
             "journal",
@@ -44,6 +88,24 @@ def prepare_submission_template_by_id(
                 submission_id,
             )
             return False
+
+        # Record that the detached worker really entered the job.  The watchdog
+        # uses this timestamp to distinguish a slow template analysis from a
+        # child process that failed before executing the command.
+        heartbeat_at = timezone.now()
+        Submission.objects.filter(
+            pk=submission_id,
+            current_version_id=expected_version_id,
+        ).update(updated_at=heartbeat_at)
+        submission.updated_at = heartbeat_at
+
+        template = FormattingTemplate.objects.get(pk=template_id)
+        if formatting_template_needs_processing(template):
+            with _submission_worker_heartbeat(
+                submission_id,
+                expected_version_id,
+            ):
+                process_formatting_template(template)
 
         if not has_manual_rule_overrides(submission.formatting_rules_snapshot):
             submission.formatting_rules_snapshot = build_rules_snapshot(
@@ -100,7 +162,7 @@ def launch_submission_template_process(
         str(version_id),
     ]
     if not start_checks:
-        command.append("--skip-checks")
+        command.append("--skip-submission-checks")
     popen_kwargs = {
         "cwd": str(settings.BASE_DIR),
         "stdin": subprocess.DEVNULL,

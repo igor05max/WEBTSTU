@@ -1,0 +1,68 @@
+% !TeX program = xelatex
+% Автоматически сформировано Paper Formatter CLI.
+\documentclass[{{ class_options | join(',') }}]{ {{- document_class -}} }
+
+{% for package in packages %}
+\usepackage{ {{- package -}} }
+{% endfor %}
+
+{% if use_modern_fonts %}
+\ifPDFTeX
+  \PackageError{paper-formatter}{Use XeLaTeX, LuaLaTeX or Tectonic}{Unicode document requires a modern engine.}
+\fi
+\IfFontExistsTF{ {{- main_font -}} }{\setmainfont{ {{- main_font -}} }}{\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{DejaVu Serif}}}
+\setdefaultlanguage{russian}
+\setotherlanguage{english}
+{% endif %}
+{% if apply_geometry %}
+\geometry{
+  top={{ "%.2f"|format(page.margin_top_mm) }}mm,
+  right={{ "%.2f"|format(page.margin_right_mm) }}mm,
+  bottom={{ "%.2f"|format(page.margin_bottom_mm) }}mm,
+  left={{ "%.2f"|format(page.margin_left_mm) }}mm
+}
+{% endif %}
+{% if apply_typography %}
+\setlength{\parindent}{1.25cm}
+\setlength{\parskip}{0pt}
+\linespread{ {{- "%.3f"|format(line_spacing) -}} }
+{% endif %}
+\setlength{\emergencystretch}{3em}
+{% if apply_typography and (title_size_pt or title_zone) %}
+{% if title_zone %}
+\setlength{\droptitle}{25mm}
+{% endif %}
+\pretitle{
+{% if title_zone %}\par\noindent\hspace*{ {{- "%.2f"|format(title_left_shift_mm) -}} mm}\begin{minipage}{ {{- "%.2f"|format(title_width_mm) -}} mm}\centering{% else %}\begin{center}{% endif %}{% if title_size_pt %}\fontsize{ {{- "%.2f"|format(title_size_pt) -}} }{ {{- "%.2f"|format(title_size_pt * 1.18) -}} }\selectfont{% endif %}{% if title_bold %}\bfseries{% endif %}
+}
+\posttitle{
+{% if title_zone %}\par\end{minipage}\par{% else %}\end{center}{% endif %}
+}
+{% if title_zone %}
+\preauthor{\par\noindent\hspace*{ {{- "%.2f"|format(title_left_shift_mm) -}} mm}\begin{minipage}{ {{- "%.2f"|format(title_width_mm) -}} mm}\centering}
+\postauthor{\par\end{minipage}\par}
+{% endif %}
+{% endif %}
+{% for command in heading_commands %}
+{{ command }}
+{% endfor %}
+
+{% for command in custom_latex %}
+{{ command }}
+{% endfor %}
+{% for command in preamble_commands %}
+{{ command }}
+{% endfor %}
+
+{% if not metadata_in_document %}
+\input{metadata.tex}
+{% endif %}
+
+\begin{document}
+{% if metadata_in_document %}
+\input{metadata.tex}
+{% else %}
+\PFMakeMetadata
+{% endif %}
+\input{body.tex}
+\end{document}

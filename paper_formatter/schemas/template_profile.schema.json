@@ -1,0 +1,539 @@
+{
+  "$defs": {
+    "HeadingStyleProfile": {
+      "properties": {
+        "level": {
+          "maximum": 6,
+          "minimum": 1,
+          "title": "Level",
+          "type": "integer"
+        },
+        "font": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font"
+        },
+        "size_pt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Pt"
+        },
+        "bold": {
+          "default": true,
+          "title": "Bold",
+          "type": "boolean"
+        },
+        "italic": {
+          "default": false,
+          "title": "Italic",
+          "type": "boolean"
+        },
+        "numbered": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Numbered"
+        },
+        "alignment": {
+          "default": "left",
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "justify"
+          ],
+          "title": "Alignment",
+          "type": "string"
+        },
+        "space_before_pt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Space Before Pt"
+        },
+        "space_after_pt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Space After Pt"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "title": "HeadingStyleProfile",
+      "type": "object"
+    },
+    "LatexTemplateProfile": {
+      "properties": {
+        "document_class": {
+          "default": "article",
+          "title": "Document Class",
+          "type": "string"
+        },
+        "class_options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Class Options",
+          "type": "array"
+        },
+        "packages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Packages",
+          "type": "array"
+        },
+        "preamble": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preamble"
+        },
+        "title_command": {
+          "default": "title",
+          "title": "Title Command",
+          "type": "string"
+        },
+        "author_command": {
+          "default": "author",
+          "title": "Author Command",
+          "type": "string"
+        },
+        "maketitle_command": {
+          "default": "maketitle",
+          "title": "Maketitle Command",
+          "type": "string"
+        },
+        "bibliography_backend": {
+          "default": "thebibliography",
+          "enum": [
+            "thebibliography",
+            "bibtex",
+            "biblatex"
+          ],
+          "title": "Bibliography Backend",
+          "type": "string"
+        },
+        "bibliography_style": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bibliography Style"
+        },
+        "source_main_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Main File"
+        }
+      },
+      "title": "LatexTemplateProfile",
+      "type": "object"
+    },
+    "PageLayout": {
+      "properties": {
+        "paper_size": {
+          "default": "a4paper",
+          "title": "Paper Size",
+          "type": "string"
+        },
+        "width_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width Mm"
+        },
+        "height_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Mm"
+        },
+        "margin_top_mm": {
+          "default": 20.0,
+          "title": "Margin Top Mm",
+          "type": "number"
+        },
+        "margin_right_mm": {
+          "default": 20.0,
+          "title": "Margin Right Mm",
+          "type": "number"
+        },
+        "margin_bottom_mm": {
+          "default": 20.0,
+          "title": "Margin Bottom Mm",
+          "type": "number"
+        },
+        "margin_left_mm": {
+          "default": 20.0,
+          "title": "Margin Left Mm",
+          "type": "number"
+        },
+        "title_margin_left_mm": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title Margin Left Mm"
+        },
+        "title_margin_right_mm": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title Margin Right Mm"
+        },
+        "columns": {
+          "default": 1,
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "column_gap_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Column Gap Mm"
+        },
+        "header_distance_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Distance Mm"
+        },
+        "footer_distance_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Footer Distance Mm"
+        }
+      },
+      "title": "PageLayout",
+      "type": "object"
+    },
+    "TypographyProfile": {
+      "properties": {
+        "main_font": {
+          "default": "Times New Roman",
+          "title": "Main Font",
+          "type": "string"
+        },
+        "main_size_pt": {
+          "default": 12.0,
+          "exclusiveMinimum": 0,
+          "title": "Main Size Pt",
+          "type": "number"
+        },
+        "line_spacing": {
+          "default": 1.15,
+          "exclusiveMinimum": 0,
+          "title": "Line Spacing",
+          "type": "number"
+        },
+        "first_line_indent_mm": {
+          "default": 12.5,
+          "minimum": 0,
+          "title": "First Line Indent Mm",
+          "type": "number"
+        },
+        "paragraph_space_before_pt": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Paragraph Space Before Pt",
+          "type": "number"
+        },
+        "paragraph_space_after_pt": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Paragraph Space After Pt",
+          "type": "number"
+        },
+        "paragraph_alignment": {
+          "default": "justify",
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "justify"
+          ],
+          "title": "Paragraph Alignment",
+          "type": "string"
+        },
+        "title_font": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title Font"
+        },
+        "title_size_pt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title Size Pt"
+        },
+        "title_bold": {
+          "default": true,
+          "title": "Title Bold",
+          "type": "boolean"
+        },
+        "author_size_pt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Author Size Pt"
+        },
+        "abstract_size_pt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Abstract Size Pt"
+        },
+        "caption_size_pt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caption Size Pt"
+        }
+      },
+      "title": "TypographyProfile",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "name": {
+      "default": "generic",
+      "title": "Name",
+      "type": "string"
+    },
+    "source_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Path"
+    },
+    "source_type": {
+      "default": "generic",
+      "enum": [
+        "generic",
+        "docx",
+        "latex",
+        "pdf",
+        "requirements"
+      ],
+      "title": "Source Type",
+      "type": "string"
+    },
+    "confidence": {
+      "default": 0.5,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "page": {
+      "$ref": "#/$defs/PageLayout"
+    },
+    "typography": {
+      "$ref": "#/$defs/TypographyProfile"
+    },
+    "headings": {
+      "items": {
+        "$ref": "#/$defs/HeadingStyleProfile"
+      },
+      "title": "Headings",
+      "type": "array"
+    },
+    "latex": {
+      "$ref": "#/$defs/LatexTemplateProfile"
+    },
+    "caption_position": {
+      "default": "below",
+      "enum": [
+        "above",
+        "below",
+        "mixed"
+      ],
+      "title": "Caption Position",
+      "type": "string"
+    },
+    "figure_width_fraction": {
+      "default": 0.9,
+      "exclusiveMinimum": 0.0,
+      "maximum": 1.0,
+      "title": "Figure Width Fraction",
+      "type": "number"
+    },
+    "requirements": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Requirements",
+      "type": "array"
+    },
+    "evidence": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Evidence",
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "title": "TemplateProfile",
+  "type": "object"
+}

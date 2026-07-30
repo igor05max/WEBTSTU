@@ -23,7 +23,7 @@ class SubmissionRouteSuggestion:
     def source_label(self):
         if self.source == "saved":
             return "Сохраненный выбор"
-        if self.source in {"gemini", "ai"}:
+        if self.source == "ai":
             return "AI-модель"
         if self.source == "single_route":
             return "Автовыбор"

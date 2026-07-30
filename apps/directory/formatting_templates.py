@@ -7,8 +7,8 @@ from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from django.db import models, transaction
 
-from apps.checks.gemini_client import (
-    GeminiAPIError,
+from apps.checks.ai_client import (
+    AIProviderError,
     extract_response_text,
     generate_content,
     get_configured_model,
@@ -1430,7 +1430,7 @@ def process_formatting_template(template):
         ai_warning = ""
         try:
             ai_rules = _extract_rules_with_ai(template, text)
-        except (GeminiAPIError, ValueError) as exc:
+        except (AIProviderError, ValueError) as exc:
             ai_warning = str(exc)
         raw_rules = _merge_dict(ai_rules, deterministic_rules)
         extracted_rules = normalize_template_rules(raw_rules) if raw_rules else {}

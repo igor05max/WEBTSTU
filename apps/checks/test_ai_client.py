@@ -7,8 +7,8 @@ from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from apps.checks.gemini_client import (
-    GeminiAPIError,
+from apps.checks.ai_client import (
+    AIProviderError,
     choose_generation_model,
     fetch_generation_models,
     generate_content,
@@ -32,69 +32,69 @@ class _JSONResponse:
         return self.body
 
 
-class GeminiClientTests(SimpleTestCase):
-    def test_aq_key_passes_local_validation(self):
-        self.assertEqual(validate_api_key("AQ.example-working-key"), "AQ.example-working-key")
+@override_settings(AI_BASE_URL="http://192.0.2.10:8088/v1")
+class AIClientTests(SimpleTestCase):
+    def test_optional_local_key_passes_validation(self):
+        self.assertEqual(validate_api_key("local-secret"), "local-secret")
 
-    def test_model_list_uses_name_and_excludes_models_without_generate_content(self):
+    def test_model_list_uses_openai_compatible_ids(self):
         models = parse_generation_models(
             {
-                "models": [
+                "data": [
                     {
-                        "name": "models/gemini-2.5-flash",
-                        "displayName": "Friendly display name",
-                        "supportedGenerationMethods": ["generateContent", "countTokens"],
-                    },
-                    {
-                        "name": "models/text-embedding-004",
-                        "displayName": "Embedding",
-                        "supportedGenerationMethods": ["embedContent"],
+                        "id": "Qwen3.6-27B-IQ4_XS.gguf",
+                        "display_name": "Qwen local",
                     },
                 ]
             }
         )
 
-        self.assertEqual([model["id"] for model in models], ["gemini-2.5-flash"])
-        self.assertEqual(models[0]["name"], "models/gemini-2.5-flash")
-        self.assertNotEqual(models[0]["id"], models[0]["display_name"])
+        self.assertEqual(
+            [model["id"] for model in models],
+            ["Qwen3.6-27B-IQ4_XS.gguf"],
+        )
+        self.assertEqual(models[0]["name"], "Qwen3.6-27B-IQ4_XS.gguf")
 
     def test_models_prefix_is_removed_for_sdk_style_identifier(self):
-        self.assertEqual(normalize_model_id("models/gemini-3.1-flash-lite"), "gemini-3.1-flash-lite")
-
-    def test_missing_saved_model_is_replaced_with_available_preferred_model(self):
-        models = [
-            {"id": "gemini-experimental"},
-            {"id": "gemini-2.5-flash-lite"},
-        ]
         self.assertEqual(
-            choose_generation_model(models, "gemini-removed-model"),
-            "gemini-2.5-flash-lite",
+            normalize_model_id("models/Qwen3.6-27B-IQ4_XS.gguf"),
+            "Qwen3.6-27B-IQ4_XS.gguf",
         )
 
-    def test_fetch_models_timeout_is_never_below_thirty_seconds(self):
+    def test_missing_saved_model_is_replaced_with_available_qwen_model(self):
+        models = [
+            {"id": "other-local-model"},
+            {"id": "Qwen3.6-27B-IQ4_XS.gguf"},
+        ]
+        self.assertEqual(
+            choose_generation_model(models, "removed-model"),
+            "Qwen3.6-27B-IQ4_XS.gguf",
+        )
+
+    def test_fetch_models_honors_short_diagnostic_timeout(self):
         observed = {}
 
         def opener(_request, timeout):
             observed["timeout"] = timeout
             return _JSONResponse(
-                b'{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]}]}'
+                b'{"data":[{"id":"Qwen3.6-27B-IQ4_XS.gguf"}]}'
             )
 
-        fetch_generation_models(api_key="AQ.example", timeout=1, opener=opener)
+        fetch_generation_models(api_key="local-secret", timeout=1, opener=opener)
 
-        self.assertEqual(observed["timeout"], 30)
+        self.assertEqual(observed["timeout"], 1)
 
     def test_api_key_is_redacted_from_error_message_and_diagnostics(self):
-        api_key = "AQ.secret-value-never-show"
+        api_key = "local-secret-value-never-show"
 
         def opener(request, timeout):
             body = (
                 '{"error":{"code":400,"status":"INVALID_ARGUMENT",'
-                f'"message":"bad key {api_key} at https://example.test?key={api_key}"}}}}'
+                f'"message":"bad key {api_key}"}}}}'
             ).encode("utf-8")
             raise urllib.error.HTTPError(request.full_url, 400, "Bad Request", {}, BytesIO(body))
 
-        with self.assertRaises(GeminiAPIError) as caught:
+        with self.assertRaises(AIProviderError) as caught:
             fetch_generation_models(api_key=api_key, opener=opener)
 
         rendered = f"{caught.exception} {caught.exception.as_dict()}"
@@ -124,7 +124,7 @@ class OpenAICompatibleClientTests(SimpleTestCase):
         self.assertEqual(observed["url"], "http://192.0.2.10:8088/v1/models")
         self.assertIsNone(observed["authorization"])
 
-    def test_translates_gemini_payload_to_chat_completions(self):
+    def test_translates_structured_payload_to_chat_completions(self):
         observed = {}
 
         def opener(request, timeout):
@@ -162,8 +162,12 @@ class OpenAICompatibleClientTests(SimpleTestCase):
         )
 
 
-@override_settings(ROOT_ADMIN_USERNAME="rootUser", GEMINI_API_KEY="AQ.ui-secret-key")
-class GeminiSettingsViewTests(TestCase):
+@override_settings(
+    ROOT_ADMIN_USERNAME="rootUser",
+    AI_BASE_URL="http://192.0.2.10:8088/v1",
+    AI_API_KEY="local-ui-secret-key",
+)
+class AISettingsViewTests(TestCase):
     def setUp(self):
         self.root_user = get_user_model().objects.create_superuser(
             username="rootUser",
@@ -176,38 +180,38 @@ class GeminiSettingsViewTests(TestCase):
 
     def test_only_root_admin_can_open_settings_and_key_is_never_rendered(self):
         self.client.force_login(self.regular_user)
-        self.assertEqual(self.client.get(reverse("checks:gemini_settings")).status_code, 404)
+        self.assertEqual(self.client.get(reverse("checks:ai_settings")).status_code, 404)
 
         self.client.force_login(self.root_user)
-        response = self.client.get(reverse("checks:gemini_settings"))
+        response = self.client.get(reverse("checks:ai_settings"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Ключ настроен")
-        self.assertNotContains(response, "AQ.ui-secret-key")
+        self.assertContains(response, "Подключение настроено")
+        self.assertNotContains(response, "local-ui-secret-key")
 
     @patch("apps.checks.views.test_connection")
     def test_connection_action_saves_selected_available_model(self, mocked_test_connection):
         mocked_test_connection.return_value = {
             "models": [
                 {
-                    "id": "gemini-2.5-flash",
-                    "name": "models/gemini-2.5-flash",
-                    "display_name": "Gemini 2.5 Flash",
-                    "supported_generation_methods": ["generateContent"],
+                    "id": "Qwen3.6-27B-IQ4_XS.gguf",
+                    "name": "Qwen3.6-27B-IQ4_XS.gguf",
+                    "display_name": "Qwen local",
+                    "supported_generation_methods": ["chat/completions"],
                 }
             ],
-            "selected_model": "gemini-2.5-flash",
+            "selected_model": "Qwen3.6-27B-IQ4_XS.gguf",
             "response_text": "OK",
             "steps": {"list_models": "success", "generate_content": "success"},
         }
         self.client.force_login(self.root_user)
 
         response = self.client.post(
-            reverse("checks:gemini_settings"),
+            reverse("checks:ai_settings"),
             {"action": "test_connection"},
             follow=True,
         )
 
-        self.assertContains(response, "Gemini подключён")
-        self.assertContains(response, "gemini-2.5-flash")
-        self.assertNotContains(response, "AQ.ui-secret-key")
+        self.assertContains(response, "Локальная модель Qwen подключена")
+        self.assertContains(response, "Qwen3.6-27B-IQ4_XS.gguf")
+        self.assertNotContains(response, "local-ui-secret-key")

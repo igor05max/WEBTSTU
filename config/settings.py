@@ -239,19 +239,13 @@ ARTICLE_RECOMMENDATION_EMBEDDING_CACHE_PATH = Path(
         str(BASE_DIR / "tmp_previews" / "article_embedding_cache.json"),
     )
 )
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODELS_TIMEOUT = max(30, int(os.getenv("GEMINI_MODELS_TIMEOUT", "30")))
-GEMINI_REQUEST_TIMEOUT = int(os.getenv("GEMINI_REQUEST_TIMEOUT", "60"))
-AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini").strip().lower() or "gemini"
+AI_PROVIDER = "openai_compatible"
 AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip().rstrip("/")
 AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
 AI_MODEL = os.getenv("AI_MODEL", "").strip()
 AI_DISABLE_THINKING = os.getenv("AI_DISABLE_THINKING", "0") == "1"
-AI_MODELS_TIMEOUT = max(
-    30,
-    int(os.getenv("AI_MODELS_TIMEOUT", str(GEMINI_MODELS_TIMEOUT))),
-)
-AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", str(GEMINI_REQUEST_TIMEOUT)))
+AI_MODELS_TIMEOUT = max(1, int(os.getenv("AI_MODELS_TIMEOUT", "30")))
+AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "120"))
 CITATION_CORPUS_ROOT = Path(
     os.getenv("CITATION_CORPUS_ROOT", str(BASE_DIR / "downloads_elibrary"))
 )
@@ -295,7 +289,7 @@ SUBMISSION_ROUTE_SUGGESTION_ENABLED = os.getenv(
 ) == "1"
 SUBMISSION_ROUTE_SUGGESTION_MODEL = os.getenv(
     "SUBMISSION_ROUTE_SUGGESTION_MODEL",
-    AI_MODEL or "gemini-2.5-flash",
+    AI_MODEL,
 )
 SUBMISSION_ROUTE_SUGGESTION_TIMEOUT = int(
     os.getenv("SUBMISSION_ROUTE_SUGGESTION_TIMEOUT", str(AI_REQUEST_TIMEOUT))

@@ -60,10 +60,28 @@ class CheckRun(models.Model):
     result_payload = models.JSONField(default=dict, blank=True, verbose_name="Результат")
     started_at = models.DateTimeField(null=True, blank=True, verbose_name="Запущена")
     finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Завершена")
+    claim_token = models.UUIDField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Токен исполнителя",
+    )
+    heartbeat_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Активность исполнителя",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создана")
 
     class Meta:
         ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("submission", "version", "check_definition"),
+                name="unique_check_run_per_submission_version_definition",
+            ),
+        ]
         verbose_name = "Запуск проверки"
         verbose_name_plural = "Запуски проверок"
 
@@ -71,7 +89,7 @@ class CheckRun(models.Model):
         return f"{self.submission_id} / {self.check_definition.code} / {self.status}"
 
 
-class GeminiConfiguration(models.Model):
+class AIConfiguration(models.Model):
     model_name = models.CharField(max_length=160, blank=True, verbose_name="Модель")
     available_models = models.JSONField(default=list, blank=True, verbose_name="Доступные модели")
     models_refreshed_at = models.DateTimeField(null=True, blank=True, verbose_name="Список обновлён")
@@ -80,8 +98,8 @@ class GeminiConfiguration(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
 
     class Meta:
-        verbose_name = "Настройка Gemini"
-        verbose_name_plural = "Настройки Gemini"
+        verbose_name = "Настройка локальной AI-модели"
+        verbose_name_plural = "Настройки локальной AI-модели"
 
     @classmethod
     def load(cls):
@@ -89,4 +107,4 @@ class GeminiConfiguration(models.Model):
         return configuration
 
     def __str__(self):
-        return self.model_name or "Gemini"
+        return self.model_name or "Локальная модель Qwen"

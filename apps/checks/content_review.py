@@ -5,8 +5,8 @@ import urllib.error
 from django.conf import settings
 
 from apps.checks.document_checks import _build_payload, _context_around, _is_success, _issue
-from apps.checks.gemini_client import (
-    GeminiAPIError,
+from apps.checks.ai_client import (
+    AIProviderError,
     generate_content,
     get_ai_source,
     get_configured_model,
@@ -74,7 +74,7 @@ def _build_prompt(submission, document_text):
     )
 
 
-def _call_gemini(prompt):
+def _call_ai_model(prompt):
     model_name = get_configured_model(getattr(settings, "SUBMISSION_CONTENT_REVIEW_MODEL", ""))
     payload = {
         "systemInstruction": {
@@ -139,11 +139,13 @@ def build_content_review_report(submission, snapshot):
     error_source = f"{ai_source}_error"
     for _attempt in range(2):
         try:
-            response_payload, model_name = _call_gemini(_build_prompt(submission, document_text))
+            response_payload, model_name = _call_ai_model(
+                _build_prompt(submission, document_text)
+            )
             response_text = _extract_response_text(response_payload)
             parsed = _parse_json_response(response_text)
             break
-        except GeminiAPIError as exc:
+        except AIProviderError as exc:
             last_error = json.dumps(exc.as_dict(), ensure_ascii=False)
             error_source = exc.kind
         except urllib.error.HTTPError as exc:

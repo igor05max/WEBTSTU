@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from django.conf import settings
 
-from apps.checks.gemini_client import (
-    GeminiAPIError,
+from apps.checks.ai_client import (
+    AIProviderError,
     extract_response_text,
     generate_content,
     get_configured_model,
@@ -91,7 +91,7 @@ def analyze_document(data, file_name, *, use_ai=None):
             snapshot["article"],
             complete_json=complete_json,
         )
-    except (GeminiAPIError, ValueError) as exc:
+    except (AIProviderError, ValueError) as exc:
         diagnostics["status"] = "failed"
         diagnostics["error"] = str(exc)
         return snapshot

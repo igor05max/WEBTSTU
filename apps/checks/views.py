@@ -6,8 +6,8 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 
 from apps.accounts.access import is_root_admin
-from apps.checks.gemini_client import (
-    GeminiAPIError,
+from apps.checks.ai_client import (
+    AIProviderError,
     choose_generation_model,
     fetch_generation_models,
     get_models_endpoint,
@@ -17,15 +17,15 @@ from apps.checks.gemini_client import (
     normalize_model_id,
     test_connection,
 )
-from apps.checks.models import GeminiConfiguration
+from apps.checks.models import AIConfiguration
 
 
 @login_required
-def gemini_settings(request):
+def ai_settings(request):
     if not is_root_admin(request.user):
         raise Http404
 
-    configuration = GeminiConfiguration.load()
+    configuration = AIConfiguration.load()
     provider = get_provider()
     provider_label = get_provider_label()
     models_endpoint = get_models_endpoint()
@@ -47,7 +47,6 @@ def gemini_settings(request):
                     "kind": "success",
                     "http_status": 200,
                     "provider_message": f"Получено совместимых моделей: {len(models)}.",
-                    "google_message": f"Получено совместимых моделей: {len(models)}.",
                     "error_code": "",
                     "endpoint": models_endpoint,
                     "model": selected_model,
@@ -78,7 +77,6 @@ def gemini_settings(request):
                     "kind": "success",
                     "http_status": 200,
                     "provider_message": "Список моделей получен, тестовая генерация выполнена.",
-                    "google_message": "Список моделей получен, тестовая генерация выполнена.",
                     "error_code": "",
                     "endpoint": models_endpoint,
                     "model": result["selected_model"],
@@ -89,11 +87,8 @@ def gemini_settings(request):
                 configuration.save()
                 messages.success(
                     request,
-                    (
-                        f"Gemini подключён. Тест выполнен моделью {result['selected_model']}."
-                        if provider == "gemini"
-                        else f"{provider_label} подключена. Тест выполнен моделью {result['selected_model']}."
-                    ),
+                    f"{provider_label} подключена. "
+                    f"Тест выполнен моделью {result['selected_model']}.",
                 )
             else:
                 messages.error(request, "Неизвестное действие настройки AI-модели.")
@@ -104,7 +99,6 @@ def gemini_settings(request):
                 "kind": "invalid_key",
                 "http_status": None,
                 "provider_message": str(exc),
-                "google_message": str(exc),
                 "error_code": "",
                 "endpoint": models_endpoint,
                 "model": configuration.model_name,
@@ -112,17 +106,17 @@ def gemini_settings(request):
             }
             configuration.save(update_fields=["last_test_status", "last_test_details", "updated_at"])
             messages.error(request, str(exc))
-        except GeminiAPIError as exc:
+        except AIProviderError as exc:
             configuration.last_test_status = "error"
             configuration.last_test_details = exc.as_dict()
             configuration.save(update_fields=["last_test_status", "last_test_details", "updated_at"])
             stage_name = "получения списка моделей" if exc.stage == "list_models" else "тестовой генерации"
             messages.error(request, f"Ошибка на этапе {stage_name}: {exc}")
-        return redirect("checks:gemini_settings")
+        return redirect("checks:ai_settings")
 
     return render(
         request,
-        "checks/gemini_settings.html",
+        "checks/ai_settings.html",
         {
             "configuration": configuration,
             "connection_configured": is_ai_configured(),
@@ -130,12 +124,11 @@ def gemini_settings(request):
             "provider": provider,
             "provider_label": provider_label,
             "models_endpoint": models_endpoint,
-            "generation_method": "chat/completions" if provider == "openai_compatible" else "generateContent",
+            "generation_method": "chat/completions",
             "models": configuration.available_models,
             "diagnostics": configuration.last_test_details or {},
             "diagnostic_message": (
                 (configuration.last_test_details or {}).get("provider_message")
-                or (configuration.last_test_details or {}).get("google_message")
                 or ""
             ),
         },

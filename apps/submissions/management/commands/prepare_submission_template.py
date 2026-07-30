@@ -10,7 +10,10 @@ class Command(BaseCommand):
         parser.add_argument("submission_id", type=int)
         parser.add_argument("--template-id", type=int, required=True)
         parser.add_argument("--version-id", type=int, required=True)
-        parser.add_argument("--skip-checks", action="store_true")
+        parser.add_argument(
+            "--skip-submission-checks",
+            action="store_true",
+        )
 
     def handle(self, *args, **options):
         try:
@@ -18,7 +21,7 @@ class Command(BaseCommand):
                 options["submission_id"],
                 template_id=options["template_id"],
                 expected_version_id=options["version_id"],
-                start_checks=not options["skip_checks"],
+                start_checks=not options["skip_submission_checks"],
             )
         except Exception as exc:
             raise CommandError(str(exc)) from exc

@@ -6,7 +6,7 @@ from pathlib import Path
 from django.conf import settings
 from pypdf import PdfReader
 
-from apps.checks.gemini_client import (
+from apps.checks.ai_client import (
     extract_response_text,
     generate_content,
     get_configured_model,

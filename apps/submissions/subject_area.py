@@ -10,12 +10,11 @@ from xml.etree import ElementTree
 
 from django.conf import settings
 
-from apps.checks.gemini_client import (
-    GeminiAPIError,
+from apps.checks.ai_client import (
+    AIProviderError,
     generate_content,
     get_ai_source,
     get_configured_model,
-    get_provider,
     get_provider_label,
     is_ai_configured,
 )
@@ -402,9 +401,7 @@ def _detect_direction_locally(submission, directions, *, details=""):
 
     confidence = min(85, 35 + best_score * 8)
     reasoning = f"Локальный фолбэк по ключевым словам: {', '.join(best_matches[:6])}."
-    provider_unavailable = (
-        "Gemini недоступен" if get_provider() == "gemini" else "Локальная AI-модель недоступна"
-    )
+    provider_unavailable = "Локальная AI-модель недоступна"
     fallback_message = f"{provider_unavailable}, поэтому область экспертизы определена локально по ключевым словам."
     try:
         diagnostic = json.loads(details or "{}")
@@ -548,7 +545,7 @@ def _parse_direction_response(response_text, directions_by_code):
     }
 
 
-def _call_gemini(prompt, *, inline_file_part=None, timeout=45):
+def _call_ai_model(prompt, *, timeout=45):
     model_name = get_configured_model(settings.SUBMISSION_ROUTE_SUGGESTION_MODEL)
     payload = {
         "systemInstruction": {
@@ -574,9 +571,6 @@ def _call_gemini(prompt, *, inline_file_part=None, timeout=45):
             }
         ],
     }
-    if inline_file_part is not None:
-        payload["contents"][0]["parts"].append(inline_file_part)
-
     response, used_model = generate_content(
         payload,
         model=model_name,
@@ -643,28 +637,17 @@ def detect_direction_for_submission(submission, *, directions):
     excerpt = _build_document_excerpt(submission)
     prompt = _build_prompt(submission, directions, excerpt=excerpt)
     directions_by_code = {direction.code: direction for direction in directions}
-    # Gemini умеет принимать файлы inline. OpenAI-совместимому локальному API
-    # передаём уже извлечённый текст, чтобы не отправлять ему неподдерживаемый base64.
-    inline_file_part = _build_inline_file_part(submission) if get_provider() == "gemini" else None
-
     response_text = ""
     response_details = ""
     response_model = ""
-    request_variants = [inline_file_part]
-    if inline_file_part is not None:
-        request_variants.append(None)
-
-    for request_inline_file_part in request_variants:
+    for _attempt in range(2):
         try:
-            response_payload = _call_gemini(
-                prompt,
-                inline_file_part=request_inline_file_part,
-            )
+            response_payload = _call_ai_model(prompt)
             response_text = _extract_response_text(response_payload)
             response_model = str(response_payload.get("_selected_model") or "")
             response_details = ""
             break
-        except GeminiAPIError as exc:
+        except AIProviderError as exc:
             response_details = json.dumps(exc.as_dict(), ensure_ascii=False)
         except urllib.error.HTTPError as exc:
             response_details = exc.read().decode("utf-8", errors="ignore")
@@ -689,11 +672,7 @@ def detect_direction_for_submission(submission, *, directions):
 
     direction = directions_by_code[parsed["direction_code"]]
     confidence = parsed["confidence"]
-    message = (
-        "Gemini определил предметную область по материалу."
-        if get_provider() == "gemini"
-        else "Локальная AI-модель определила предметную область по материалу."
-    )
+    message = "Локальная AI-модель определила предметную область по материалу."
     if confidence:
         message = f"{message} Уверенность модели: {confidence}%."
 
