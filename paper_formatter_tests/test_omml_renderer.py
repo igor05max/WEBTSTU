@@ -14,12 +14,6 @@ from paper_formatter.renderers.docx_renderer import DocxRenderer
 from paper_formatter.renderers.omml_renderer import LatexToOmmlConverter
 
 
-pytestmark = pytest.mark.skipif(
-    not LatexToOmmlConverter.available(),
-    reason="Для теста нативных формул нужен Microsoft MML2OMML.XSL.",
-)
-
-
 def test_latex_to_omml_builds_fraction_radical_and_subscript() -> None:
     formula = (
         r"\mathrm{Score}_{\mathrm{semantic}}(q,c)="
@@ -63,3 +57,37 @@ def test_docx_renderer_writes_editable_omml_not_latex_text(
     assert root.xpath("count(.//*[local-name()='oMath'])") == 2
     assert b"\\frac" not in document_xml
     assert b"\\sum" not in document_xml
+
+
+def test_portable_converter_renders_complex_formula_without_office_xsl(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    formula = (
+        r"e_{b,k}\left(L\right)=\arccos\left["
+        r"\operatorname{clip}\left("
+        r"\frac{u_{b,k}^{T}\hat{u}_{b,k}\left(L\right)}"
+        r"{\Vert u_{b,k}\Vert _{2}\,\Vert "
+        r"\hat{u}_{b,k}\left(L\right)\Vert _{2}},-1,1"
+        r"\right)\right]\frac{180}{\pi}"
+    )
+    monkeypatch.setattr(LatexToOmmlConverter, "_find_stylesheet", lambda: None)
+    LatexToOmmlConverter._transformer.cache_clear()
+
+    article = ArticleIR(
+        body=[EquationBlock(id="e1", latex=formula, display=True)]
+    )
+    renderer = DocxRenderer()
+    output = renderer.render(article, tmp_path / "portable-math.docx")
+
+    with ZipFile(output) as archive:
+        document_xml = archive.read("word/document.xml")
+    root = etree.fromstring(document_xml)
+
+    assert not renderer.warnings
+    assert root.xpath("count(.//*[local-name()='oMath'])") == 1
+    assert root.xpath("count(.//*[local-name()='f'])") == 2
+    assert root.xpath("count(.//*[local-name()='sSub'])") >= 4
+    assert root.xpath("count(.//*[local-name()='acc'])") == 2
+    assert b"\\operatorname" not in document_xml
+    assert b"\\frac" not in document_xml
