@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import posixpath
 import re
 from pathlib import Path
 
@@ -395,8 +396,45 @@ class DocxRenderer:
                 ).bold = True
                 paragraph.add_run(", ".join(secondary_keywords))
 
+        renamed_parts = self._ensure_unique_package_partnames(document)
+        if renamed_parts:
+            self.warnings.append(
+                "DOCX: устранены коллизии внутренних имён ресурсов: "
+                f"{renamed_parts}."
+            )
         document.save(output_path)
         return output_path
+
+    @staticmethod
+    def _ensure_unique_package_partnames(document: Document) -> int:
+        """Give every OPC part a unique name before ZIP serialization.
+
+        A template can already contain generic ``imageNN`` parts.  python-docx
+        may later allocate the same names for newly inserted formula previews,
+        producing duplicate ZIP members that LibreOffice refuses to open.
+        Relationships point to part objects, so renaming the colliding object
+        here keeps all references intact.
+        """
+
+        used: set[str] = set()
+        renamed = 0
+        for part in document.part.package.iter_parts():
+            current = str(part.partname)
+            folded = current.casefold()
+            if folded not in used:
+                used.add(folded)
+                continue
+
+            stem, suffix = posixpath.splitext(current)
+            index = 2
+            candidate = f"{stem}-pf-{index}{suffix}"
+            while candidate.casefold() in used:
+                index += 1
+                candidate = f"{stem}-pf-{index}{suffix}"
+            part.partname = PackURI(candidate)
+            used.add(candidate.casefold())
+            renamed += 1
+        return renamed
 
     def _create_document(self, profile: TemplateProfile) -> Document:
         source_path = Path(profile.source_path) if profile.source_path else None
@@ -731,18 +769,20 @@ class DocxRenderer:
             if item.asset_id:
                 asset = assets.get(item.asset_id)
                 path = self._asset_path(asset.path, asset_root) if asset else None
-                if path and path.exists() and path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
-                    if not self._append_preserved_math_ole(
+                if path and path.exists():
+                    if self._append_preserved_math_ole(
                         paragraph, path, item, assets, asset_root
                     ):
+                        continue
+                    if path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
                         self._append_formula_picture(
                             paragraph,
                             path,
                             item,
                             max_width_pt=max_formula_width_pt,
                         )
-                else:
-                    paragraph.add_run("[формула]")
+                        continue
+                paragraph.add_run("[формула]")
                 continue
             value = item.math_latex if item.math_latex is not None else item.text
             if item.math_latex is not None and self._append_math(

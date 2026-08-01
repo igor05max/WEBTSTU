@@ -1,5 +1,6 @@
 from pathlib import Path
 import base64
+from zipfile import ZipFile
 
 import pytest
 from docx import Document
@@ -8,6 +9,9 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.opc.packuri import PackURI
+from docx.opc.part import Part
 from docx.shared import Mm, Pt, RGBColor
 
 from paper_formatter.models import (
@@ -332,6 +336,123 @@ def test_docx_renderer_moves_wide_formula_to_its_own_line(tmp_path: Path) -> Non
     assert [paragraph.text for paragraph in paragraphs] == ["Before ", "", " after"]
     assert paragraphs[1].alignment == WD_ALIGN_PARAGRAPH.CENTER
     assert "w:drawing" in paragraphs[1]._p.xml
+
+
+def test_docx_renderer_preserves_ole_formula_when_preview_is_wmf(
+    tmp_path: Path,
+) -> None:
+    preview_path = tmp_path / "formula.wmf"
+    ole_path = tmp_path / "formula.bin"
+    preview_path.write_bytes(b"WMF preview")
+    ole_path.write_bytes(b"MathType OLE payload")
+    object_xml = """
+    <w:object xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+              xmlns:v="urn:schemas-microsoft-com:vml"
+              xmlns:o="urn:schemas-microsoft-com:office:office">
+      <v:shape style="width:12pt;height:12pt">
+        <v:imagedata r:id="rIdPreview"/>
+      </v:shape>
+      <o:OLEObject Type="Embed" ProgID="Equation.DSMT4" r:id="rIdOle"/>
+    </w:object>
+    """
+    article = ArticleIR(
+        body=[
+            ParagraphBlock(
+                id="p1",
+                runs=[
+                    TextRun(text="Before "),
+                    TextRun(
+                        asset_id="formula-preview",
+                        formula_image=True,
+                        ole_object_xml=object_xml,
+                        ole_object_asset_id="formula-ole",
+                        ole_preview_asset_id="formula-preview",
+                    ),
+                    TextRun(text=" after"),
+                ],
+            )
+        ],
+        assets=[
+            {
+                "id": "formula-preview",
+                "path": preview_path.name,
+                "media_type": "image/x-wmf",
+            },
+            {
+                "id": "formula-ole",
+                "path": ole_path.name,
+                "media_type": "application/vnd.openxmlformats-officedocument.oleObject",
+            },
+        ],
+    )
+
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "ole-result.docx",
+        asset_root=tmp_path,
+    )
+    document = Document(output)
+
+    assert document.paragraphs[0].text == "Before  after"
+    assert "[формула]" not in document.paragraphs[0].text
+    assert "OLEObject" in document.paragraphs[0]._p.xml
+    with ZipFile(output) as archive:
+        assert any(name.startswith("word/embeddings/") for name in archive.namelist())
+
+
+def test_docx_renderer_renames_duplicate_package_parts(tmp_path: Path) -> None:
+    document = Document()
+    first = Part(
+        PackURI("/word/media/image1.png"),
+        "image/png",
+        b"first",
+        document.part.package,
+    )
+    second = Part(
+        PackURI("/word/media/image1.png"),
+        "image/png",
+        b"second",
+        document.part.package,
+    )
+    document.part.relate_to(first, RT.IMAGE)
+    document.part.relate_to(second, RT.IMAGE)
+
+    renamed = DocxRenderer._ensure_unique_package_partnames(document)
+    output = tmp_path / "unique-parts.docx"
+    document.save(output)
+
+    assert renamed == 1
+    with ZipFile(output) as archive:
+        names = archive.namelist()
+    assert len(names) == len(set(names))
+
+
+def test_docx_renderer_uses_template_body_font_and_style(tmp_path: Path) -> None:
+    template_path = tmp_path / "font-template.docx"
+    template = Document()
+    body_style = template.styles.add_style(
+        "MDPI_3.1_text",
+        WD_STYLE_TYPE.PARAGRAPH,
+    )
+    body_style.font.name = "Palatino Linotype"
+    body_style.font.size = Pt(11)
+    template.add_paragraph("Template body", style=body_style)
+    template.save(template_path)
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    article = ArticleIR(
+        body=[ParagraphBlock(id="p1", runs=[TextRun(text="Generated body")])]
+    )
+
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "font-result.docx",
+        profile=profile,
+    )
+    paragraph = Document(output).paragraphs[0]
+
+    assert paragraph.style.name == "MDPI_3.1_text"
+    assert paragraph.style.font.name == "Palatino Linotype"
 
 
 def test_docx_renderer_prints_typed_heading_number_without_word_numbering(

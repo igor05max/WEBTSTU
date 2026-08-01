@@ -1,6 +1,7 @@
 import json
 from unittest.mock import patch
 
+from django.core.cache import cache
 from django.test import SimpleTestCase, override_settings
 
 from apps.checks.ai_client import AIProviderError
@@ -84,6 +85,10 @@ class QwenSemanticProviderTests(SimpleTestCase):
 
 
 class FormatterFallbackTests(SimpleTestCase):
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
     @patch("apps.submissions.formatting_correction._build_with_ported_formatter")
     @patch("apps.submissions.formatting_correction._template_file")
     @patch("apps.submissions.formatting_correction._source_docx_and_rules")
@@ -102,3 +107,26 @@ class FormatterFallbackTests(SimpleTestCase):
             "Новый редактор не смог применить файл-шаблон",
         ):
             build_corrected_docx(object())
+
+    @patch("apps.submissions.formatting_correction._build_with_ported_formatter")
+    @patch("apps.submissions.formatting_correction._template_file")
+    @patch("apps.submissions.formatting_correction._source_docx_and_rules")
+    def test_corrected_document_is_cached_for_preview_and_download(
+        self,
+        mocked_source,
+        mocked_template,
+        mocked_new_formatter,
+    ):
+        submission = object()
+        mocked_source.return_value = (b"unique-source", {"body": {}})
+        mocked_template.return_value = ("template.docx", b"unique-template")
+        mocked_new_formatter.return_value = (b"corrected-docx", ["change"])
+
+        first = build_corrected_docx(submission)
+        second = build_corrected_docx(submission)
+
+        self.assertEqual(first, second)
+        mocked_new_formatter.assert_called_once_with(
+            b"unique-source",
+            ("template.docx", b"unique-template"),
+        )
