@@ -1,16 +1,22 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from docx import Document
 from docx.oxml import OxmlElement
 
 from paper_formatter.models import (
+    ArticleIR,
+    ArticleMetadata,
     EquationBlock,
     ListItemBlock,
+    LocalizedText,
     ParagraphBlock,
     SectionBlock,
     TableBlock,
+    TextRun,
 )
 from paper_formatter.parsers.docx_parser import DocxParser
+from paper_formatter.renderers.docx_renderer import DocxRenderer
 from paper_formatter.validator import ConversionValidator
 
 
@@ -96,6 +102,84 @@ def test_docx_parser_preserves_inline_omml_inside_text_paragraph(
     assert paragraphs[0].runs[1].math_latex == "m"
     assert not any(isinstance(block, EquationBlock) for block in article.body)
     assert ConversionValidator()._article_counts(article)["equations"] == 1
+
+
+def test_docx_parser_skips_wmf_conversion_for_preserved_mathtype_ole(
+    tmp_path: Path,
+) -> None:
+    preview_path = tmp_path / "formula.wmf"
+    ole_path = tmp_path / "formula.bin"
+    preview_path.write_bytes(b"WMF preview")
+    ole_path.write_bytes(b"MathType OLE payload")
+    object_xml = """
+    <w:object xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+              xmlns:v="urn:schemas-microsoft-com:vml"
+              xmlns:o="urn:schemas-microsoft-com:office:office">
+      <v:shape style="width:12pt;height:12pt">
+        <v:imagedata r:id="rIdPreview"/>
+      </v:shape>
+      <o:OLEObject Type="Embed" ProgID="Equation.DSMT4" r:id="rIdOle"/>
+    </w:object>
+    """
+    source = DocxRenderer().render(
+        ArticleIR(
+            metadata=ArticleMetadata(
+                titles=[LocalizedText(language="en", text="Formula test")]
+            ),
+            body=[
+                SectionBlock(id="s1", title="Methods", level=1),
+                ParagraphBlock(
+                    id="p1",
+                    runs=[
+                        TextRun(text="A sufficiently long body paragraph before "),
+                        TextRun(
+                            asset_id="formula-preview",
+                            formula_image=True,
+                            ole_object_xml=object_xml,
+                            ole_object_asset_id="formula-ole",
+                            ole_preview_asset_id="formula-preview",
+                        ),
+                        TextRun(text=" after"),
+                    ],
+                )
+            ],
+            assets=[
+                {
+                    "id": "formula-preview",
+                    "path": preview_path.name,
+                    "media_type": "image/x-wmf",
+                },
+                {
+                    "id": "formula-ole",
+                    "path": ole_path.name,
+                    "media_type": "application/vnd.openxmlformats-officedocument.oleObject",
+                },
+            ],
+        ),
+        tmp_path / "source.docx",
+        asset_root=tmp_path,
+    )
+
+    with patch(
+        "paper_formatter.parsers.docx_parser.convert_metafile_to_png"
+    ) as mocked_convert:
+        article = DocxParser(source, tmp_path / "parsed-assets").parse()
+
+    mocked_convert.assert_not_called()
+    formula_run = next(
+        run
+        for block in article.body
+        if isinstance(block, ParagraphBlock)
+        for run in block.runs
+        if run.formula_image
+    )
+    assert formula_run.ole_object_asset_id is not None
+    assert formula_run.ole_preview_asset_id is not None
+    formula_asset = next(
+        asset for asset in article.assets if asset.id == formula_run.asset_id
+    )
+    assert Path(formula_asset.path).suffix.lower() == ".wmf"
 
 
 def test_docx_parser_recognizes_numbered_equation_table(

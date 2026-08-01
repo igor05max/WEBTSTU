@@ -1118,30 +1118,6 @@ class DocxParser:
         media_type = getattr(part, "content_type", None) or mimetypes.guess_type(raw_name)[0]
         raw_media_type = media_type
 
-        if raw_target.suffix.lower() in {".wmf", ".emf"}:
-            png_name = self._unique_asset_name(f"{raw_target.stem}.png")
-            png_target = self.assets_dir / png_name
-            converted, error = convert_metafile_to_png(raw_target, png_target)
-            if converted:
-                final_target = png_target
-                final_name = png_name
-                media_type = "image/png"
-                self._ole_formula_converted += 1
-            else:
-                self._ole_formula_failed += 1
-                if error and len(self._ole_conversion_errors) < 5:
-                    self._ole_conversion_errors.append(f"{location}: {error}")
-        else:
-            self._ole_formula_converted += 1
-
-        asset = Asset(
-            id=self._next_id("asset"),
-            path=f"assets/{final_name}",
-            media_type=media_type,
-            original_name=original_name,
-            sha256=sha256_file(final_target),
-        )
-        article.assets.append(asset)
         ole_object_xml, ole_object_asset_id, ole_preview_asset_id = self._preserved_math_ole(
             object_element,
             document,
@@ -1149,6 +1125,49 @@ class DocxParser:
             raw_target=raw_target,
             raw_media_type=raw_media_type,
         )
+        preserved_preview = next(
+            (
+                candidate
+                for candidate in article.assets
+                if candidate.id == ole_preview_asset_id
+            ),
+            None,
+        )
+
+        if raw_target.suffix.lower() in {".wmf", ".emf"}:
+            if ole_object_asset_id and preserved_preview is not None:
+                # The original MathType payload plus its native WMF/EMF preview
+                # is the most faithful and portable representation.  Avoid an
+                # expensive best-effort raster conversion that Linux often
+                # cannot perform and that the renderer no longer needs.
+                self._ole_formula_converted += 1
+            else:
+                png_name = self._unique_asset_name(f"{raw_target.stem}.png")
+                png_target = self.assets_dir / png_name
+                converted, error = convert_metafile_to_png(raw_target, png_target)
+                if converted:
+                    final_target = png_target
+                    final_name = png_name
+                    media_type = "image/png"
+                    self._ole_formula_converted += 1
+                else:
+                    self._ole_formula_failed += 1
+                    if error and len(self._ole_conversion_errors) < 5:
+                        self._ole_conversion_errors.append(f"{location}: {error}")
+        else:
+            self._ole_formula_converted += 1
+
+        if final_target == raw_target and preserved_preview is not None:
+            asset = preserved_preview
+        else:
+            asset = Asset(
+                id=self._next_id("asset"),
+                path=f"assets/{final_name}",
+                media_type=media_type,
+                original_name=original_name,
+                sha256=sha256_file(final_target),
+            )
+            article.assets.append(asset)
         if final_target != raw_target and ole_preview_asset_id is None:
             raw_target.unlink(missing_ok=True)
         width_pt, height_pt = self._shape_size_points(object_element)
