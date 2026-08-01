@@ -1,20 +1,29 @@
-# Paper formatter integration
+# Интеграция Paper Formatter
 
-This package is the deterministic document conversion engine ported from
-`System_doc_latex/paper_formatter_cli_v3`.
+Пакет предназначен для встраивания в существующий сайт и не требует Microsoft Word.
+Основной интерфейс — `paper_formatter.pipeline.ConversionPipeline`.
 
-The web workflow calls `ConversionPipeline` for DOCX submissions whenever the
-original formatting-template file is available. It:
+## Семантический анализ
 
-- parses the source into `ArticleIR`;
-- derives a measurable profile from DOCX, TEX, PDF, ZIP or text requirements;
-- rebuilds an editable DOCX and a portable LaTeX project;
-- validates preservation of text, formulas, tables, figures and references.
+В данной сборке структурная классификация работает по схеме:
 
-Document conversion is local and rule-based. It never sends article blocks to a
-remote model. Application-level semantic reviews use the configured local Qwen
-OpenAI-compatible endpoint through `apps.checks.ai_client`.
+```text
+локальные правила -> локальный Qwen для спорных блоков -> ArticleIR
+```
 
-If a historical template has only normalized rules and no original supported
-file, the existing `document_template_engine` remains the compatibility
-fallback.
+В веб-приложении Qwen подключается через существующий VPN-клиент и общий
+`apps.checks.ai_client`. Модель получает только структурные признаки и может
+уточнять роли блоков, но не изменяет текст рукописи. При недоступности VPN/API или
+некорректном ответе система не падает и сохраняет решения локальных правил.
+Автономный пакет не содержит ключей и по умолчанию работает без AI; провайдер
+передаётся явно в `ConversionPipeline`.
+
+## Важно для сайта
+
+Фабрика `apps.submissions.paper_formatter_ai.build_qwen_semantic_provider()`
+подключает конвертер к текущим настройкам `AI_BASE_URL`, `AI_MODEL` и
+`AI_API_KEY`. Отдельных секретов или настроек Gemini модуль не использует.
+
+## Точный перенос DOCX-стилей (v0.4.0)
+
+При DOCX-образце рендерер теперь создаёт документ на основе самого образца и назначает блокам ArticleIR его реальные стили. Это сохраняет журнальные отступы, интервалы, колонтитулы, нумерацию списков, подписи и табличные стили. Результат применения стилей проверяется в `validation_report.json` → `integrity.docx_styles`.

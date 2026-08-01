@@ -1,4 +1,5 @@
 from pathlib import Path
+import base64
 
 import pytest
 from docx import Document
@@ -214,6 +215,9 @@ def test_docx_template_uses_multicolumn_body_not_opening_section(
     columns.set(qn("w:num"), "2")
     columns.set(qn("w:space"), str(round(5.0 * 1440 / 25.4)))
     body._sectPr.append(columns)
+    page_numbering = OxmlElement("w:pgNumType")
+    page_numbering.set(qn("w:start"), "9")
+    body._sectPr.append(page_numbering)
     custom = template.styles.add_style(
         "ArticleHeading1",
         WD_STYLE_TYPE.PARAGRAPH,
@@ -252,6 +256,99 @@ def test_docx_template_uses_multicolumn_body_not_opening_section(
     body_columns = rendered.sections[1]._sectPr.xpath("./w:cols")[0]
     assert first_columns.get(qn("w:num")) == "1"
     assert body_columns.get(qn("w:num")) == "2"
+    for section in rendered.sections:
+        page_numbering = section._sectPr.find(qn("w:pgNumType"))
+        assert page_numbering is None or page_numbering.get(qn("w:start")) is None
     assert rendered.sections[0].header.paragraphs[0].text == (
         "Journal running header"
     )
+
+
+def test_docx_template_preserves_at_least_line_spacing_and_mdpi_title(
+    tmp_path: Path,
+) -> None:
+    template_path = tmp_path / "mdpi.docx"
+    template = Document()
+    spacing = template.styles["Normal"].element.get_or_add_pPr().get_or_add_spacing()
+    spacing.set(qn("w:line"), "280")
+    spacing.set(qn("w:lineRule"), "atLeast")
+    title_style = template.styles.add_style("MDPI_1.2_title", WD_STYLE_TYPE.PARAGRAPH)
+    title_style.font.name = "Palatino Linotype"
+    title_style.font.size = Pt(18)
+    title_style.font.bold = True
+    template.add_paragraph("Article", style="Normal")
+    template.add_paragraph("Template title", style="MDPI_1.2_title")
+    template.save(template_path)
+
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+
+    assert profile.typography.line_spacing == 1.0
+    assert profile.typography.line_spacing_pt == pytest.approx(14.0)
+    assert profile.typography.line_spacing_rule == "atLeast"
+    assert profile.typography.title_size_pt == pytest.approx(18.0)
+    assert profile.typography.title_alignment == "left"
+
+
+def test_docx_renderer_moves_wide_formula_to_its_own_line(tmp_path: Path) -> None:
+    image_path = tmp_path / "formula.png"
+    image_path.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4"
+            "z8DwHwAFgAI/ScL0RQAAAABJRU5ErkJggg=="
+        )
+    )
+    article = ArticleIR(
+        body=[
+            ParagraphBlock(
+                id="p1",
+                runs=[
+                    TextRun(text="Before "),
+                    TextRun(
+                        asset_id="formula",
+                        formula_image=True,
+                        width_pt=300,
+                        height_pt=24,
+                    ),
+                    TextRun(text=" after"),
+                ],
+            )
+        ],
+        assets=[
+            {
+                "id": "formula",
+                "path": "formula.png",
+                "media_type": "image/png",
+            }
+        ],
+    )
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "result.docx",
+        profile=TemplateProfile(),
+        asset_root=tmp_path,
+    )
+    paragraphs = Document(output).paragraphs
+
+    assert [paragraph.text for paragraph in paragraphs] == ["Before ", "", " after"]
+    assert paragraphs[1].alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert "w:drawing" in paragraphs[1]._p.xml
+
+
+def test_docx_renderer_prints_typed_heading_number_without_word_numbering(
+    tmp_path: Path,
+) -> None:
+    article = ArticleIR(
+        body=[
+            SectionBlock(
+                id="section-1",
+                title="Методы исследования",
+                number="2.1",
+                level=2,
+            )
+        ]
+    )
+
+    output = DocxRenderer().render(article, tmp_path / "numbered.docx")
+    heading = Document(output).paragraphs[0]
+
+    assert heading.text == "2.1. Методы исследования"

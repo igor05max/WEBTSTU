@@ -18,6 +18,7 @@ from paper_formatter.models import (
     TypographyProfile,
 )
 from paper_formatter.template_analyzers.base import TemplateAnalyzer
+from paper_formatter.renderers.docx_template_styles import DocxTemplateStyleMap
 
 
 _ALIGNMENTS = {
@@ -39,6 +40,7 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
         page = self._page_layout(document)
         typography = self._typography(document)
         headings = self._headings(document)
+        style_map = DocxTemplateStyleMap.from_document(document, source_path=source)
         evidence: dict[str, str | float | int | bool] = {
             "sections": len(document.sections),
             "paragraphs": len(document.paragraphs),
@@ -47,6 +49,7 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
                 self._section_columns(section)[0]
                 for section in document.sections
             ),
+            **style_map.as_evidence(),
         }
         return TemplateProfile(
             name=source.stem,
@@ -111,7 +114,7 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
         )
 
     def _typography(self, document: Document) -> TypographyProfile:
-        normal = document.styles["Normal"]
+        normal = self._body_style(document) or document.styles["Normal"]
         font_name = normal.font.name
         size_pt = normal.font.size.pt if normal.font.size else None
         observed_fonts: Counter[str] = Counter()
@@ -131,15 +134,21 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
         title_style = title_paragraph.style if title_paragraph is not None else None
         title_size = self._paragraph_size(title_paragraph)
         title_bold = self._paragraph_bold(title_paragraph)
+        author_paragraph = self._front_matter_paragraph(document, "author")
+        affiliation_paragraph = self._front_matter_paragraph(document, "affiliation")
+        is_mdpi_front_matter = bool(
+            title_style is not None and title_style.name.lower().startswith("mdpi_")
+        )
+        front_alignment_default = "left" if is_mdpi_front_matter else "center"
         caption = document.styles["Caption"] if "Caption" in document.styles else None
         normal_format = normal.paragraph_format
-        line_spacing = normal_format.line_spacing
-        if not isinstance(line_spacing, (int, float)):
-            line_spacing = 1.15
+        line_spacing, line_spacing_pt, line_spacing_rule = self._line_spacing(normal)
         return TypographyProfile(
             main_font=font_name or "Times New Roman",
             main_size_pt=size_pt or 12.0,
-            line_spacing=float(line_spacing),
+            line_spacing=line_spacing,
+            line_spacing_pt=line_spacing_pt,
+            line_spacing_rule=line_spacing_rule,
             first_line_indent_mm=(
                 round(normal_format.first_line_indent.mm, 2)
                 if normal_format.first_line_indent is not None
@@ -162,7 +171,19 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
             title_font=title_style.font.name if title_style is not None else None,
             title_size_pt=title_size,
             title_bold=title_bold,
-            author_size_pt=self._front_matter_size(document, 3),
+            title_alignment=self._paragraph_alignment(
+                title_paragraph,
+                front_alignment_default,
+            ),
+            author_size_pt=self._paragraph_size(author_paragraph),
+            author_alignment=self._paragraph_alignment(
+                author_paragraph,
+                front_alignment_default,
+            ),
+            affiliation_alignment=self._paragraph_alignment(
+                affiliation_paragraph,
+                front_alignment_default,
+            ),
             abstract_size_pt=self._front_matter_size(document, 6),
             caption_size_pt=(
                 caption.font.size.pt
@@ -199,6 +220,42 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
                 )
             )
         return result
+
+
+    @staticmethod
+    def _body_style(document: Document):
+        style_map = DocxTemplateStyleMap.from_document(document)
+        style_name = style_map.paragraph("body")
+        if style_name and style_name in document.styles:
+            return document.styles[style_name]
+        return None
+
+    @staticmethod
+    def _line_spacing(style) -> tuple[float, float | None, str | None]:
+        """Return a line multiplier or an absolute point value from Word XML.
+
+        python-docx exposes ``atLeast`` and ``exact`` spacing as large
+        EMU/Twips integers. Reusing that integer as a multiplier makes output
+        DOCX files invalidly spaced and can prevent rendering altogether.
+        """
+
+        paragraph_properties = style.element.pPr
+        spacing = (
+            paragraph_properties.find(qn("w:spacing"))
+            if paragraph_properties is not None
+            else None
+        )
+        if spacing is None:
+            return 1.15, None, None
+        raw_line = spacing.get(qn("w:line"))
+        line_rule = (spacing.get(qn("w:lineRule")) or "auto").lower()
+        if raw_line and raw_line.isdigit():
+            value = int(raw_line)
+            if line_rule in {"atleast", "exact"}:
+                return 1.0, value / 20, "atLeast" if line_rule == "atleast" else "exact"
+            return value / 240, None, "auto"
+        value = style.paragraph_format.line_spacing
+        return (float(value), None, None) if isinstance(value, float) else (1.15, None, None)
 
     @staticmethod
     def _figure_width_fraction(
@@ -242,6 +299,10 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
     @staticmethod
     def _title_paragraph(document: Document):
         for paragraph in document.paragraphs[:20]:
+            style_name = (paragraph.style.name if paragraph.style else "").lower()
+            if re.search(r"(?:^|[_-])title$", style_name) and paragraph.text.strip():
+                return paragraph
+        for paragraph in document.paragraphs[:20]:
             text = paragraph.text.strip()
             if (
                 paragraph.alignment == WD_ALIGN_PARAGRAPH.CENTER
@@ -251,6 +312,28 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
             ):
                 return paragraph
         return None
+
+    @staticmethod
+    def _front_matter_paragraph(document: Document, role: str):
+        patterns = {
+            "author": r"(?:^|[_-])author(?:names)?$",
+            "affiliation": r"(?:^|[_-])affiliation$",
+        }
+        pattern = patterns[role]
+        for paragraph in document.paragraphs[:20]:
+            style_name = (paragraph.style.name if paragraph.style else "").lower()
+            if re.search(pattern, style_name) and paragraph.text.strip():
+                return paragraph
+        return None
+
+    @staticmethod
+    def _paragraph_alignment(paragraph, default: str) -> str:
+        if paragraph is None:
+            return default
+        alignment = paragraph.alignment
+        if alignment is None and paragraph.style is not None:
+            alignment = paragraph.style.paragraph_format.alignment
+        return _ALIGNMENTS.get(alignment, default)
 
     @staticmethod
     def _paragraph_size(paragraph) -> float | None:
@@ -296,7 +379,16 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
             re.IGNORECASE,
         )
         for style in document.styles:
-            if custom_pattern.search(style.name.replace(" ", "")):
+            normalized = style.name.replace(" ", "")
+            if custom_pattern.search(normalized):
+                return style
+        for style in document.styles:
+            normalized = style.name.replace(" ", "")
+            if re.search(
+                rf"(?:^|[_-])heading[ _-]*{level}$",
+                normalized,
+                re.IGNORECASE,
+            ) and normalized.lower() != f"heading{level}":
                 return style
         canonical = f"Heading {level}"
         return document.styles[canonical] if canonical in document.styles else None

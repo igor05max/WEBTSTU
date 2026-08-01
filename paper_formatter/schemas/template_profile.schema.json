@@ -325,6 +325,36 @@
           "title": "Line Spacing",
           "type": "number"
         },
+        "line_spacing_pt": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line Spacing Pt"
+        },
+        "line_spacing_rule": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "atLeast",
+                "exact"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line Spacing Rule"
+        },
         "first_line_indent_mm": {
           "default": 12.5,
           "minimum": 0,
@@ -383,6 +413,17 @@
           "title": "Title Bold",
           "type": "boolean"
         },
+        "title_alignment": {
+          "default": "center",
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "justify"
+          ],
+          "title": "Title Alignment",
+          "type": "string"
+        },
         "author_size_pt": {
           "anyOf": [
             {
@@ -394,6 +435,28 @@
           ],
           "default": null,
           "title": "Author Size Pt"
+        },
+        "author_alignment": {
+          "default": "center",
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "justify"
+          ],
+          "title": "Author Alignment",
+          "type": "string"
+        },
+        "affiliation_alignment": {
+          "default": "center",
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "justify"
+          ],
+          "title": "Affiliation Alignment",
+          "type": "string"
         },
         "abstract_size_pt": {
           "anyOf": [

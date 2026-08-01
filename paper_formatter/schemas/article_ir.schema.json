@@ -782,6 +782,18 @@
           "title": "Title",
           "type": "string"
         },
+        "number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number"
+        },
         "level": {
           "default": 1,
           "maximum": 6,
@@ -1038,6 +1050,42 @@
           "default": false,
           "title": "Formula Image",
           "type": "boolean"
+        },
+        "ole_object_xml": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ole Object Xml"
+        },
+        "ole_object_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ole Object Asset Id"
+        },
+        "ole_preview_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ole Preview Asset Id"
         },
         "math_latex": {
           "anyOf": [

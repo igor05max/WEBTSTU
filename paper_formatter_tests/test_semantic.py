@@ -65,3 +65,27 @@ def test_web_formatter_is_deterministic_and_rules_only():
 
     assert result.provider == "rules-only"
     assert result.by_id()["b-2"].role == "author"
+
+
+def test_long_finished_paragraph_with_heading_style_is_not_a_heading():
+    paragraph = (
+        "Полученные результаты показывают устойчивую взаимосвязь между "
+        "исследуемыми показателями и подтверждают сделанные ранее выводы. " * 3
+    ).strip()
+    analysis = RuleSemanticClassifier().analyze_document(
+        [
+            SemanticBlock(
+                block_id="b-1",
+                order=1,
+                text=paragraph,
+                style="Heading 2",
+                outline_level=2,
+                bold_ratio=1.0,
+            )
+        ],
+        document_name="a.docx",
+    )
+
+    decision = analysis.decisions[0]
+    assert decision.role == "paragraph"
+    assert decision.heading_level is None

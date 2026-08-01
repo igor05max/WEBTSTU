@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -40,6 +41,117 @@ def _run(value: str, *, normal: bool = False) -> etree._Element:
     run.append(text)
     return run
 
+
+
+
+def _named_operators(latex: str) -> list[str]:
+    """Return custom operator names before LaTeX normalization."""
+
+    values = re.findall(r"\\operatorname\*?\s*\{([^{}]+)\}", latex)
+    # Some formulas arrive from OCR/LLM with a plain custom function name.
+    for known in ("clip", "Score", "Serialize", "ExtractRanking"):
+        if re.search(rf"(?<![A-Za-z\\]){re.escape(known)}\s*(?=(?:\\left\s*)?\()", latex):
+            values.append(known)
+    result: list[str] = []
+    for value in values:
+        value = value.strip()
+        if value and value not in result:
+            result.append(value)
+    return result
+
+
+def _repair_named_operator_delimiters(
+    root: etree._Element,
+    operators: list[str],
+) -> None:
+    """Repair malformed OMML produced by MML2OMML.XSL for custom operators.
+
+    With formulas such as ``\\operatorname{clip}\\left(...\\right)`` some
+    Microsoft Office XSL versions emit a delimiter whose separator is the first
+    letter of the operator and whose first argument is empty. Word then displays
+    fragments such as ``c(...)`` or ``cleft(...)``. Rebuild this construct as a
+    normal operator run followed by a parenthesized argument.
+    """
+
+    if not operators:
+        return
+    namespace = {"m": OMML_NS}
+    remaining = list(operators)
+    for delimiter in root.xpath('.//m:d', namespaces=namespace):
+        properties = delimiter.find(f'{{{OMML_NS}}}dPr')
+        if properties is None:
+            continue
+        separator = properties.find(f'{{{OMML_NS}}}sepChr')
+        separator_value = (
+            separator.get(f'{{{OMML_NS}}}val', '') if separator is not None else ''
+        )
+        arguments = delimiter.findall(f'{{{OMML_NS}}}e')
+        if len(arguments) < 2:
+            continue
+        first_empty = len(arguments[0]) == 0 and not ''.join(arguments[0].itertext()).strip()
+        if not first_empty:
+            continue
+        operator = next(
+            (
+                value
+                for value in remaining
+                if separator_value.lower() == value[:1].lower()
+            ),
+            None,
+        )
+        if operator is None:
+            continue
+
+        content_argument = arguments[1]
+        content_nodes = list(content_argument)
+        for node in content_nodes:
+            content_argument.remove(node)
+        # MML2OMML often wraps the first function argument in a delimiter with
+        # default parentheses. Flatten that wrapper so we do not produce
+        # ``clip((x), -1, 1)`` after rebuilding the complete call.
+        if content_nodes and etree.QName(content_nodes[0]).localname == 'd':
+            inner = content_nodes[0]
+            inner_properties = inner.find(f'{{{OMML_NS}}}dPr')
+            inner_arguments = inner.findall(f'{{{OMML_NS}}}e')
+            inner_begin = (
+                inner_properties.find(f'{{{OMML_NS}}}begChr')
+                if inner_properties is not None
+                else None
+            )
+            inner_end = (
+                inner_properties.find(f'{{{OMML_NS}}}endChr')
+                if inner_properties is not None
+                else None
+            )
+            if (
+                len(inner_arguments) == 1
+                and inner_begin is None
+                and inner_end is None
+            ):
+                content_nodes = list(inner_arguments[0]) + content_nodes[1:]
+
+        call_delimiter = _omml('d')
+        call_properties = _omml('dPr')
+        begin = _omml('begChr')
+        begin.set(f'{{{OMML_NS}}}val', '(')
+        call_properties.append(begin)
+        call_separator = _omml('sepChr')
+        call_separator.set(f'{{{OMML_NS}}}val', '')
+        call_properties.append(call_separator)
+        end = _omml('endChr')
+        end.set(f'{{{OMML_NS}}}val', ')')
+        call_properties.append(end)
+        call_delimiter.append(call_properties)
+        _append_argument(call_delimiter, 'e', content_nodes)
+
+        content_argument.append(_run(operator, normal=True))
+        content_argument.append(call_delimiter)
+        delimiter.remove(arguments[0])
+        if separator is not None:
+            separator.set(f'{{{OMML_NS}}}val', '')
+        remaining.remove(operator)
+        if not remaining:
+            break
 
 def _mathml_children(node: etree._Element) -> list[etree._Element]:
     return [
@@ -155,6 +267,7 @@ class LatexToOmmlConverter:
     """Convert mathematical LaTeX to editable Word equations."""
 
     def convert(self, latex: str, *, display: bool = False) -> etree._Element:
+        operators = _named_operators(latex)
         value = self._normalize(latex)
         if not value:
             raise OmmlConversionError("Пустая формула.")
@@ -178,6 +291,7 @@ class LatexToOmmlConverter:
             else:
                 root = _omml("oMath")
                 root.extend(_mathml_to_omml(mathml_root))
+            _repair_named_operator_delimiters(root, operators)
         except Exception as exc:
             raise OmmlConversionError(
                 f"Не удалось преобразовать формулу в OMML: {exc}"
@@ -202,6 +316,21 @@ class LatexToOmmlConverter:
             if value.startswith(left) and value.endswith(right):
                 value = value[len(left) : -len(right)].strip()
                 break
+        # latex2mathml + some Office MML2OMML.XSL versions mishandle
+        # \operatorname{...} and may turn the first letter into a delimiter
+        # separator. A normal roman run is rendered equivalently in Word and
+        # survives the conversion reliably.
+        value = re.sub(
+            r"\\operatorname\*?\s*\{([^{}]+)\}",
+            lambda match: rf"\mathrm{{{match.group(1)}}}",
+            value,
+        )
+        for known in ("clip", "Score", "Serialize", "ExtractRanking"):
+            value = re.sub(
+                rf"(?<![A-Za-z\\]){re.escape(known)}(?=\s*(?:\\left\s*)?\()",
+                lambda _match, name=known: rf"\mathrm{{{name}}}",
+                value,
+            )
         return value
 
     @classmethod

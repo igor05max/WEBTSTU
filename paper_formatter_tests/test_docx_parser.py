@@ -44,6 +44,25 @@ def test_docx_parser_extracts_basic_structure(tmp_path: Path) -> None:
     assert any(isinstance(block, ListItemBlock) for block in article.body)
 
 
+def test_docx_parser_preserves_typed_heading_number_separately(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "numbered-heading.docx"
+    document = Document()
+    document.add_heading("Тестовая статья", level=0)
+    document.add_heading("2.1. Методы исследования", level=1)
+    document.add_paragraph("Основной текст.")
+    document.save(source)
+
+    article = DocxParser(source, tmp_path / "assets").parse()
+    section = next(
+        block for block in article.body if isinstance(block, SectionBlock)
+    )
+
+    assert section.title == "Методы исследования"
+    assert section.number == "2.1"
+
+
 def test_docx_parser_preserves_inline_omml_inside_text_paragraph(
     tmp_path: Path,
 ) -> None:

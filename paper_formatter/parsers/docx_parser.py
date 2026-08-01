@@ -94,6 +94,9 @@ class DocxParser:
                 document_name=self.source_path.name,
             )
         semantic_by_id = self.semantic_analysis.by_id()
+        semantic_blocks_by_id = {
+            block.block_id: block for block in semantic_blocks
+        }
 
         article = ArticleIR(semantic_provider=self.semantic_analysis.provider)
         self._extract_notes(article)
@@ -251,10 +254,16 @@ class DocxParser:
                     }[role]
                     if text:
                         section_id = self._next_id("sec")
+                        semantic_block = semantic_blocks_by_id.get(block_id)
                         article.body.append(
                             SectionBlock(
                                 id=section_id,
                                 title=decision.normalized_text or self._clean_heading_title(text),
+                                number=(
+                                    semantic_block.numbered_prefix
+                                    if semantic_block is not None
+                                    else None
+                                ),
                                 level=level,
                                 source=SourceTrace(
                                     format="docx",
@@ -1107,6 +1116,7 @@ class DocxParser:
         final_target = raw_target
         final_name = raw_name
         media_type = getattr(part, "content_type", None) or mimetypes.guess_type(raw_name)[0]
+        raw_media_type = media_type
 
         if raw_target.suffix.lower() in {".wmf", ".emf"}:
             png_name = self._unique_asset_name(f"{raw_target.stem}.png")
@@ -1117,7 +1127,6 @@ class DocxParser:
                 final_name = png_name
                 media_type = "image/png"
                 self._ole_formula_converted += 1
-                raw_target.unlink(missing_ok=True)
             else:
                 self._ole_formula_failed += 1
                 if error and len(self._ole_conversion_errors) < 5:
@@ -1133,14 +1142,74 @@ class DocxParser:
             sha256=sha256_file(final_target),
         )
         article.assets.append(asset)
+        ole_object_xml, ole_object_asset_id, ole_preview_asset_id = self._preserved_math_ole(
+            object_element,
+            document,
+            article,
+            raw_target=raw_target,
+            raw_media_type=raw_media_type,
+        )
+        if final_target != raw_target and ole_preview_asset_id is None:
+            raw_target.unlink(missing_ok=True)
         width_pt, height_pt = self._shape_size_points(object_element)
         return TextRun(
             asset_id=asset.id,
             formula_image=True,
+            ole_object_xml=ole_object_xml,
+            ole_object_asset_id=ole_object_asset_id,
+            ole_preview_asset_id=ole_preview_asset_id,
             display=display,
             width_pt=width_pt,
             height_pt=height_pt,
         )
+
+    def _preserved_math_ole(
+        self,
+        object_element: etree._Element,
+        document: _Document,
+        article: ArticleIR,
+        *,
+        raw_target: Path,
+        raw_media_type: str | None,
+    ) -> tuple[str | None, str | None, str | None]:
+        """Preserve a known MathType stream for Word-native equation rendering."""
+        ole_nodes = object_element.xpath(".//*[local-name()='OLEObject']")
+        if not ole_nodes:
+            return None, None, None
+        ole_node = ole_nodes[0]
+        prog_id = (ole_node.get("ProgID") or "").lower()
+        if not (prog_id.startswith("equation.") or "mathtype" in prog_id):
+            return None, None, None
+        rel_id = ole_node.get(qn("r:id"))
+        if not rel_id or rel_id not in document.part.rels:
+            return None, None, None
+        try:
+            part = document.part.rels[rel_id].target_part
+            original_name = Path(str(part.partname)).name
+            target = self.assets_dir / self._unique_asset_name(original_name)
+            target.write_bytes(part.blob)
+        except Exception as exc:
+            if len(self._ole_conversion_errors) < 5:
+                self._ole_conversion_errors.append(f"OLE payload: {exc}")
+            return None, None, None
+        ole_asset = Asset(
+            id=self._next_id("asset"),
+            path=f"assets/{target.name}",
+            media_type=getattr(part, "content_type", None)
+            or "application/vnd.openxmlformats-officedocument.oleObject",
+            original_name=original_name,
+            sha256=sha256_file(target),
+        )
+        article.assets.append(ole_asset)
+        preview_asset = Asset(
+            id=self._next_id("asset"),
+            path=f"assets/{raw_target.name}",
+            media_type=raw_media_type,
+            original_name=raw_target.name,
+            sha256=sha256_file(raw_target),
+        )
+        article.assets.append(preview_asset)
+        return etree.tostring(object_element, encoding="unicode"), ole_asset.id, preview_asset.id
 
     def _shape_size_points(self, object_element: etree._Element) -> tuple[float | None, float | None]:
         shapes = object_element.xpath(".//*[local-name()='shape']")

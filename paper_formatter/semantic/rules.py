@@ -108,6 +108,21 @@ class RuleSemanticClassifier:
         style = block.style.lower().strip()
         normalized_style = re.sub(r"\s+", " ", style)
 
+        # В реальных рукописях авторы нередко случайно оставляют стиль Heading
+        # на целом абзаце. Длинный законченный текст не должен из-за этого
+        # превращаться в заголовок и ломать журнальную верстку.
+        heading_style = _HEADING_STYLE.search(style)
+        if (
+            len(text) > 240
+            and (heading_style or block.outline_level is not None)
+            and text.endswith((".", "!", "?"))
+        ):
+            return _RuleResult(
+                "paragraph",
+                0.98,
+                "Длинный законченный абзац ошибочно размечен стилем заголовка",
+            )
+
         if not text:
             return _RuleResult("paragraph", 1.0, "Пустой служебный блок")
 
@@ -154,7 +169,7 @@ class RuleSemanticClassifier:
         if numbered_match and not block.is_in_numbered_sequence:
             explicit_level = len(numbered_match.group(1).split("."))
             tail = numbered_match.group(2).strip()
-            style_heading = _HEADING_STYLE.search(style)
+            style_heading = heading_style
             if style_heading or block.outline_level is not None:
                 return _RuleResult(
                     self._role_for_level(explicit_level),
@@ -172,7 +187,7 @@ class RuleSemanticClassifier:
                     explicit_level,
                 )
 
-        style_heading = _HEADING_STYLE.search(style)
+        style_heading = heading_style
         if style_heading:
             level = max(1, min(6, int(style_heading.group(1))))
             role = self._role_for_level(level)
@@ -239,6 +254,10 @@ class RuleSemanticClassifier:
             candidates = [
                 b for b in front[:10]
                 if 5 <= len(self._clean(b.text)) <= 500
+                and not (
+                    len(self._clean(b.text)) > 240
+                    and self._clean(b.text).endswith((".", "!", "?"))
+                )
                 and not b.numbered_prefix
                 and not b.has_numbering
                 and by_id[b.block_id].role != "list_item"

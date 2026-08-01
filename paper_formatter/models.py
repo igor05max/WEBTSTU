@@ -27,6 +27,9 @@ class TextRun(BaseModel):
     subscript: bool = False
     asset_id: str | None = None
     formula_image: bool = False
+    ole_object_xml: str | None = None
+    ole_object_asset_id: str | None = None
+    ole_preview_asset_id: str | None = None
     math_latex: str | None = None
     display: bool = False
     width_pt: float | None = None
@@ -70,6 +73,7 @@ class SectionBlock(BaseModel):
     type: Literal["section"] = "section"
     id: str
     title: str
+    number: str | None = None
     level: int = Field(default=1, ge=1, le=6)
     source: SourceTrace | None = None
 
@@ -232,6 +236,8 @@ class TypographyProfile(BaseModel):
     main_font: str = "Times New Roman"
     main_size_pt: float = Field(default=12.0, gt=0)
     line_spacing: float = Field(default=1.15, gt=0)
+    line_spacing_pt: float | None = Field(default=None, gt=0)
+    line_spacing_rule: Literal["auto", "atLeast", "exact"] | None = None
     first_line_indent_mm: float = Field(default=12.5, ge=0)
     paragraph_space_before_pt: float = Field(default=0.0, ge=0)
     paragraph_space_after_pt: float = Field(default=0.0, ge=0)
@@ -239,7 +245,10 @@ class TypographyProfile(BaseModel):
     title_font: str | None = None
     title_size_pt: float | None = None
     title_bold: bool = True
+    title_alignment: Literal["left", "center", "right", "justify"] = "center"
     author_size_pt: float | None = None
+    author_alignment: Literal["left", "center", "right", "justify"] = "center"
+    affiliation_alignment: Literal["left", "center", "right", "justify"] = "center"
     abstract_size_pt: float | None = None
     caption_size_pt: float | None = None
 

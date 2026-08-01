@@ -12,6 +12,7 @@ from paper_formatter.config import SemanticSettings
 from paper_formatter.exceptions import PaperFormatterError
 from paper_formatter.pipeline import ConversionPipeline
 from apps.directory.formatting_templates import has_manual_rule_overrides
+from apps.submissions.paper_formatter_ai import QwenSemanticProvider
 
 
 class FormattingCorrectionError(ValueError):
@@ -77,8 +78,10 @@ def _build_with_ported_formatter(original_bytes, template_file):
         source_path.write_bytes(original_bytes)
         template_path.write_bytes(template_bytes)
 
+        semantic_settings = SemanticSettings(enabled=True, provider="qwen")
         result = ConversionPipeline(
-            semantic_settings=SemanticSettings(enabled=False, provider="rules")
+            semantic_settings=semantic_settings,
+            semantic_provider=QwenSemanticProvider(semantic_settings),
         ).run(
             source_path,
             output_path,
@@ -92,7 +95,9 @@ def _build_with_ported_formatter(original_bytes, template_file):
             )
         changes = [
             "применён полный профиль файла-шаблона",
+            "перенесены реальные стили и структура DOCX-образца",
             "сохранены структурные блоки, формулы, таблицы, рисунки и ссылки",
+            "для неоднозначных структурных ролей подключена локальная модель Qwen",
             "сформирован редактируемый DOCX и переносимый LaTeX-проект",
         ]
         changes.extend(
@@ -121,14 +126,13 @@ def build_corrected_docx(submission):
         try:
             return _build_with_ported_formatter(original_bytes, template_file)
         except (PaperFormatterError, OSError, ValueError) as exc:
-            formatter_warning = (
-                "Полный файл-шаблон не удалось применить; "
-                f"использованы сохранённые правила ({exc})."
-            )
-        else:
-            formatter_warning = ""
-    else:
-        formatter_warning = ""
+            raise FormattingCorrectionError(
+                "Новый редактор не смог применить файл-шаблон: " f"{exc}"
+            ) from exc
+
+    # Текстовые требования и подтверждённые ручные правила не содержат DOCX-
+    # стилей, поэтому остаются отдельным детерминированным режимом, а не
+    # аварийным fallback при ошибке нового редактора.
     try:
         corrected_bytes, changes, _plan = build_docx_from_template(
             original_bytes,
@@ -137,6 +141,4 @@ def build_corrected_docx(submission):
         )
     except DocumentTemplateEngineError as exc:
         raise FormattingCorrectionError(str(exc)) from exc
-    if formatter_warning:
-        changes.insert(0, formatter_warning)
     return corrected_bytes, changes

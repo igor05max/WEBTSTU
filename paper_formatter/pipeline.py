@@ -23,6 +23,7 @@ from paper_formatter.renderers.docx_renderer import DocxRenderer
 from paper_formatter.renderers.latex_renderer import LatexRenderer
 from paper_formatter.report import ReportBuilder
 from paper_formatter.semantic.classifier import HybridSemanticClassifier
+from paper_formatter.semantic.base import SemanticProvider
 from paper_formatter.semantic.models import SemanticAnalysis, SemanticBlock
 from paper_formatter.template_analyzers import (
     DocxTemplateAnalyzer,
@@ -35,8 +36,13 @@ from paper_formatter.validator import ConversionValidator
 
 
 class ConversionPipeline:
-    def __init__(self, semantic_settings: SemanticSettings | None = None) -> None:
+    def __init__(
+        self,
+        semantic_settings: SemanticSettings | None = None,
+        semantic_provider: SemanticProvider | None = None,
+    ) -> None:
         self.semantic_settings = semantic_settings or load_semantic_settings()
+        self.semantic_provider = semantic_provider
         self.package_analyzer = PackageAnalyzer()
 
     def run(
@@ -281,6 +287,7 @@ class ConversionPipeline:
             classifier = HybridSemanticClassifier(
                 self.semantic_settings,
                 cache_dir=semantic_dir / "cache",
+                provider=self.semantic_provider,
             )
             parser = DocxParser(
                 source,

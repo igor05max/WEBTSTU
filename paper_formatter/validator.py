@@ -120,6 +120,12 @@ class ConversionValidator:
         docx_exists = bool(docx_path and docx_path.exists() and docx_path.stat().st_size > 0)
         if docx_path is not None and not docx_exists:
             errors.append("VALIDATION: заявленный DOCX отсутствует.")
+        docx_style_audit = self._docx_style_audit(
+            docx_path if docx_exists else None,
+            template_profile,
+            article,
+        )
+        warnings.extend(docx_style_audit.get("warnings", []))
 
         structure_score = self._structure_score(source_counts, article_counts)
         asset_score = asset_checks["score"]
@@ -147,6 +153,7 @@ class ConversionValidator:
                 "duplicate_block_ids": duplicate_ids,
                 "assets": asset_checks,
                 "latex": tex_integrity,
+                "docx_styles": docx_style_audit,
             },
             "outputs": {
                 "main_tex_exists": tex_exists,
@@ -165,6 +172,122 @@ class ConversionValidator:
             "warnings": warnings,
             "errors": errors,
         }
+
+    @staticmethod
+    def _docx_style_audit(
+        docx_path: Path | None,
+        template_profile: TemplateProfile | None,
+        article: ArticleIR,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "enabled": False,
+            "expected": {},
+            "used_counts": {},
+            "matched_roles": [],
+            "missing_roles": [],
+            "table_style": None,
+            "warnings": [],
+        }
+        if (
+            docx_path is None
+            or template_profile is None
+            or template_profile.source_type != "docx"
+        ):
+            return result
+        try:
+            from docx import Document
+
+            document = Document(docx_path)
+        except Exception as exc:
+            result["warnings"].append(
+                f"VALIDATION: не удалось проверить стили итогового DOCX ({exc})."
+            )
+            return result
+
+        result["enabled"] = True
+        style_counts = Counter(
+            paragraph.style.name
+            for paragraph in document.paragraphs
+            if paragraph.text.strip() and paragraph.style is not None
+        )
+        result["used_counts"] = dict(style_counts)
+        evidence = template_profile.evidence or {}
+        expected = {
+            key.removeprefix("docx_style_"): value
+            for key, value in evidence.items()
+            if key.startswith("docx_style_") and key != "docx_style_table"
+            and isinstance(value, str)
+        }
+        result["expected"] = expected
+
+        required: set[str] = set()
+        if article.metadata.titles:
+            required.add("title")
+        if article.metadata.authors:
+            required.add("authors")
+        if article.metadata.abstracts:
+            required.add("abstract")
+        if article.metadata.keywords:
+            required.add("keywords")
+        if any(isinstance(block, ParagraphBlock) for block in article.body):
+            required.add("body")
+        for level in range(1, 7):
+            if any(
+                isinstance(block, SectionBlock) and block.level == level
+                for block in article.body
+            ):
+                required.add(f"heading{level}")
+        if any(isinstance(block, ListItemBlock) and block.ordered for block in article.body):
+            required.add("list_number")
+        if any(isinstance(block, ListItemBlock) and not block.ordered for block in article.body):
+            required.add("list_bullet")
+        if any(isinstance(block, EquationBlock) for block in article.body):
+            required.add("equation")
+        if any(isinstance(block, TableBlock) and block.caption for block in article.body):
+            required.add("table_caption")
+        if any(isinstance(block, FigureBlock) and block.caption for block in article.body):
+            required.add("figure_caption")
+        if article.references:
+            required.add("references")
+
+        matched: list[str] = []
+        missing: list[str] = []
+        for role in sorted(required):
+            style_name = expected.get(role)
+            if not style_name:
+                continue
+            if style_counts.get(style_name, 0) > 0:
+                matched.append(role)
+            else:
+                missing.append(role)
+        result["matched_roles"] = matched
+        result["missing_roles"] = missing
+        if missing:
+            result["warnings"].append(
+                "VALIDATION: итоговый DOCX не использовал стили шаблона для ролей: "
+                + ", ".join(missing)
+                + "."
+            )
+
+        expected_table_style = evidence.get("docx_style_table")
+        if isinstance(expected_table_style, str):
+            table_styles = [
+                table.style.name if table.style is not None else None
+                for table in document.tables
+            ]
+            result["table_style"] = {
+                "expected": expected_table_style,
+                "used": table_styles,
+                "matched": (
+                    not document.tables
+                    or all(name == expected_table_style for name in table_styles)
+                ),
+            }
+            if document.tables and not result["table_style"]["matched"]:
+                result["warnings"].append(
+                    "VALIDATION: часть таблиц не получила табличный стиль DOCX-образца."
+                )
+        return result
 
     def _source_counts(self, source_path: Path) -> dict[str, int | None]:
         suffix = source_path.suffix.lower()
@@ -275,7 +398,7 @@ class ConversionValidator:
             "formula_images": sum(
                 1
                 for block in article.body
-                if isinstance(block, ParagraphBlock)
+                if isinstance(block, (ParagraphBlock, ListItemBlock))
                 for run in block.runs
                 if run.asset_id and run.formula_image
             ),
