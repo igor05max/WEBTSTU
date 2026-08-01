@@ -12,12 +12,24 @@ apt-get install -y --no-install-recommends \
   libreoffice-writer libreoffice-math \
   latexmk texlive-latex-extra texlive-fonts-recommended texlive-lang-cyrillic \
   texlive-plain-generic \
-  fonts-dejavu-core fonts-liberation \
+  fonts-dejavu-core fonts-liberation fonts-texgyre \
   fonts-crosextra-carlito fonts-crosextra-caladea
 ```
 
 `libreoffice-math` обязателен: без него LibreOffice оставляет номера формул, но
 не рисует сами объекты Office Math из DOCX.
+
+Для шаблонов с `Palatino Linotype` установите открытую совместимую гарнитуру и
+правило подстановки для серверного предпросмотра:
+
+```bash
+install -m 0644 deploy/fontconfig/60-webtstu-palatino.conf \
+  /etc/fonts/conf.d/60-webtstu-palatino.conf
+fc-cache -f
+```
+
+Имя шрифта внутри DOCX при этом остаётся взятым из шаблона; подстановка
+применяется только LibreOffice на Linux, где проприетарный Palatino отсутствует.
 
 `latexmk` и пакеты `texlive-*` используются для безопасного просмотра
 загруженных TEX-файлов и полных ZIP-проектов. Компиляция выполняется без
