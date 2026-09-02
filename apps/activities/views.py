@@ -124,12 +124,24 @@ def activity_list(request):
             selected_year = admin_plan_years[0]
         plan_people = list(
             get_user_model()
-            .objects.filter(planned_activities__academic_year=selected_year)
+            .objects.filter(
+                Q(planning_roster_entries__academic_year=selected_year)
+                | Q(planned_activities__academic_year=selected_year)
+            )
             .distinct()
             .order_by("first_name", "last_name", "username")
         )
         if selected_owner_object is None and plan_people:
-            selected_owner_object = plan_people[0]
+            default_owner_id = (
+                Activity.objects.filter(academic_year=selected_year)
+                .order_by("owner__first_name", "owner__last_name", "owner__username")
+                .values_list("owner_id", flat=True)
+                .first()
+            )
+            selected_owner_object = next(
+                (person for person in plan_people if person.pk == default_owner_id),
+                plan_people[0],
+            )
             selected_owner = str(selected_owner_object.pk)
 
     activities = Activity.objects.select_related(

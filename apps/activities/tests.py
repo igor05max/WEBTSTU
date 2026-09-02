@@ -1053,6 +1053,13 @@ class ActivityRegistryTests(TestCase):
             title="Пункт общего плана для администратора",
             academic_year="2025/2026",
         )
+        roster_only_user = get_user_model().objects.create_user(username="roster-only-user")
+        PlanningRosterEntry.objects.create(
+            user=roster_only_user,
+            academic_year="2025/2026",
+            department_code="ТЕСТ",
+            full_name="Сотрудник без распознанных пунктов",
+        )
         self.client.force_login(admin)
 
         response = self.client.get(
@@ -1065,6 +1072,7 @@ class ActivityRegistryTests(TestCase):
         self.assertEqual(response.context["selected_year"], "2025/2026")
         self.assertEqual(response.context["plan_subject"], self.owner)
         self.assertTrue(response.context["can_select_plan_owner"])
+        self.assertIn(roster_only_user, response.context["plan_people"])
         self.assertContains(response, "Пункт общего плана для администратора")
         self.assertContains(response, "Сотрудник и учебный год")
         self.assertContains(response, "План сотрудника")
