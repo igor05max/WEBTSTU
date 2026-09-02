@@ -58,10 +58,10 @@ def dashboard(request):
         .select_related("activity_type", "grant_type", "owner")
         .distinct()
     )
-    personal_activity_year = (
+    personal_activity_data_year = (
         personal_activities.order_by("-academic_year").values_list("academic_year", flat=True).first()
-        or get_current_academic_year()
     )
+    personal_activity_year = personal_activity_data_year or get_current_academic_year()
     current_personal_activities = personal_activities.filter(academic_year=personal_activity_year)
 
     def activity_quantity(status):
@@ -84,7 +84,7 @@ def dashboard(request):
         request.user,
         active_tasks=active_tasks,
         decision_history=decision_history,
-        plan_year=personal_activity_year,
+        plan_year=personal_activity_data_year,
     )
     pending_task_count = workspace_navigation["workspace_pending_review_count"]
     review_history_count = workspace_navigation["workspace_review_history_count"]

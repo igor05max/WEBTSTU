@@ -1042,6 +1042,31 @@ class ActivityRegistryTests(TestCase):
         self.assertTrue(response.context["is_employee_plan_preview"])
         self.assertEqual(response.context["summary"]["completed"], 1)
 
+    def test_superuser_personal_plan_link_redirects_to_populated_registry(self):
+        admin = get_user_model().objects.create_superuser(
+            username="registry_admin",
+            password="1234",
+        )
+        Activity.objects.create(
+            owner=self.owner,
+            activity_type=self.article_type,
+            title="Пункт общего плана для администратора",
+            academic_year="2025/2026",
+        )
+        self.client.force_login(admin)
+
+        response = self.client.get(
+            reverse("activities:list"),
+            {"scope": "mine", "year": "2026/2027"},
+            follow=True,
+        )
+
+        self.assertEqual(response.redirect_chain[0][1], 302)
+        self.assertEqual(response.context["current_scope"], "all")
+        self.assertEqual(response.context["selected_year"], "2025/2026")
+        self.assertContains(response, "Пункт общего плана для администратора")
+        self.assertContains(response, "Реестр планов")
+
     def test_regular_user_can_open_another_employee_plan_with_workplace_details(self):
         workplace = OrgUnit.objects.create(name="Институт цифровых технологий")
         position = Position.objects.create(name="Доцент")

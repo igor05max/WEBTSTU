@@ -83,6 +83,13 @@ def activity_list(request):
     scope = request.GET.get("scope", "all")
     if scope not in {"all", "mine"}:
         scope = "all"
+    requested_owner = request.GET.get("owner", "").strip()
+    if request.user.is_superuser and scope == "mine" and not requested_owner:
+        redirect_params = {"scope": "all"}
+        requested_year = request.GET.get("year", "").strip()
+        if requested_year:
+            redirect_params["year"] = requested_year
+        return redirect(f"{reverse('activities:list')}?{urlencode(redirect_params)}")
     # The personal page is a direct view of the employee's plan.  Filters make
     # it look like a search screen and can accidentally hide planned records,
     # so they are available only in the common registry.
@@ -94,7 +101,7 @@ def activity_list(request):
     # opened from the matrix or statistics pages.
     can_view_employee_plan = scope == "mine"
     selected_owner = (
-        request.GET.get("owner", "").strip()
+        requested_owner
         if scope == "all" or can_view_employee_plan
         else ""
     )
@@ -138,7 +145,9 @@ def activity_list(request):
         | set(scientific_results.values_list("academic_year", flat=True)),
         reverse=True,
     )
-    if scope == "mine" and not selected_year:
+    if available_years and selected_year and selected_year not in available_years:
+        selected_year = available_years[0]
+    elif scope == "mine" and not selected_year:
         selected_year = available_years[0] if available_years else get_current_academic_year()
     if selected_year:
         activities = activities.filter(academic_year=selected_year)
