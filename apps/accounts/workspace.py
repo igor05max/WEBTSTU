@@ -2,7 +2,12 @@ from django.db.models import Q
 
 from apps.accounts.access import get_user_display_name, get_user_initials, is_root_admin
 from apps.accounts.roles import has_chair_head_role
-from apps.activities.models import Activity, get_current_academic_year
+from apps.activities.models import (
+    Activity,
+    PlanningRosterEntry,
+    ScientificResult,
+    get_current_academic_year,
+)
 from apps.submissions.models import Submission
 from apps.workflow.models import RouteStepTemplate
 from apps.workflow.selectors import (
@@ -49,8 +54,31 @@ def get_workspace_navigation(user, *, active_tasks=None, decision_history=None, 
             .order_by("-academic_year")
             .values_list("academic_year", flat=True)
             .first()
-            or get_current_academic_year()
+            or PlanningRosterEntry.objects.filter(user=user)
+            .order_by("-academic_year")
+            .values_list("academic_year", flat=True)
+            .first()
+            or ScientificResult.objects.filter(owner=user)
+            .order_by("-academic_year")
+            .values_list("academic_year", flat=True)
+            .first()
         )
+        if not plan_year:
+            available_years = filter(
+                None,
+                (
+                    Activity.objects.order_by("-academic_year")
+                    .values_list("academic_year", flat=True)
+                    .first(),
+                    PlanningRosterEntry.objects.order_by("-academic_year")
+                    .values_list("academic_year", flat=True)
+                    .first(),
+                    ScientificResult.objects.order_by("-academic_year")
+                    .values_list("academic_year", flat=True)
+                    .first(),
+                ),
+            )
+            plan_year = max(available_years, default=get_current_academic_year())
 
     return {
         "workspace_user_name": get_user_display_name(user),

@@ -31,6 +31,21 @@ class WorkspaceNavigationUnitTests(TestCase):
 
         self.assertEqual(navigation["workspace_user_unit"], chair_unit.name)
 
+    def test_sidebar_uses_latest_available_plan_year_when_user_has_no_plan(self):
+        user = get_user_model().objects.create_user(username="workspace-no-plan")
+        owner = get_user_model().objects.create_user(username="workspace-plan-owner")
+        activity_type = ActivityType.objects.get(code="article")
+        Activity.objects.create(
+            owner=owner,
+            activity_type=activity_type,
+            title="План другого сотрудника",
+            academic_year="2025/2026",
+        )
+
+        navigation = get_workspace_navigation(user)
+
+        self.assertEqual(navigation["workspace_plan_year"], "2025/2026")
+
 
 @override_settings(ROOT_ADMIN_USERNAME="root")
 class RootAdminAccessTests(TestCase):

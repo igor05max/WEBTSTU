@@ -308,6 +308,22 @@ class ActivityRegistryTests(TestCase):
         self.assertContains(response, "выполнено 1, запланировано 2")
         self.assertIn("owner=", owner_row["cells"][article_column]["url"])
 
+    def test_matrix_falls_back_to_available_year_from_empty_requested_year(self):
+        Activity.objects.create(
+            owner=self.owner,
+            activity_type=self.article_type,
+            title="План доступного учебного года",
+            academic_year="2025/2026",
+        )
+        self.client.force_login(self.other_user)
+
+        response = self.client.get(reverse("activities:matrix"), {"year": "2026/2027"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["selected_year"], "2025/2026")
+        self.assertContains(response, "2025/2026 учебный год")
+        self.assertNotContains(response, "За выбранный год данных пока нет.")
+
     def test_matrix_shows_fact_without_plan_as_actual_over_dash(self):
         conference_type = ActivityType.objects.get(code="conference")
         ScientificResult.objects.create(

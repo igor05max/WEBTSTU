@@ -305,10 +305,14 @@ def activity_matrix(request):
         | set(ScientificResult.objects.values_list("academic_year", flat=True)),
         reverse=True,
     )
-    if not selected_year and get_current_academic_year() in all_years:
+    if all_years and selected_year not in all_years:
+        selected_year = (
+            get_current_academic_year()
+            if get_current_academic_year() in all_years
+            else all_years[0]
+        )
+    elif not selected_year:
         selected_year = get_current_academic_year()
-    elif not selected_year and all_years:
-        selected_year = all_years[0]
 
     activities = Activity.objects.all()
     if selected_year:
