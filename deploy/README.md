@@ -81,10 +81,9 @@ AI_MODEL=Qwen3.6-27B-IQ4_XS.gguf
 SUBMISSION_DOCUMENT_EXTRACTION_AI_ENABLED=1
 ```
 
-## HTTPS без домена
+## HTTPS
 
-Сертификат для IP хранится в `/etc/letsencrypt/live/185.221.154.185/`.
-IP-сертификаты Let’s Encrypt короткоживущие, поэтому таймер
-`certbot-ip-renew.timer` должен быть постоянно включён. Он дважды в сутки
-проверяет продление и перезагружает Nginx только после получения нового
-сертификата.
+Production-домен — `abstract-tidy-berry.ruweb.place`. Сертификат хранится в
+`/etc/letsencrypt/live/abstract-tidy-berry.ruweb.place/`. Для автоматического
+продления используется штатный `certbot.timer` из пакета Ubuntu; после выдачи
+сертификата проверьте его командой `systemctl status certbot.timer`.

@@ -1,8 +1,0 @@
-[Unit]
-Description=Renew the WEBTSTU IP certificate
-After=network-online.target nginx.service
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/opt/certbot/bin/certbot renew --cert-name 185.221.154.185 --quiet --deploy-hook "/usr/bin/systemctl reload nginx"
