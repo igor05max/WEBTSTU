@@ -43,6 +43,14 @@ shell-escape, с ограничением времени и доступа к ф
 - `/opt/webtstu/app/db.sqlite3` — демонстрационная база данных;
 - `/opt/webtstu/app/media` — загруженные пользователями файлы.
 
+Nginx работает от пользователя `www-data`, поэтому корневой каталог приложения
+должен разрешать группе проход к собранной статике:
+
+```bash
+chgrp www-data /opt/webtstu
+chmod 0750 /opt/webtstu
+```
+
 Файл `/opt/webtstu/app/.env` должен быть символической ссылкой на
 `/opt/webtstu/shared/.env`. Благодаря этому одинаковые production-настройки
 используют и systemd, и ручные management-команды Django.
