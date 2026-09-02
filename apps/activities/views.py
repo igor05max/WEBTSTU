@@ -84,12 +84,6 @@ def activity_list(request):
     if scope not in {"all", "mine"}:
         scope = "all"
     requested_owner = request.GET.get("owner", "").strip()
-    if request.user.is_superuser and scope == "mine" and not requested_owner:
-        redirect_params = {"scope": "all"}
-        requested_year = request.GET.get("year", "").strip()
-        if requested_year:
-            redirect_params["year"] = requested_year
-        return redirect(f"{reverse('activities:list')}?{urlencode(redirect_params)}")
     # The personal page is a direct view of the employee's plan.  Filters make
     # it look like a search screen and can accidentally hide planned records,
     # so they are available only in the common registry.
@@ -117,6 +111,26 @@ def activity_list(request):
             selected_owner = ""
     else:
         selected_owner = ""
+
+    plan_people = []
+    admin_plan_years = []
+    if scope == "mine" and request.user.is_superuser:
+        admin_plan_years = sorted(
+            set(Activity.objects.values_list("academic_year", flat=True))
+            | set(ScientificResult.objects.values_list("academic_year", flat=True)),
+            reverse=True,
+        )
+        if admin_plan_years and selected_year not in admin_plan_years:
+            selected_year = admin_plan_years[0]
+        plan_people = list(
+            get_user_model()
+            .objects.filter(planned_activities__academic_year=selected_year)
+            .distinct()
+            .order_by("first_name", "last_name", "username")
+        )
+        if selected_owner_object is None and plan_people:
+            selected_owner_object = plan_people[0]
+            selected_owner = str(selected_owner_object.pk)
 
     activities = Activity.objects.select_related(
         "owner__org_unit",
@@ -247,7 +261,7 @@ def activity_list(request):
     ]
 
     if scope == "mine":
-        years = available_years
+        years = admin_plan_years or available_years
         if selected_year and selected_year not in years:
             years = sorted([*years, selected_year], reverse=True)
     else:
@@ -282,6 +296,8 @@ def activity_list(request):
             "selected_year": selected_year,
             "selected_owner": selected_owner,
             "selected_owner_object": selected_owner_object,
+            "plan_people": plan_people,
+            "can_select_plan_owner": bool(scope == "mine" and request.user.is_superuser),
             "type_breakdown": type_breakdown,
             "has_imported_plan": any(activity.imported_from_plan for activity in visible_activities),
             "scientific_results": visible_scientific_results,

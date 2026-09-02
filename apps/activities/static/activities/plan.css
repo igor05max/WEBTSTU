@@ -55,6 +55,14 @@
     box-shadow: 0 10px 30px rgba(25, 40, 75, 0.04);
 }
 
+.activity-year-form.has-owner-select {
+    min-width: min(540px, 46vw);
+}
+
+.activity-year-form.has-owner-select select:first-child {
+    min-width: 260px;
+}
+
 .activity-year-form > label {
     margin-bottom: 7px;
     display: block;
@@ -1228,6 +1236,10 @@
     }
 
     .activity-year-form {
+        min-width: 0;
+    }
+
+    .activity-year-form.has-owner-select {
         min-width: 0;
     }
 

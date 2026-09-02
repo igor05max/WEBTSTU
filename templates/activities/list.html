@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260727a">
-    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260722a">
+    <link rel="stylesheet" href="{% static 'activities/plan.css' %}?v=20260902a">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
     {% include "includes/global_loading_head.html" %}
 </head>
@@ -35,11 +35,22 @@
             </div>
 
             {% if current_scope == 'mine' %}
-                <form class="activity-year-form" method="get" action="{% url 'activities:list' %}">
+                <form class="activity-year-form{% if can_select_plan_owner %} has-owner-select{% endif %}" method="get" action="{% url 'activities:list' %}">
                     <input type="hidden" name="scope" value="mine">
-                    {% if is_employee_plan_preview %}<input type="hidden" name="owner" value="{{ selected_owner }}">{% endif %}
-                    <label for="activity-plan-year">Учебный год</label>
+                    {% if can_select_plan_owner %}
+                        <label for="activity-plan-owner">Сотрудник и учебный год</label>
+                    {% else %}
+                        {% if is_employee_plan_preview %}<input type="hidden" name="owner" value="{{ selected_owner }}">{% endif %}
+                        <label for="activity-plan-year">Учебный год</label>
+                    {% endif %}
                     <div>
+                        {% if can_select_plan_owner %}
+                            <select id="activity-plan-owner" name="owner" aria-label="Сотрудник">
+                                {% for person in plan_people %}
+                                    <option value="{{ person.pk }}"{% if selected_owner == person.pk|stringformat:"s" %} selected{% endif %}>{{ person }}</option>
+                                {% endfor %}
+                            </select>
+                        {% endif %}
                         <select id="activity-plan-year" name="year">
                             {% for year in years %}
                                 <option value="{{ year }}"{% if selected_year == year %} selected{% endif %}>{{ year }}</option>

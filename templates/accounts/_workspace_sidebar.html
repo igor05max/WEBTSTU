@@ -30,7 +30,7 @@
                 <span>Поиск цитат</span>
             </a>
 
-            <a class="dashboard-nav-link{% if active_section == 'plan' %} is-active{% endif %}" href="{% url 'activities:list' %}?scope={% if show_root_admin_navigation %}all{% else %}mine{% endif %}&amp;year={{ workspace_plan_year|urlencode }}"{% if active_section == 'plan' %} aria-current="page"{% endif %}>
+            <a class="dashboard-nav-link{% if active_section == 'plan' %} is-active{% endif %}" href="{% url 'activities:list' %}?scope=mine&amp;year={{ workspace_plan_year|urlencode }}"{% if active_section == 'plan' %} aria-current="page"{% endif %}>
                 <span class="dashboard-nav-icon">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a2 2 0 0 1 2 2v16H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 3v18M11 8h6M11 12h6M11 16h4"/></svg>
                 </span>
