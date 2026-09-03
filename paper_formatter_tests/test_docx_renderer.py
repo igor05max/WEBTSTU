@@ -15,8 +15,11 @@ from docx.opc.part import Part
 from docx.shared import Mm, Pt, RGBColor
 
 from paper_formatter.models import (
+    Affiliation,
     ArticleIR,
     ArticleMetadata,
+    Author,
+    FigureBlock,
     HeadingStyleProfile,
     LocalizedText,
     PageLayout,
@@ -291,6 +294,158 @@ def test_docx_template_preserves_at_least_line_spacing_and_mdpi_title(
     assert profile.typography.line_spacing_rule == "atLeast"
     assert profile.typography.title_size_pt == pytest.approx(18.0)
     assert profile.typography.title_alignment == "left"
+
+
+def test_docx_template_analyzer_ignores_styles_without_names(
+    tmp_path: Path,
+) -> None:
+    template_path = tmp_path / "publisher-template.docx"
+    template = Document()
+    unnamed = OxmlElement("w:style")
+    unnamed.set(qn("w:type"), "paragraph")
+    unnamed.set(qn("w:styleId"), "PublisherOrphanStyle")
+    template.styles.element.append(unnamed)
+    template.add_paragraph("Template body")
+    template.save(template_path)
+
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+
+    assert profile.source_type == "docx"
+
+
+def test_docx_template_ignores_unused_legacy_indented_body_and_caption_styles(
+    tmp_path: Path,
+) -> None:
+    template_path = tmp_path / "legacy-publisher-template.docx"
+    template = Document()
+    body_indent = template.styles.add_style(
+        "Body Text Indent", WD_STYLE_TYPE.PARAGRAPH
+    )
+    body_indent.paragraph_format.right_indent = Mm(45)
+    caption = template.styles["Caption"]
+    caption.paragraph_format.right_indent = Mm(45)
+    template.add_paragraph("Заглавие", style="Normal")
+    template.add_paragraph("A long demonstrated body paragraph " * 10, style="Normal")
+    template.save(template_path)
+
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    article = ArticleIR(
+        metadata=ArticleMetadata(
+            titles=[LocalizedText(language="ru", text="Название статьи")]
+        ),
+        body=[
+            ParagraphBlock(id="p1", runs=[TextRun(text="Основной текст")]),
+            FigureBlock(id="f1", asset_id="missing", caption="Подпись"),
+        ],
+    )
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "result.docx",
+        profile=profile,
+    )
+    result = Document(output)
+
+    assert profile.evidence["docx_style_body"] == "Normal"
+    assert profile.evidence["docx_style_title"] == "Normal"
+    assert profile.evidence["docx_style_figure_caption"] == "Normal"
+    body = next(p for p in result.paragraphs if p.text == "Основной текст")
+    figure_caption = next(p for p in result.paragraphs if p.text.endswith("Подпись"))
+    assert body.paragraph_format.right_indent is None
+    assert figure_caption.paragraph_format.right_indent is None
+
+
+def test_docx_journal_template_keeps_bilingual_front_matter_and_figure_group(
+    tmp_path: Path,
+) -> None:
+    template_path = tmp_path / "bilingual-journal.docx"
+    template = Document()
+    template.settings.odd_and_even_pages_header_footer = True
+    template.sections[0].header.paragraphs[0].text = "Journal. 2026. Vol. 11"
+    template.sections[0].even_page_header.paragraphs[0].text = (
+        "2021;1(21):00-00    Journal"
+    )
+    template.sections[0].footer.paragraphs[0].text = "Surname I.O."
+    template.add_paragraph("УДК 000    DOI: 10.1000/example")
+    title = template.add_paragraph("Заглавие")
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title.runs[0]
+    title_run.font.name = "Times New Roman"
+    title_run.font.size = Pt(14)
+    template.add_paragraph("Abstract.")
+    template.add_paragraph("Заглавие")
+    template.add_paragraph("Аннотация.")
+    template.add_paragraph(
+        "For citation: Journal. 2026;11(3):000-000. DOI: 10.1000/example"
+    )
+    body_section = template.add_section(WD_SECTION.CONTINUOUS)
+    columns = OxmlElement("w:cols")
+    columns.set(qn("w:num"), "2")
+    body_section._sectPr.append(columns)
+    template.save(template_path)
+
+    image_path = tmp_path / "pixel.png"
+    image_path.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4"
+            "z8DwHwAFgAI/ScL0RQAAAABJRU5ErkJggg=="
+        )
+    )
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    article = ArticleIR(
+        metadata=ArticleMetadata(
+            titles=[
+                LocalizedText(language="ru", text="Русское название"),
+                LocalizedText(language="en", text="English title"),
+            ],
+            authors=[Author(id="a1", name="© Е.А. Авторa, Е.Б. Второйb")],
+            author_variants=[
+                LocalizedText(language="en", text="© E.A. Authora, E.B. Secondb")
+            ],
+            affiliations=[
+                Affiliation(id="af1", name="a Российский университет"),
+                Affiliation(id="af2", name="a Research University"),
+            ],
+            abstracts=[
+                LocalizedText(language="ru", text="Русская аннотация."),
+                LocalizedText(language="en", text="English abstract."),
+            ],
+            keywords=["материал", "material"],
+            udc="123.4",
+        ),
+        body=[
+            SectionBlock(id="s1", title="Introduction", level=1),
+            FigureBlock(id="f1", asset_id="img1", group_id="g1"),
+            FigureBlock(
+                id="f2",
+                asset_id="img2",
+                group_id="g1",
+                caption="Two panels",
+            ),
+        ],
+        assets=[
+            {"id": "img1", "path": "pixel.png", "media_type": "image/png"},
+            {"id": "img2", "path": "pixel.png", "media_type": "image/png"},
+        ],
+    )
+
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "bilingual-result.docx",
+        profile=profile,
+        asset_root=tmp_path,
+    )
+    result = Document(output)
+    texts = [paragraph.text for paragraph in result.paragraphs]
+
+    assert profile.evidence["bilingual_front_matter"] is True
+    assert profile.evidence["identifier_before_title"] is True
+    assert profile.typography.title_font == "Times New Roman"
+    assert texts.index("УДК: 123.4") < texts.index("Русское название")
+    assert texts.index("English title") < texts.index("Introduction")
+    assert len(result.tables) == 1
+    assert len(result.tables[0].rows) == 1
+    assert "2026;11(3):000-000" in result.sections[0].even_page_header.paragraphs[0].text
+    assert "Author E.A. et al." in result.sections[0].footer.paragraphs[0].text
 
 
 def test_docx_renderer_moves_wide_formula_to_its_own_line(tmp_path: Path) -> None:

@@ -72,6 +72,19 @@ class DocxRenderer:
             article.metadata.keywords,
             primary_language,
         )
+        front_affiliations, secondary_affiliations = self._split_affiliations(
+            article.metadata.affiliations,
+            primary_language,
+        )
+        bilingual_front_matter = bool(
+            profile.evidence.get("bilingual_front_matter", False)
+        )
+        if not bilingual_front_matter:
+            front_affiliations = list(article.metadata.affiliations)
+            secondary_affiliations = []
+        identifier_before_title = bool(
+            profile.evidence.get("identifier_before_title", False)
+        )
         has_front_matter = any(
             (
                 article.metadata.titles,
@@ -105,12 +118,21 @@ class DocxRenderer:
             min(170.0, usable_width_mm * profile.figure_width_fraction),
         )
 
+        if identifier_before_title:
+            self._append_identifiers(document, article, profile)
         if article.metadata.titles:
             paragraph = self._add_paragraph(document, "title", "Title")
             paragraph.alignment = self._alignment(profile.typography.title_alignment)
             self._clear_first_line_indent(paragraph)
             self._apply_front_matter_geometry(paragraph, profile)
-            paragraph.add_run(article.metadata.titles[0].text)
+            run = paragraph.add_run(article.metadata.titles[0].text)
+            self._set_run_font(
+                run,
+                profile.typography.title_font or profile.typography.main_font,
+            )
+            if profile.typography.title_size_pt:
+                run.font.size = Pt(profile.typography.title_size_pt)
+            run.bold = profile.typography.title_bold
         if article.metadata.subtitles:
             paragraph = self._add_paragraph(document, "subtitle", "Subtitle")
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -122,8 +144,12 @@ class DocxRenderer:
             paragraph.alignment = self._alignment(profile.typography.author_alignment)
             self._clear_first_line_indent(paragraph)
             self._apply_front_matter_geometry(paragraph, profile)
-            paragraph.add_run(", ".join(author.name for author in article.metadata.authors))
-        for affiliation in article.metadata.affiliations:
+            self._append_author_runs(
+                paragraph,
+                ", ".join(author.name for author in article.metadata.authors),
+                profile,
+            )
+        for affiliation in front_affiliations:
             paragraph = self._add_paragraph(document, "affiliation")
             paragraph.alignment = self._alignment(
                 profile.typography.affiliation_alignment
@@ -133,20 +159,14 @@ class DocxRenderer:
             run = paragraph.add_run(affiliation.name)
             if not self._styles.is_template_role("affiliation"):
                 run.italic = True
-        if article.metadata.udc:
-            paragraph = self._add_paragraph(document, "body_no_indent")
-            self._clear_first_line_indent(paragraph)
-            paragraph.add_run("УДК: ").bold = True
-            paragraph.add_run(article.metadata.udc)
-        if article.metadata.doi:
-            paragraph = self._add_paragraph(document, "body_no_indent")
-            self._clear_first_line_indent(paragraph)
-            paragraph.add_run("DOI: ").bold = True
-            paragraph.add_run(article.metadata.doi)
+        if not identifier_before_title:
+            self._append_identifiers(document, article, profile)
         for abstract in front_abstracts:
             paragraph = self._add_paragraph(document, "abstract")
             self._clear_first_line_indent(paragraph)
-            paragraph.add_run("Аннотация. ").bold = True
+            paragraph.add_run(
+                "Abstract. " if abstract.language == "en" else "Аннотация. "
+            ).bold = True
             paragraph.add_run(abstract.text)
         if front_keywords:
             paragraph = self._add_paragraph(document, "keywords")
@@ -154,7 +174,82 @@ class DocxRenderer:
             paragraph.add_run("Ключевые слова: ").bold = True
             paragraph.add_run(", ".join(front_keywords))
 
-        if profile.page.columns > 1 and has_front_matter:
+        secondary_titles = article.metadata.titles[1:]
+        if bilingual_front_matter and (
+            secondary_titles
+            or article.metadata.author_variants
+            or secondary_affiliations
+            or secondary_abstracts
+            or secondary_keywords
+        ):
+            for title in secondary_titles:
+                paragraph = self._add_paragraph(document, "title", "Title")
+                paragraph.alignment = self._alignment(
+                    profile.typography.title_alignment
+                )
+                self._clear_first_line_indent(paragraph)
+                self._apply_front_matter_geometry(paragraph, profile)
+                run = paragraph.add_run(title.text)
+                self._set_run_font(
+                    run,
+                    profile.typography.title_font or profile.typography.main_font,
+                )
+                if profile.typography.title_size_pt:
+                    run.font.size = Pt(profile.typography.title_size_pt)
+                run.bold = profile.typography.title_bold
+            secondary_language = (
+                secondary_titles[0].language
+                if secondary_titles
+                else (
+                    secondary_abstracts[0].language
+                    if secondary_abstracts
+                    else None
+                )
+            )
+            for variant in article.metadata.author_variants:
+                if (
+                    secondary_language is None
+                    or variant.language is None
+                    or variant.language == secondary_language
+                ):
+                    paragraph = self._add_paragraph(document, "authors")
+                    paragraph.alignment = self._alignment(
+                        profile.typography.author_alignment
+                    )
+                    self._clear_first_line_indent(paragraph)
+                    self._apply_front_matter_geometry(paragraph, profile)
+                    self._append_author_runs(paragraph, variant.text, profile)
+            for affiliation in secondary_affiliations:
+                paragraph = self._add_paragraph(document, "affiliation")
+                paragraph.alignment = self._alignment(
+                    profile.typography.affiliation_alignment
+                )
+                self._clear_first_line_indent(paragraph)
+                self._apply_front_matter_geometry(paragraph, profile)
+                run = paragraph.add_run(affiliation.name)
+                if not self._styles.is_template_role("affiliation"):
+                    run.italic = True
+            for abstract in secondary_abstracts:
+                paragraph = self._add_paragraph(document, "abstract")
+                self._clear_first_line_indent(paragraph)
+                paragraph.add_run(
+                    "Abstract. " if abstract.language == "en" else "Аннотация. "
+                ).bold = True
+                paragraph.add_run(abstract.text)
+            if secondary_keywords:
+                paragraph = self._add_paragraph(document, "keywords")
+                self._clear_first_line_indent(paragraph)
+                paragraph.add_run(
+                    "Keywords: " if secondary_language == "en" else "Ключевые слова: "
+                ).bold = True
+                paragraph.add_run(", ".join(secondary_keywords))
+
+        delay_body_columns = bool(
+            profile.page.columns > 1
+            and has_front_matter
+            and any(isinstance(block, SectionBlock) for block in article.body)
+        )
+        if profile.page.columns > 1 and has_front_matter and not delay_body_columns:
             self._add_layout_section(
                 document,
                 profile,
@@ -162,10 +257,22 @@ class DocxRenderer:
             )
 
         assets = {asset.id: asset for asset in article.assets}
+        figure_groups: dict[str, list[FigureBlock]] = {}
+        for candidate in article.body:
+            if isinstance(candidate, FigureBlock) and candidate.group_id:
+                figure_groups.setdefault(candidate.group_id, []).append(candidate)
+        rendered_figure_groups: set[str] = set()
         figure_index = 0
         current_figure_group: str | None = None
         table_index = 0
         for block in article.body:
+            if delay_body_columns and isinstance(block, SectionBlock):
+                self._add_layout_section(
+                    document,
+                    profile,
+                    columns=profile.page.columns,
+                )
+                delay_body_columns = False
             if isinstance(block, SectionBlock):
                 level = min(block.level, 6)
                 paragraph = self._add_paragraph(
@@ -225,6 +332,36 @@ class DocxRenderer:
                         columns=profile.page.columns,
                     )
             elif isinstance(block, FigureBlock):
+                grouped = (
+                    figure_groups.get(block.group_id, [])
+                    if block.group_id
+                    else []
+                )
+                if len(grouped) > 1:
+                    if block.group_id in rendered_figure_groups:
+                        continue
+                    rendered_figure_groups.add(block.group_id)
+                    figure_index += 1
+                    full_width = profile.page.columns > 1
+                    if full_width:
+                        self._add_layout_section(document, profile, columns=1)
+                    self._append_figure_group(
+                        document,
+                        grouped,
+                        assets,
+                        asset_root,
+                        usable_width_mm=(
+                            usable_width_mm if full_width else column_width_mm
+                        ),
+                        number=figure_index,
+                    )
+                    if full_width:
+                        self._add_layout_section(
+                            document,
+                            profile,
+                            columns=profile.page.columns,
+                        )
+                    continue
                 figure_group = block.group_id or block.id
                 if figure_group != current_figure_group:
                     figure_index += 1
@@ -349,8 +486,10 @@ class DocxRenderer:
             paragraph.add_run(f"[{note.kind}] ").bold = True
             paragraph.add_run(note.text)
 
-        secondary_titles = article.metadata.titles[1:]
-        if secondary_titles or secondary_abstracts or secondary_keywords:
+        if (
+            not bilingual_front_matter
+            and (secondary_titles or secondary_abstracts or secondary_keywords)
+        ):
             self._add_layout_section(
                 document,
                 profile,
@@ -380,7 +519,7 @@ class DocxRenderer:
                     paragraph = self._add_paragraph(document, "authors")
                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     self._clear_first_line_indent(paragraph)
-                    paragraph.add_run(variant.text).bold = True
+                    self._append_author_runs(paragraph, variant.text, profile)
             for abstract in secondary_abstracts:
                 paragraph = self._add_paragraph(document, "abstract")
                 self._clear_first_line_indent(paragraph)
@@ -396,6 +535,8 @@ class DocxRenderer:
                 ).bold = True
                 paragraph.add_run(", ".join(secondary_keywords))
 
+        self._populate_running_stories(document, article, profile)
+        self._normalize_generated_section_stories(document)
         renamed_parts = self._ensure_unique_package_partnames(document)
         if renamed_parts:
             self.warnings.append(
@@ -684,9 +825,19 @@ class DocxRenderer:
             "верхний колонтитул",
         )
         self._copy_simple_story(
+            source_section.even_page_header,
+            target_section.even_page_header,
+            "верхний колонтитул чётной страницы",
+        )
+        self._copy_simple_story(
             source_section.footer,
             target_section.footer,
             "нижний колонтитул",
+        )
+        self._copy_simple_story(
+            source_section.even_page_footer,
+            target_section.even_page_footer,
+            "нижний колонтитул чётной страницы",
         )
         target_section.different_first_page_header_footer = (
             source_section.different_first_page_header_footer
@@ -731,6 +882,100 @@ class DocxRenderer:
                     if rel_id in rel_map:
                         element.set(attr_name, rel_map[rel_id])
             target._element.append(copied)
+
+    @staticmethod
+    def _normalize_generated_section_stories(document: Document) -> None:
+        """Keep layout-only sections on the first generated running stories.
+
+        Full-width figures, tables and equations create artificial Word
+        sections.  A template-backed document may otherwise make those
+        sections inherit unrelated historical headers from later template
+        sections that survived in ``sectPr``.
+        """
+
+        for section in document.sections[1:]:
+            section.different_first_page_header_footer = False
+            for story_name in (
+                "header",
+                "even_page_header",
+                "first_page_header",
+                "footer",
+                "even_page_footer",
+                "first_page_footer",
+            ):
+                getattr(section, story_name).is_linked_to_previous = True
+
+    def _populate_running_stories(
+        self,
+        document: Document,
+        article: ArticleIR,
+        profile: TemplateProfile,
+    ) -> None:
+        section = document.sections[0]
+        issue = str(profile.evidence.get("journal_issue", "")).strip()
+        running_author = self._running_author(article)
+        for story in (
+            section.header,
+            section.even_page_header,
+            section.first_page_header,
+        ):
+            if issue:
+                self._replace_story_pattern(
+                    story,
+                    r"20\d{2};\d+\(\d+\):0+-0+",
+                    issue,
+                )
+        if running_author:
+            for story in (
+                section.footer,
+                section.even_page_footer,
+                section.first_page_footer,
+            ):
+                self._replace_story_pattern(
+                    story,
+                    r"(?:Фамилия|Surname)[^\r\n]*",
+                    running_author,
+                    flags=re.IGNORECASE,
+                )
+
+    @staticmethod
+    def _replace_story_pattern(
+        story,
+        pattern: str,
+        replacement: str,
+        *,
+        flags: int = 0,
+    ) -> None:
+        for paragraph in story._element.xpath(".//w:p"):
+            text_nodes = paragraph.xpath(".//w:t")
+            current = "".join(node.text or "" for node in text_nodes)
+            updated = re.sub(pattern, replacement, current, flags=flags)
+            if updated == current or not text_nodes:
+                continue
+            text_nodes[0].text = updated
+            for node in text_nodes[1:]:
+                node.text = ""
+
+    @staticmethod
+    def _running_author(article: ArticleIR) -> str:
+        value = ""
+        if article.metadata.author_variants:
+            value = article.metadata.author_variants[0].text
+        elif article.metadata.authors:
+            value = article.metadata.authors[0].name
+        value = re.sub(r"^\s*©\s*", "", value).strip()
+        value = re.sub(
+            r"([a-d](?:,[a-d])*(?:\*)?)(?=,\s*[A-ZА-ЯЁ]|\s*$)",
+            "",
+            value,
+        )
+        first = value.split(",", 1)[0].strip()
+        match = re.match(r"^((?:[A-ZА-ЯЁ]\.){1,3})\s+(.+)$", first)
+        if match:
+            first = f"{match.group(2)} {match.group(1)}"
+        if "," in value:
+            first += " et al."
+        return first
 
     @staticmethod
     def _set_style_language(style, language: str) -> None:
@@ -960,6 +1205,81 @@ class DocxRenderer:
                 self.warnings.append(warning)
             return False
         return True
+
+    def _append_figure_group(
+        self,
+        document: Document,
+        blocks: list[FigureBlock],
+        assets: dict,
+        asset_root: Path | None,
+        *,
+        usable_width_mm: float,
+        number: int,
+    ) -> None:
+        """Preserve multi-panel figures as one compact publisher figure."""
+
+        columns = 2
+        rows = (len(blocks) + columns - 1) // columns
+        table = document.add_table(rows=rows, cols=columns)
+        table.style = None
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = False
+        cell_width_mm = max(30.0, (usable_width_mm - 3.0) / columns)
+        self._configure_template_table(
+            table,
+            [cell_width_mm] * columns,
+        )
+        borders = table._tbl.tblPr.find(qn("w:tblBorders"))
+        if borders is None:
+            borders = OxmlElement("w:tblBorders")
+            table._tbl.tblPr.append(borders)
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            element = borders.find(qn(f"w:{edge}"))
+            if element is None:
+                element = OxmlElement(f"w:{edge}")
+                borders.append(element)
+            element.set(qn("w:val"), "nil")
+
+        for index, block in enumerate(blocks):
+            row = table.rows[index // columns]
+            self._prevent_row_split(row)
+            cell = table.cell(index // columns, index % columns)
+            cell.width = Mm(cell_width_mm)
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            paragraph = cell.paragraphs[0]
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            self._clear_first_line_indent(paragraph)
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(0)
+            asset = assets.get(block.asset_id)
+            path = self._asset_path(asset.path, asset_root) if asset else None
+            if path and path.exists() and path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+                paragraph.add_run().add_picture(
+                    str(path),
+                    width=Mm(max(20.0, cell_width_mm - 2.0)),
+                )
+            else:
+                paragraph.add_run("[рисунок]")
+
+        caption_text = next(
+            (block.caption for block in reversed(blocks) if block.caption),
+            None,
+        )
+        if caption_text:
+            caption = self._add_paragraph(document, "figure_caption", "Caption")
+            if not self._styles.is_template_role("figure_caption"):
+                caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                self._clear_first_line_indent(caption)
+            if re.match(
+                r"^(?:Рис(?:унок)?|Fig(?:ure)?)\.?\s*\d+",
+                caption_text,
+                flags=re.IGNORECASE,
+            ):
+                caption.add_run(caption_text)
+            else:
+                label = "Рис." if re.search(r"[А-Яа-яЁё]", caption_text) else "Fig."
+                caption.add_run(f"{label} {number}. ")
+                caption.add_run(caption_text)
 
     def _append_table(
         self,
@@ -1241,6 +1561,70 @@ class DocxRenderer:
             r_fonts.set(qn(f"w:{attribute}"), font_name)
 
     @staticmethod
+    def _set_run_font(run, font_name: str) -> None:
+        run.font.name = font_name
+        properties = run._element.get_or_add_rPr()
+        fonts = properties.rFonts
+        if fonts is None:
+            fonts = OxmlElement("w:rFonts")
+            properties.insert(0, fonts)
+        for attribute in ("ascii", "hAnsi", "eastAsia", "cs"):
+            fonts.set(qn(f"w:{attribute}"), font_name)
+
+    def _append_author_runs(
+        self,
+        paragraph,
+        text: str,
+        profile: TemplateProfile,
+    ) -> None:
+        """Render publisher affiliation markers as superscript text."""
+
+        marker_pattern = re.compile(
+            r"([a-d](?:,[a-d])*(?:\*)?)(?=,\s*[A-ZА-ЯЁ]|\s*$)"
+        )
+        cursor = 0
+        for match in marker_pattern.finditer(text):
+            if match.start() > cursor:
+                run = paragraph.add_run(text[cursor : match.start()])
+                self._format_author_run(run, profile)
+            marker = paragraph.add_run(match.group(1))
+            self._format_author_run(marker, profile)
+            marker.font.superscript = True
+            cursor = match.end()
+        if cursor < len(text):
+            run = paragraph.add_run(text[cursor:])
+            self._format_author_run(run, profile)
+
+    def _format_author_run(self, run, profile: TemplateProfile) -> None:
+        self._set_run_font(run, profile.typography.main_font)
+        run.font.size = Pt(
+            profile.typography.author_size_pt or profile.typography.main_size_pt
+        )
+        run.bold = True
+
+    def _append_identifiers(
+        self,
+        document: Document,
+        article: ArticleIR,
+        profile: TemplateProfile,
+    ) -> None:
+        alignment = str(profile.evidence.get("identifier_alignment", "left"))
+        if alignment not in {"left", "center", "right", "justify"}:
+            alignment = "left"
+        if article.metadata.udc:
+            paragraph = self._add_paragraph(document, "body_no_indent")
+            self._clear_first_line_indent(paragraph)
+            paragraph.alignment = self._alignment(alignment)
+            paragraph.add_run("УДК: ").bold = True
+            paragraph.add_run(article.metadata.udc)
+        if article.metadata.doi:
+            paragraph = self._add_paragraph(document, "body_no_indent")
+            self._clear_first_line_indent(paragraph)
+            paragraph.alignment = self._alignment(alignment)
+            paragraph.add_run("DOI: ").bold = True
+            paragraph.add_run(article.metadata.doi)
+
+    @staticmethod
     def _set_style_color(style, color: RGBColor) -> None:
         style.font.color.rgb = color
 
@@ -1307,6 +1691,26 @@ class DocxRenderer:
         if not front:
             return list(keywords), []
         return front, secondary
+
+    @staticmethod
+    def _split_affiliations(affiliations, primary_language):
+        if not affiliations or primary_language is None:
+            return list(affiliations), []
+
+        def is_cyrillic(value: str) -> bool:
+            letters = [character for character in value if character.isalpha()]
+            return bool(letters) and (
+                sum("\u0400" <= character <= "\u04ff" for character in letters)
+                / len(letters)
+                >= 0.35
+            )
+
+        if primary_language == "ru":
+            front = [item for item in affiliations if is_cyrillic(item.name)]
+        else:
+            front = [item for item in affiliations if not is_cyrillic(item.name)]
+        secondary = [item for item in affiliations if item not in front]
+        return (front, secondary) if front else (list(affiliations), [])
 
     @staticmethod
     def _column_width_mm(

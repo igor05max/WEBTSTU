@@ -10,7 +10,17 @@ from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 
 
-def _normalized(value: str) -> str:
+def _normalized(value: str | None) -> str:
+    """Return a comparable style token for valid and malformed DOCX styles.
+
+    Real publisher templates occasionally contain ``w:style`` records without
+    a ``w:name`` child.  python-docx exposes their name as ``None``; treating
+    that value as text used to abort the complete formatting pipeline before
+    the template profile could be analyzed.
+    """
+
+    if not value:
+        return ""
     return re.sub(r"[^a-zа-я0-9]+", "_", value.lower()).strip("_")
 
 
@@ -38,23 +48,27 @@ class DocxTemplateStyleMap:
         paragraph_names = [
             style.name
             for style in document.styles
-            if style.type == WD_STYLE_TYPE.PARAGRAPH
+            if style.type == WD_STYLE_TYPE.PARAGRAPH and style.name
         ]
         table_names = [
             style.name
             for style in document.styles
-            if style.type == WD_STYLE_TYPE.TABLE
+            if style.type == WD_STYLE_TYPE.TABLE and style.name
         ]
         normalized = {name: _normalized(name) for name in paragraph_names}
         usage = Counter(
             paragraph.style.name
             for paragraph in document.paragraphs
-            if paragraph.text.strip() and paragraph.style is not None
+            if (
+                paragraph.text.strip()
+                and paragraph.style is not None
+                and paragraph.style.name
+            )
         )
         table_usage = Counter(
             table.style.name
             for table in document.tables
-            if table.style is not None
+            if table.style is not None and table.style.name
         )
 
         aliases: dict[str, list[str]] = {
@@ -124,7 +138,12 @@ class DocxTemplateStyleMap:
 
         for role in aliases:
             chosen = exact_or_contains(role)
-            if role == "body" and chosen == "Body Text" and usage.get(chosen, 0) == 0:
+            if (
+                role == "body"
+                and chosen
+                and _normalized(chosen) in {"body_text", "body_text_indent"}
+                and usage.get(chosen, 0) == 0
+            ):
                 chosen = None
             if chosen:
                 result[role] = chosen
@@ -137,6 +156,14 @@ class DocxTemplateStyleMap:
             if not style_name:
                 continue
             lower = text.lower()
+            if (
+                lower.strip(" .:–—-") in {"title", "заглавие", "название"}
+                and (
+                    "title" not in result
+                    or usage.get(result["title"], 0) == 0
+                )
+            ):
+                result["title"] = style_name
             if "title" not in result and 20 <= len(text) <= 500:
                 if paragraph is paragraphs[0] or (
                     paragraph.style.font.size is not None
@@ -162,6 +189,8 @@ class DocxTemplateStyleMap:
             for paragraph in paragraphs:
                 if len(paragraph.text.strip()) >= 120 and paragraph.style is not None:
                     name = paragraph.style.name
+                    if not name:
+                        continue
                     norm = _normalized(name)
                     if not re.search(
                         r"heading|title|abstract|keyword|caption|reference|bibli|bullet|itemize|author|affiliation",
@@ -198,7 +227,15 @@ class DocxTemplateStyleMap:
         available = set(paragraph_names)
         for role, fallback in builtins.items():
             if role not in result and fallback in available:
-                result[role] = fallback
+                if (
+                    role in {"table_caption", "figure_caption"}
+                    and fallback == "Caption"
+                    and usage.get(fallback, 0) == 0
+                    and "Normal" in available
+                ):
+                    result[role] = "Normal"
+                else:
+                    result[role] = fallback
 
         prototypes: dict[str, object] = {}
         longest_roles = {"abstract", "keywords", "body", "body_no_indent", "references", "back_matter", "notes"}
@@ -208,6 +245,16 @@ class DocxTemplateStyleMap:
                 for item in paragraphs
                 if item.style is not None and item.style.name == style_name
             ]
+            if role == "body" and style_name == "Normal":
+                matches = [
+                    item
+                    for item in matches
+                    if len(item.text.strip()) >= 240
+                    and (
+                        item.alignment is None
+                        or str(item.alignment).startswith("JUSTIFY")
+                    )
+                ]
             if not matches:
                 continue
             paragraph = (

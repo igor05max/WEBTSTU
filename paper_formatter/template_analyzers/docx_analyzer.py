@@ -41,6 +41,42 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
         typography = self._typography(document)
         headings = self._headings(document)
         style_map = DocxTemplateStyleMap.from_document(document, source_path=source)
+        paragraph_texts = [paragraph.text.strip() for paragraph in document.paragraphs]
+        abstract_languages = {
+            "en"
+            for text in paragraph_texts
+            if re.match(r"^abstract\b", text, flags=re.IGNORECASE)
+        } | {
+            "ru"
+            for text in paragraph_texts
+            if re.match(r"^аннотация\b", text, flags=re.IGNORECASE)
+        }
+        title_positions = [
+            index
+            for index, text in enumerate(paragraph_texts)
+            if re.sub(r"\s+", " ", text)
+            .strip(" .:–—-")
+            .casefold()
+            in {"title", "заглавие", "название"}
+        ]
+        identifier_positions = [
+            index
+            for index, text in enumerate(paragraph_texts)
+            if re.search(r"(?:^|\s)(?:удк|doi)\s*[:.]?", text, flags=re.IGNORECASE)
+        ]
+        journal_issue = next(
+            (
+                match.group(1)
+                for text in paragraph_texts
+                if (
+                    match := re.search(
+                        r"\b(20\d{2};\d+\(\d+\):0+-0+)\b",
+                        text,
+                    )
+                )
+            ),
+            "",
+        )
         evidence: dict[str, str | float | int | bool] = {
             "sections": len(document.sections),
             "paragraphs": len(document.paragraphs),
@@ -49,6 +85,21 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
                 self._section_columns(section)[0]
                 for section in document.sections
             ),
+            "bilingual_front_matter": abstract_languages == {"ru", "en"},
+            "identifier_before_title": bool(
+                title_positions
+                and identifier_positions
+                and min(identifier_positions) < min(title_positions)
+            ),
+            "identifier_alignment": (
+                self._paragraph_alignment(
+                    document.paragraphs[min(identifier_positions)],
+                    "left",
+                )
+                if identifier_positions
+                else "left"
+            ),
+            "journal_issue": journal_issue,
             **style_map.as_evidence(),
         }
         return TemplateProfile(
@@ -168,7 +219,10 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
                 normal_format.alignment,
                 "justify",
             ),
-            title_font=title_style.font.name if title_style is not None else None,
+            title_font=(
+                self._paragraph_font(title_paragraph)
+                or (title_style.font.name if title_style is not None else None)
+            ),
             title_size_pt=title_size,
             title_bold=title_bold,
             title_alignment=self._paragraph_alignment(
@@ -304,12 +358,15 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
                 return paragraph
         for paragraph in document.paragraphs[:20]:
             text = paragraph.text.strip()
+            normalized_text = re.sub(r"\s+", " ", text).strip(" .:–—-").casefold()
             if (
                 paragraph.alignment == WD_ALIGN_PARAGRAPH.CENTER
                 and 15 <= len(text) <= 500
                 and any(character.isalpha() for character in text)
                 and text.upper() == text
             ):
+                return paragraph
+            if normalized_text in {"title", "заглавие", "название"}:
                 return paragraph
         return None
 
@@ -350,6 +407,16 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
         return None
 
     @staticmethod
+    def _paragraph_font(paragraph) -> str | None:
+        if paragraph is None:
+            return None
+        weighted: Counter[str] = Counter()
+        for run in paragraph.runs:
+            if run.font.name:
+                weighted[run.font.name] += max(1, len(run.text))
+        return weighted.most_common(1)[0][0] if weighted else None
+
+    @staticmethod
     def _paragraph_bold(paragraph) -> bool:
         if paragraph is None:
             return True
@@ -379,10 +446,14 @@ class DocxTemplateAnalyzer(TemplateAnalyzer):
             re.IGNORECASE,
         )
         for style in document.styles:
+            if not style.name:
+                continue
             normalized = style.name.replace(" ", "")
             if custom_pattern.search(normalized):
                 return style
         for style in document.styles:
+            if not style.name:
+                continue
             normalized = style.name.replace(" ", "")
             if re.search(
                 rf"(?:^|[_-])heading[ _-]*{level}$",

@@ -111,6 +111,7 @@ class DocxParser:
         pending_caption: str | None = None
         in_references = False
         in_secondary_metadata = False
+        heading_counters = [0] * 6
 
         for order, item in enumerate(items, start=1):
             location = f"word/document.xml:block[{order}]"
@@ -203,7 +204,11 @@ class DocxParser:
                     continue
 
                 if text:
-                    udc_match = re.match(r"^\s*УДК\s*[:.]?\s*(.+)$", text, flags=re.IGNORECASE)
+                    udc_match = re.match(
+                        r"^\s*(?:\d+\s*[-–—]\s*)?УДК\s*[:.]?\s*(.+)$",
+                        text,
+                        flags=re.IGNORECASE,
+                    )
                     if udc_match:
                         article.metadata.udc = udc_match.group(1).strip()
                         continue
@@ -255,15 +260,36 @@ class DocxParser:
                     if text:
                         section_id = self._next_id("sec")
                         semantic_block = semantic_blocks_by_id.get(block_id)
+                        section_number = (
+                            semantic_block.numbered_prefix
+                            if semantic_block is not None
+                            else None
+                        )
+                        if section_number:
+                            values = [
+                                int(value)
+                                for value in section_number.split(".")
+                                if value.isdigit()
+                            ]
+                            for index, value in enumerate(values[:6]):
+                                heading_counters[index] = value
+                            for index in range(len(values), 6):
+                                heading_counters[index] = 0
+                        elif semantic_block is not None and semantic_block.has_numbering:
+                            counter_index = max(0, min(5, level - 1))
+                            heading_counters[counter_index] += 1
+                            for index in range(counter_index + 1, 6):
+                                heading_counters[index] = 0
+                            section_number = ".".join(
+                                str(value)
+                                for value in heading_counters[: counter_index + 1]
+                                if value
+                            )
                         article.body.append(
                             SectionBlock(
                                 id=section_id,
                                 title=decision.normalized_text or self._clean_heading_title(text),
-                                number=(
-                                    semantic_block.numbered_prefix
-                                    if semantic_block is not None
-                                    else None
-                                ),
+                                number=section_number,
                                 level=level,
                                 source=SourceTrace(
                                     format="docx",
@@ -340,6 +366,23 @@ class DocxParser:
                     continue
                 rows = [[clean_text(cell.text) for cell in row.cells] for row in item.rows]
                 merged_cells, header_rows = self._table_geometry(item)
+                for merged in merged_cells:
+                    for row_index in range(
+                        merged.row,
+                        min(len(rows), merged.row + merged.row_span),
+                    ):
+                        for column_index in range(
+                            merged.column,
+                            min(
+                                len(rows[row_index]),
+                                merged.column + merged.column_span,
+                            ),
+                        ):
+                            if (
+                                row_index != merged.row
+                                or column_index != merged.column
+                            ):
+                                rows[row_index][column_index] = ""
                 table = TableBlock(
                     id=self._next_id("tbl"),
                     rows=rows,
@@ -617,12 +660,27 @@ class DocxParser:
         else:
             raise TypeError("Неподдерживаемый родитель DOCX")
 
-        for child in parent_element.iterchildren():
-            local_name = etree.QName(child).localname
-            if local_name == "p":
-                yield Paragraph(child, parent_object)
-            elif local_name == "tbl":
-                yield Table(child, parent_object)
+        transparent_containers = {
+            "customXml",
+            "ins",
+            "moveFrom",
+            "moveTo",
+            "sdt",
+            "sdtContent",
+            "smartTag",
+        }
+
+        def walk(element):
+            for child in element.iterchildren():
+                local_name = etree.QName(child).localname
+                if local_name == "p":
+                    yield Paragraph(child, parent_object)
+                elif local_name == "tbl":
+                    yield Table(child, parent_object)
+                elif local_name in transparent_containers:
+                    yield from walk(child)
+
+        yield from walk(parent_element)
 
     def _next_id(self, prefix: str) -> str:
         self._counters[prefix] = self._counters.get(prefix, 0) + 1
@@ -1290,10 +1348,14 @@ class DocxParser:
         location: str,
     ) -> list[FigureBlock]:
         figures: list[FigureBlock] = []
-        seen_cells: set[int] = set()
+        seen_cells: set[str] = set()
         for row_index, row in enumerate(table.rows, start=1):
             for column_index, cell in enumerate(row.cells, start=1):
-                marker = id(cell._tc)
+                # lxml may create short-lived Python proxy objects for the same
+                # table cell; their ``id()`` values can be reused during this
+                # loop and caused unrelated image cells to be skipped.  The
+                # OOXML path is stable and still deduplicates true merged cells.
+                marker = cell._tc.getroottree().getpath(cell._tc)
                 if marker in seen_cells:
                     continue
                 seen_cells.add(marker)
@@ -1522,13 +1584,34 @@ class DocxParser:
         return False
 
     def _save_authors(self, article: ArticleIR, lines: list[str]) -> None:
-        names: list[str] = []
+        primary_language = (
+            article.metadata.titles[0].language
+            if article.metadata.titles
+            else None
+        )
         for line in lines:
-            parts = re.split(r"\s*[;,]\s*|\s+и\s+", line)
-            names.extend(part.strip() for part in parts if part.strip())
-        for name in names:
+            value = clean_text(line).strip()
+            if not value:
+                continue
+            language = self._guess_language(value)
+            if (
+                article.metadata.authors
+                and primary_language is not None
+                and language is not None
+                and language != primary_language
+            ):
+                article.metadata.author_variants.append(
+                    LocalizedText(language=language, text=value)
+                )
+                continue
             article.metadata.authors.append(
-                Author(id=f"author-{len(article.metadata.authors) + 1}", name=name)
+                Author(
+                    id=f"author-{len(article.metadata.authors) + 1}",
+                    # Preserve the complete publisher author line, including
+                    # affiliation markers. Splitting on commas corrupts lines
+                    # such as ``Surnameᵃ,ᵇ, Authorᶜ``.
+                    name=value,
+                )
             )
 
     def _postprocess_metadata(self, article: ArticleIR) -> None:

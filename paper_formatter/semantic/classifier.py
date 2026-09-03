@@ -128,19 +128,35 @@ class HybridSemanticClassifier:
         warnings: list[str],
     ) -> None:
         ordered = [block for block in blocks if block.block_id in decisions]
-        title_items = [
-            (block, decisions[block.block_id])
-            for block in ordered
-            if decisions[block.block_id].role == "title"
-        ]
-        if len(title_items) > 1:
+        title_groups: dict[str, list[tuple[SemanticBlock, SemanticDecision]]] = {}
+        for block in ordered:
+            decision = decisions[block.block_id]
+            if decision.role != "title":
+                continue
+            letters = [character for character in block.text if character.isalpha()]
+            cyrillic_share = (
+                sum("\u0400" <= character <= "\u04ff" for character in letters)
+                / len(letters)
+                if letters
+                else 0.0
+            )
+            language_group = "cyrillic" if cyrillic_share >= 0.35 else "latin"
+            title_groups.setdefault(language_group, []).append((block, decision))
+        reduced = False
+        for title_items in title_groups.values():
+            if len(title_items) <= 1:
+                continue
             title_items.sort(key=lambda pair: (-pair[1].confidence, pair[0].order))
             winner = title_items[0][0].block_id
             for block, decision in title_items[1:]:
                 if block.block_id != winner:
                     decision.role = "subtitle" if block.order < 20 else "paragraph"
-                    decision.reason += "; понижен из-за единственного основного title"
-            warnings.append("Несколько кандидатов title сведены к одному основному названию.")
+                    decision.reason += "; понижен среди названий одного языка"
+                    reduced = True
+        if reduced:
+            warnings.append(
+                "Дубли кандидатов title одного языка сведены к одному названию."
+            )
 
         for block in ordered:
             decision = decisions[block.block_id]

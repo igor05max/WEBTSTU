@@ -24,6 +24,22 @@ _REFERENCES = {
     "bibliography",
     "библиографический список",
 }
+_ADMIN_FRONT_MATTER = re.compile(
+    r"^(?:(?:\d+\s*[-–—]\s*)?(?:УДК|UDC|DOI|ISSN)\b|"
+    r"тип\s+статьи\b|article\s+type\b|"
+    r"рубрика\s+журнала\b|journal\s+(?:section|category)\b)",
+    re.IGNORECASE,
+)
+_AFFILIATION = re.compile(
+    r"\b(?:университет|институт|академи[ия]|исследовательск(?:ий|ого)|"
+    r"university|institute|academy|research\s+cent(?:er|re)|department)\b",
+    re.IGNORECASE,
+)
+_ADDRESS_CONTINUATION = re.compile(
+    r"^(?:ул\.|улица|проспект|пер(?:еулок)?\.?|street|st\.|avenue|ave\.|"
+    r"road|rd\.)(?:\s|$)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -126,6 +142,13 @@ class RuleSemanticClassifier:
         if not text:
             return _RuleResult("paragraph", 1.0, "Пустой служебный блок")
 
+        if _ADMIN_FRONT_MATTER.match(text):
+            return _RuleResult(
+                "paragraph",
+                0.99,
+                "Служебная строка издательского шаблона, не название статьи",
+            )
+
         if lower in _REFERENCES or self._without_number(lower) in _REFERENCES:
             return _RuleResult("references_heading", 0.99, "Явный заголовок библиографии", 1)
 
@@ -142,6 +165,17 @@ class RuleSemanticClassifier:
 
         if references_open and re.match(r"^\s*\d+[.)]\s+", text):
             return _RuleResult("reference", 0.98, "Нумерованный источник после заголовка литературы")
+        if references_open and block.has_numbering:
+            return _RuleResult("reference", 0.99, "Источник с нумерацией Word после заголовка литературы")
+
+        if (
+            block.order <= first_content_order + 35
+            and (
+                _AFFILIATION.search(re.sub(r"^[a-z]\s*", "", text, flags=re.I))
+                or _ADDRESS_CONTINUATION.match(text)
+            )
+        ):
+            return _RuleResult("affiliation", 0.88, "Организация или адрес во вступительных метаданных")
 
         if normalized_style in {"title", "document title", "название", "заглавие", "название документа"}:
             return _RuleResult("title", 0.99, "Явный стиль названия")
@@ -198,6 +232,21 @@ class RuleSemanticClassifier:
             role = self._role_for_level(level)
             return _RuleResult(role, 0.96, "Задан outline level Word", level)
 
+        if (
+            block.has_numbering
+            and not block.is_in_numbered_sequence
+            and len(text) <= 180
+            and block.alignment == "center"
+            and block.bold_ratio >= 0.55
+        ):
+            level = max(1, min(6, (block.numbering_level or 0) + 1))
+            return _RuleResult(
+                self._role_for_level(level),
+                0.96,
+                "Короткий центрированный выделенный заголовок с нумерацией Word",
+                level,
+            )
+
         if block.has_numbering:
             return _RuleResult("list_item", 0.98, "Настоящая нумерация Word")
 
@@ -224,7 +273,7 @@ class RuleSemanticClassifier:
         if (
             block.order == first_content_order
             and len(text) <= 500
-            and not re.match(r"^(УДК|UDC|DOI|ISSN)\b", text, re.IGNORECASE)
+            and not _ADMIN_FRONT_MATTER.match(text)
             and not block.numbered_prefix
         ):
             return _RuleResult("title", 0.72, "Первый содержательный абзац похож на название")
@@ -254,6 +303,7 @@ class RuleSemanticClassifier:
             candidates = [
                 b for b in front[:10]
                 if 5 <= len(self._clean(b.text)) <= 500
+                and not _ADMIN_FRONT_MATTER.match(self._clean(b.text))
                 and not (
                     len(self._clean(b.text)) > 240
                     and self._clean(b.text).endswith((".", "!", "?"))
@@ -279,6 +329,31 @@ class RuleSemanticClassifier:
                 decision.role = "title"
                 decision.confidence = max(decision.confidence, 0.68)
                 decision.reason = "Лучший кандидат названия во вступительной части"
+
+        # Bilingual publisher manuscripts often repeat title/authors before a
+        # second Abstract/Аннотация block while using only the generic Normal
+        # style.  Promote the closest centered bold non-author line preceding
+        # each abstract heading as another localized title.
+        for heading in front:
+            if by_id[heading.block_id].role != "abstract_heading":
+                continue
+            preceding = [
+                block
+                for block in front
+                if heading.order - 12 <= block.order < heading.order
+                and block.alignment == "center"
+                and block.bold_ratio >= 0.5
+                and 15 <= len(self._clean(block.text)) <= 500
+                and not self.looks_like_author_line(block.text)
+                and not _ADMIN_FRONT_MATTER.match(self._clean(block.text))
+            ]
+            if preceding:
+                candidate = max(preceding, key=lambda block: block.order)
+                decision = by_id[candidate.block_id]
+                if decision.role in {"paragraph", "unknown", "subtitle"}:
+                    decision.role = "title"
+                    decision.confidence = max(decision.confidence, 0.86)
+                    decision.reason = "Локализованное название перед блоком аннотации"
 
         title_blocks = [
             block for block in front if by_id[block.block_id].role == "title"
@@ -315,6 +390,17 @@ class RuleSemanticClassifier:
             return False
         if re.search(r"\b(университет|институт|кафедр|лаборатор|department|university|institute)\b", value, re.I):
             return False
+
+        initials_first = re.findall(
+            r"(?:[А-ЯЁA-Z]\.\s*){1,2}[А-ЯЁA-Z][А-ЯЁа-яёA-Za-z'’\-]+",
+            value,
+        )
+        surname_first = re.findall(
+            r"[А-ЯЁA-Z][А-ЯЁа-яёA-Za-z'’\-]+\s+(?:[А-ЯЁA-Z]\.\s*){1,2}",
+            value,
+        )
+        if initials_first or surname_first:
+            return True
 
         parts = [p.strip() for p in re.split(r"\s*[;,]\s*|\s+и\s+|\s+and\s+", value) if p.strip()]
         if len(parts) > 12:
