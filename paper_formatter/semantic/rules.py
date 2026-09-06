@@ -310,7 +310,8 @@ class RuleSemanticClassifier:
                 )
                 and not b.numbered_prefix
                 and not b.has_numbering
-                and by_id[b.block_id].role != "list_item"
+                and by_id[b.block_id].role
+                not in {"list_item", "author", "affiliation"}
                 and not self.looks_like_author_line(b.text)
                 and not re.match(r"^(аннотация|abstract|ключевые слова|keywords)\b", b.text, re.I)
             ]
@@ -386,7 +387,7 @@ class RuleSemanticClassifier:
     @staticmethod
     def looks_like_author_line(text: str) -> bool:
         value = re.sub(r"\s+", " ", text).strip(" ,;.")
-        if not value or len(value) > 350 or any(ch in value for ch in "?!"):
+        if not value or len(value) > 180 or any(ch in value for ch in "?!"):
             return False
         if re.search(r"\b(университет|институт|кафедр|лаборатор|department|university|institute)\b", value, re.I):
             return False

@@ -89,3 +89,54 @@ def test_long_finished_paragraph_with_heading_style_is_not_a_heading():
     decision = analysis.decisions[0]
     assert decision.role == "paragraph"
     assert decision.heading_level is None
+
+
+def test_front_matter_does_not_turn_supervisor_or_prose_into_title_and_authors():
+    blocks = [
+        SemanticBlock(block_id="b-1", order=1, text="УДК 004.89", style="Normal"),
+        SemanticBlock(
+            block_id="b-2",
+            order=2,
+            text="АЛГОРИТМЫ КЛАССИФИКАЦИИ ПОХОДКИ НА ОСНОВЕ ДАННЫХ MEDIAPIPE",
+            style="Normal",
+            alignment="center",
+        ),
+        SemanticBlock(
+            block_id="b-3",
+            order=3,
+            text="И. Н. ИВАНОВ, В. П. ПЕТРОВ",
+            style="Normal",
+            alignment="center",
+        ),
+        SemanticBlock(
+            block_id="b-4",
+            order=4,
+            text=(
+                "Научный руководитель А. В. СИДОРОВ, канд. техн. наук, доц. "
+                "Белорусско-Российский университет"
+            ),
+            style="Normal",
+            alignment="center",
+        ),
+        SemanticBlock(
+            block_id="b-5",
+            order=5,
+            text=(
+                "Алгоритм определяет длину шага, время опоры, углы суставов, "
+                "амплитуду движений и скорость стоп. На основе этих параметров "
+                "рассчитывается интегральный индекс асимметрии IGAS. "
+                "Классификация выполняется с использованием адаптивных порогов."
+            ),
+            style="Normal (Web)",
+        ),
+    ]
+
+    decisions = RuleSemanticClassifier().analyze_document(
+        blocks,
+        document_name="article.docx",
+    ).by_id()
+
+    assert decisions["b-2"].role == "title"
+    assert decisions["b-3"].role == "author"
+    assert decisions["b-4"].role == "affiliation"
+    assert decisions["b-5"].role == "paragraph"
