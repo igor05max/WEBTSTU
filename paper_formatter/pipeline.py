@@ -6,6 +6,7 @@ from pathlib import Path
 
 from paper_formatter.compiler import LatexCompiler
 from paper_formatter.config import SemanticSettings, load_semantic_settings
+from paper_formatter.docx_fidelity import source_already_matches_template
 from paper_formatter.exceptions import UnsupportedInputError
 from paper_formatter.models import (
     ArticleIR,
@@ -136,14 +137,27 @@ class ConversionPipeline:
             run.latex_main_path = str(main_tex)
             docx_result: Path | None = None
             if render_docx:
-                docx_renderer = DocxRenderer()
-                docx_result = docx_renderer.render(
-                    article,
-                    paths["result"] / "result.docx",
-                    profile=profile,
-                    asset_root=paths["project"],
+                docx_result = paths["result"] / "result.docx"
+                preserve_source_docx = bool(
+                    example
+                    and source_already_matches_template(working_source, example)
                 )
-                run.warnings.extend(docx_renderer.warnings)
+                if preserve_source_docx:
+                    shutil.copy2(working_source, docx_result)
+                    run.warnings.append(
+                        "DOCX: исходная статья уже соответствует геометрии и "
+                        "колонтитулам шаблона; её Word-вёрстка сохранена без "
+                        "пересборки."
+                    )
+                else:
+                    docx_renderer = DocxRenderer()
+                    docx_result = docx_renderer.render(
+                        article,
+                        docx_result,
+                        profile=profile,
+                        asset_root=paths["project"],
+                    )
+                    run.warnings.extend(docx_renderer.warnings)
                 run.docx_path = str(docx_result)
 
             latex_zip_base = paths["result"] / "latex_project"

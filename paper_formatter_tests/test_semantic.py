@@ -140,3 +140,56 @@ def test_front_matter_does_not_turn_supervisor_or_prose_into_title_and_authors()
     assert decisions["b-3"].role == "author"
     assert decisions["b-4"].role == "affiliation"
     assert decisions["b-5"].role == "paragraph"
+
+
+def test_second_language_title_before_repeated_authors_is_preserved():
+    blocks = [
+        SemanticBlock(
+            block_id="b-1",
+            order=1,
+            text="РУССКОЕ НАЗВАНИЕ СТАТЬИ",
+            style="Normal",
+            alignment="center",
+        ),
+        SemanticBlock(
+            block_id="b-2",
+            order=2,
+            text="И. И. ИВАНОВ",
+            style="Normal",
+            alignment="center",
+        ),
+        SemanticBlock(
+            block_id="b-3",
+            order=3,
+            text="Аннотация. Краткое описание исследования.",
+            style="Normal",
+        ),
+        SemanticBlock(
+            block_id="b-4",
+            order=4,
+            text="English title of the scientific article",
+            style="Normal",
+            alignment="center",
+        ),
+        SemanticBlock(
+            block_id="b-5",
+            order=5,
+            text="I. I. Ivanov",
+            style="Normal",
+            alignment="center",
+        ),
+        SemanticBlock(
+            block_id="b-6",
+            order=6,
+            text="Abstract. A short description of the research.",
+            style="Normal",
+        ),
+    ]
+
+    decisions = RuleSemanticClassifier().analyze_document(
+        blocks,
+        document_name="article.docx",
+    ).by_id()
+
+    assert decisions["b-1"].role == "title"
+    assert decisions["b-4"].role == "title"

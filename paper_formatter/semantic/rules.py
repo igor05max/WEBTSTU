@@ -356,6 +356,30 @@ class RuleSemanticClassifier:
                     decision.confidence = max(decision.confidence, 0.86)
                     decision.reason = "Локализованное название перед блоком аннотации"
 
+        # A second-language title is commonly followed by another author and
+        # affiliation block before the localized Abstract.  Generic Word
+        # styles do not identify it, but its position immediately before a
+        # confidently detected author line does.
+        for author in front:
+            if by_id[author.block_id].role != "author":
+                continue
+            preceding = [
+                block
+                for block in front
+                if author.order - 2 <= block.order < author.order
+                and by_id[block.block_id].role in {"paragraph", "unknown", "subtitle"}
+                and block.alignment == "center"
+                and 15 <= len(self._clean(block.text)) <= 500
+                and not self.looks_like_author_line(block.text)
+                and not _ADMIN_FRONT_MATTER.match(self._clean(block.text))
+            ]
+            if preceding:
+                candidate = max(preceding, key=lambda block: block.order)
+                decision = by_id[candidate.block_id]
+                decision.role = "title"
+                decision.confidence = max(decision.confidence, 0.86)
+                decision.reason = "Название локализованного блока перед строкой авторов"
+
         title_blocks = [
             block for block in front if by_id[block.block_id].role == "title"
         ]
