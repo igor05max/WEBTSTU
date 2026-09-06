@@ -7,6 +7,7 @@ from django.urls import include, path
 from apps.accounts import views as account_views
 
 urlpatterns = [
+    path("template/", include("apps.template_workspace.urls")),
     path("", account_views.dashboard, name="home"),
     path("admin/", admin.site.urls),
     path(

@@ -72,6 +72,9 @@ class LatexParser(SourceParser):
 
     def _read_with_inputs(self, path: Path, seen: set[Path]) -> str:
         path = path.resolve()
+        if not path.is_relative_to(self.source.parent):
+            self._article.warnings.append("Пропущена ссылка на файл вне LaTeX-проекта.")
+            return ""
         if path in seen:
             return f"% Циклический input пропущен: {path.name}\n"
         if not path.exists():
@@ -434,7 +437,7 @@ class LatexParser(SourceParser):
             path = self.source.parent / name
             if not path.suffix:
                 path = path.with_suffix(".bib")
-            if path.exists():
+            if path.resolve().is_relative_to(self.source.parent) and path.is_file():
                 self._article.references.extend(parser.parse(path))
             else:
                 self._article.warnings.append(f"Не найден файл библиографии: {name}")
@@ -457,12 +460,12 @@ class LatexParser(SourceParser):
     def _resolve_graphic(self, name: str) -> Path | None:
         raw = Path(name.strip())
         candidate = self.source.parent / raw
-        if candidate.exists():
+        if candidate.resolve().is_relative_to(self.source.parent) and candidate.is_file():
             return candidate
         if not raw.suffix:
             for extension in (".pdf", ".png", ".jpg", ".jpeg", ".eps", ".svg"):
                 candidate = self.source.parent / raw.with_suffix(extension)
-                if candidate.exists():
+                if candidate.resolve().is_relative_to(self.source.parent) and candidate.is_file():
                     return candidate
         return None
 

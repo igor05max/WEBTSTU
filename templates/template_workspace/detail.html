@@ -1,0 +1,16 @@
+{% extends "template_workspace/base.html" %}
+{% block workspace_content %}
+<a href="{% url 'template_workspace:workspace' %}">← Все сборки</a>
+<h1 style="margin-top:22px">{{ job.article_name }}</h1><p class="tw-muted">Шаблон: {{ job.template_name }}</p>
+<section class="tw-card" aria-live="polite">
+{% if job.pending %}<div class="tw-state"><span class="tw-pulse"></span>Готовим вашу статью</div><p>Разбираем структуру, применяем шаблон и собираем PDF из LaTeX. Это может занять несколько минут. Можно закрыть страницу — результат сохранится в «Моих сборках».</p><p id="tw-connection" class="tw-muted"></p>
+{% else %}<div class="tw-state">{% if job.status == 'completed' %}Статья готова{% elif job.status == 'partial' %}Нужна проверка результата{% else %}Сборка не завершена{% endif %}</div><p>{{ job.message }}</p>{% endif %}
+<div class="tw-actions">{% if 'pdf' in files %}<a class="tw-btn" href="{% url 'template_workspace:download' job.pk 'pdf' %}">Скачать статью PDF</a>{% endif %}{% if 'latex' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:download' job.pk 'latex' %}">LaTeX-проект ZIP</a>{% endif %}{% if 'tex' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:download' job.pk 'tex' %}">Исходник TEX</a>{% endif %}{% if 'report' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:download' job.pk 'report' %}">Отчёт проверки</a>{% endif %}</div>
+{% if job.warnings %}<details class="tw-warnings"><summary>Замечания к оформлению: {{ job.warnings|length }}</summary><ul>{% for warning in job.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+</section>
+{% if job.plan %}<details class="tw-card"><summary>План статьи</summary><ol class="tw-plan">{% for item in job.plan %}<li><strong>{{ item.kind }}:</strong> {{ item.text }}</li>{% endfor %}</ol></details>{% endif %}
+{% if 'pdf' in files %}<section class="tw-card"><h2>Новая статья</h2><p class="tw-muted">Этот PDF собран из LaTeX-проекта, доступного для скачивания выше.</p><iframe title="Предпросмотр оформленной статьи" src="{% url 'template_workspace:download' job.pk 'pdf' %}?preview=1"></iframe></section>{% endif %}
+{% endblock %}
+{% block extra_scripts %}{% if job.pending %}<script>
+(function poll(){setTimeout(async()=>{try{const r=await fetch('{% url "template_workspace:progress" job.pk %}',{headers:{'Accept':'application/json'}});if(!r.ok||r.redirected)throw Error();const data=await r.json();if(!data.pending){location.reload();return;}document.getElementById('tw-connection').textContent='';}catch(e){document.getElementById('tw-connection').textContent='Не удалось обновить статус. Повторяем подключение…';}poll();},4000);})();
+</script>{% endif %}{% endblock %}

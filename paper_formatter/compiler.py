@@ -31,6 +31,7 @@ class LatexCompiler:
         return_code = 0
         attempts = 2 if name in {"xelatex", "lualatex"} else 1
         process_environment = os.environ.copy()
+        process_environment.update({"openin_any": "p", "openout_any": "p", "shell_escape": "f"})
         fontconfig_file = project_dir / "fonts.conf"
         if fontconfig_file.exists():
             process_environment["FONTCONFIG_FILE"] = str(fontconfig_file)
@@ -77,7 +78,7 @@ class LatexCompiler:
 
     @staticmethod
     def _select_engine() -> tuple[str, str] | None:
-        for name in ("latexmk", "tectonic", "xelatex", "lualatex"):
+        for name in ("latexmk", "tectonic", "xelatex"):
             executable = shutil.which(name)
             if executable:
                 return name, executable
@@ -96,7 +97,9 @@ class LatexCompiler:
         if name == "latexmk":
             return [
                 executable,
+                "-norc",
                 "-xelatex",
+                "-no-shell-escape",
                 "-interaction=nonstopmode",
                 "-halt-on-error",
                 "-file-line-error",
@@ -105,6 +108,7 @@ class LatexCompiler:
         if name == "tectonic":
             return [
                 executable,
+                "--untrusted",
                 "--keep-logs",
                 "--keep-intermediates",
                 "--synctex",
@@ -112,6 +116,7 @@ class LatexCompiler:
             ]
         return [
             executable,
+            "-no-shell-escape",
             "-interaction=nonstopmode",
             "-halt-on-error",
             "-file-line-error",

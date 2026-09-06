@@ -78,6 +78,7 @@ DJANGO_APPS = [
 ]
 
 LOCAL_APPS = [
+    "apps.template_workspace",
     "apps.accounts.apps.AccountsConfig",
     "apps.directory.apps.DirectoryConfig",
     "apps.activities.apps.ActivitiesConfig",
