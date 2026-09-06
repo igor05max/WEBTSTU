@@ -116,6 +116,7 @@ class PdfTemplateAnalyzer(TemplateAnalyzer):
         column_bases = self._column_bases(body_lines, page_width, body_left_pt)
         columns = len(column_bases)
         column_gap_mm = self._column_gap_mm(body_lines, column_bases)
+        layout_warnings: list[str] = []
 
         top_margin_pt, bottom_margin_pt = self._vertical_margins(
             body_lines,
@@ -148,6 +149,39 @@ class PdfTemplateAnalyzer(TemplateAnalyzer):
 
         width_mm = page_width * 25.4 / 72
         height_mm = page_height * 25.4 / 72
+        inferred_body_left_pt = body_left_pt
+        inferred_body_right_pt = body_right_pt
+        inferred_title_margin_left_mm = title_margin_left_mm
+        inferred_title_margin_right_mm = title_margin_right_mm
+        unsafe_layout = self._layout_is_unsafe(
+            page_width=page_width,
+            body_left_pt=body_left_pt,
+            body_right_pt=body_right_pt,
+            column_bases=column_bases,
+            column_gap_mm=column_gap_mm,
+            title_margin_left_mm=title_margin_left_mm,
+            title_margin_right_mm=title_margin_right_mm,
+        )
+        if unsafe_layout:
+            # A brochure, form or informational leaflet often contains several
+            # independent text panels.  Treating those panels as article columns
+            # produces unusably narrow text.  Keep the inferred typography, but
+            # use a conservative article page until a real article example is
+            # supplied.
+            width_mm, height_mm = 210.0, 297.0
+            body_left_pt = body_right_margin_pt = 20.0 * 72 / 25.4
+            body_right_pt = 210.0 * 72 / 25.4 - body_right_margin_pt
+            top_margin_pt = bottom_margin_pt = 20.0 * 72 / 25.4
+            column_bases = [body_left_pt]
+            columns = 1
+            column_gap_mm = None
+            title_margin_left_mm = None
+            title_margin_right_mm = None
+            layout_warnings.append(
+                "В PDF обнаружены независимые панели, форма или слишком узкая "
+                "область текста. Геометрия заменена на безопасный одноколоночный "
+                "A4; типографика образца сохранена."
+            )
         paper_size = (
             "a4paper"
             if abs(width_mm - 210) < 4 and abs(height_mm - 297) < 4
@@ -155,6 +189,7 @@ class PdfTemplateAnalyzer(TemplateAnalyzer):
             if abs(width_mm - 215.9) < 4 and abs(height_mm - 279.4) < 4
             else "a4paper"
         )
+        layout_page_width_pt = width_mm * 72 / 25.4
         document.close()
 
         return TemplateProfile(
@@ -168,7 +203,7 @@ class PdfTemplateAnalyzer(TemplateAnalyzer):
                 height_mm=round(height_mm, 2),
                 margin_top_mm=round(top_margin_pt * 25.4 / 72, 2),
                 margin_right_mm=round(
-                    max(0.0, page_width - body_right_pt) * 25.4 / 72,
+                    max(0.0, layout_page_width_pt - body_right_pt) * 25.4 / 72,
                     2,
                 ),
                 margin_bottom_mm=round(bottom_margin_pt * 25.4 / 72, 2),
@@ -198,18 +233,55 @@ class PdfTemplateAnalyzer(TemplateAnalyzer):
                 "font_samples": sum(font_counter.values()),
                 "body_line_samples": len(body_lines),
                 "raw_main_font": raw_font,
-                "body_left_pt": round(body_left_pt, 2),
-                "body_right_pt": round(body_right_pt, 2),
-                "title_margin_left_mm_inferred": title_margin_left_mm,
-                "title_margin_right_mm_inferred": title_margin_right_mm,
+                "body_left_pt": round(inferred_body_left_pt, 2),
+                "body_right_pt": round(inferred_body_right_pt, 2),
+                "title_margin_left_mm_inferred": inferred_title_margin_left_mm or 0.0,
+                "title_margin_right_mm_inferred": inferred_title_margin_right_mm or 0.0,
                 "line_spacing_inferred": line_spacing,
                 "first_line_indent_mm_inferred": first_line_indent_mm,
+                "layout_normalized": unsafe_layout,
             },
             warnings=[
                 "PDF-профиль восстанавливает геометрию и типографику основного текста, "
-                "но не издательские команды, логотипы и служебные боковые блоки."
+                "но не издательские команды, логотипы и служебные боковые блоки.",
+                *layout_warnings,
             ],
         )
+
+    @staticmethod
+    def _layout_is_unsafe(
+        *,
+        page_width: float,
+        body_left_pt: float,
+        body_right_pt: float,
+        column_bases: list[float],
+        column_gap_mm: float | None,
+        title_margin_left_mm: float | None,
+        title_margin_right_mm: float | None,
+    ) -> bool:
+        """Reject geometry that cannot represent readable article columns."""
+        if page_width <= 0 or body_right_pt <= body_left_pt:
+            return True
+        content_width = body_right_pt - body_left_pt
+        if content_width < page_width * 0.42:
+            return True
+        if (
+            body_left_pt > page_width * 0.35
+            or page_width - body_right_pt > page_width * 0.35
+        ):
+            return True
+        columns = max(1, len(column_bases))
+        gap_pt = (column_gap_mm or 0.0) * 72 / 25.4
+        column_width = (content_width - gap_pt * (columns - 1)) / columns
+        if column_width < 120.0:
+            return True
+        if columns > 1 and column_bases[-1] >= body_right_pt - 36.0:
+            return True
+        if title_margin_left_mm is not None and title_margin_right_mm is not None:
+            page_width_mm = page_width * 25.4 / 72
+            if page_width_mm - title_margin_left_mm - title_margin_right_mm < page_width_mm * 0.35:
+                return True
+        return False
 
     @staticmethod
     def _bbox(sample: dict[str, object]) -> tuple[float, float, float, float]:

@@ -41,6 +41,21 @@ def test_math_unicode_and_missing_glyph_warnings_are_handled() -> None:
         "отсутствуют глифы" in warning
         for warning in LatexCompiler._log_warnings("Missing character: U+2227")
     )
+    recovered_font_probe = "LaTeX Error: font missing\nEmergency stop\nOutput written on main.pdf"
+    assert not any(
+        "аварийно" in warning or "LaTeX Error" in warning
+        for warning in LatexCompiler._log_warnings(
+            recovered_font_probe,
+            successful=True,
+        )
+    )
+
+
+def test_latex_font_fallback_uses_metric_compatible_family() -> None:
+    command = LatexRenderer._font_command("Calibri")
+
+    assert r"\IfFontExistsTF{Calibri}" in command
+    assert r"\fontspec{Carlito}" in command
 
 
 def test_latex_tables_use_weighted_academic_columns() -> None:

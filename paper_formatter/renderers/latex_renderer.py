@@ -122,6 +122,7 @@ class LatexRenderer:
             class_options=self._class_options(profile),
             packages=packages,
             main_font=self._safe_font(profile.typography.main_font),
+            main_font_fallback=self._font_fallback(profile.typography.main_font),
             main_size_pt=profile.typography.main_size_pt,
             line_spacing=profile.typography.line_spacing,
             title_size_pt=profile.typography.title_size_pt,
@@ -866,6 +867,28 @@ class LatexRenderer:
             else "Times New Roman"
         )
 
+    @classmethod
+    def _font_fallback(cls, value: str | None) -> str:
+        safe = cls._safe_font(value)
+        return {
+            "Calibri": "Carlito",
+            "Arial": "Liberation Sans",
+            "Times New Roman": "TeX Gyre Termes",
+            "Cambria": "Caladea",
+            "Palatino Linotype": "TeX Gyre Pagella",
+            "Courier New": "Liberation Mono",
+        }.get(safe, "DejaVu Serif")
+
+    @classmethod
+    def _font_command(cls, value: str | None) -> str:
+        font = cls._safe_font(value)
+        fallback = cls._font_fallback(font)
+        return (
+            rf"\IfFontExistsTF{{{font}}}{{\fontspec{{{font}}}}}"
+            rf"{{\IfFontExistsTF{{{fallback}}}{{\fontspec{{{fallback}}}}}"
+            rf"{{\fontspec{{DejaVu Serif}}}}}}"
+        )
+
     def _heading_commands(self, profile: TemplateProfile) -> list[str]:
         if profile.source_type == "latex":
             return []
@@ -895,7 +918,7 @@ class LatexRenderer:
             if heading.italic:
                 style.append(r"\itshape")
             if heading.font:
-                style.append(rf"\fontspec{{{self._safe_font(heading.font)}}}")
+                style.append(self._font_command(heading.font))
             label = (
                 ""
                 if heading.numbered is False

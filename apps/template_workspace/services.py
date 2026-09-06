@@ -81,7 +81,12 @@ def run_job(job_id):
         errors = list(result.run.errors)
         # Do not expose filesystem paths from parser/compiler diagnostics in the UI.
         diagnostics = [str(w).replace(str(output_directory(job)), "проект") for w in warnings + errors]
-        status = "completed" if result.pdf and not errors else "partial"
+        severe_layout_warning = any(
+            "существенное переполнение" in warning.lower()
+            or "аварийно" in warning.lower()
+            for warning in diagnostics
+        )
+        status = "completed" if result.pdf and not errors and not severe_layout_warning else "partial"
         message = ("Статья собрана из LaTeX. Проверьте предпросмотр перед использованием."
                    if status == "completed" else
                    "LaTeX подготовлен, но сборка требует проверки. Скачайте проект и отчёт.")

@@ -10,7 +10,7 @@
 \ifPDFTeX
   \PackageError{paper-formatter}{Use XeLaTeX, LuaLaTeX or Tectonic}{Unicode document requires a modern engine.}
 \fi
-\IfFontExistsTF{ {{- main_font -}} }{\setmainfont{ {{- main_font -}} }}{\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{DejaVu Serif}}}
+\IfFontExistsTF{ {{- main_font -}} }{\setmainfont{ {{- main_font -}} }}{\IfFontExistsTF{ {{- main_font_fallback -}} }{\setmainfont{ {{- main_font_fallback -}} }}{\setmainfont{DejaVu Serif}}}
 \setdefaultlanguage{russian}
 \setotherlanguage{english}
 {% endif %}

@@ -68,10 +68,10 @@ class LatexCompiler:
         )
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(log_text, encoding="utf-8")
-        warnings.extend(self._log_warnings(log_text))
-
         pdf = project_dir / "main.pdf"
-        if return_code != 0 or not pdf.exists():
+        successful = return_code == 0 and pdf.exists()
+        warnings.extend(self._log_warnings(log_text, successful=successful))
+        if not successful:
             warnings.append(f"LaTeX не скомпилирован. Подробности: {log_path}")
             return None, list(dict.fromkeys(warnings))
         return pdf, list(dict.fromkeys(warnings))
@@ -124,7 +124,7 @@ class LatexCompiler:
         ]
 
     @staticmethod
-    def _log_warnings(text: str) -> list[str]:
+    def _log_warnings(text: str, *, successful: bool = False) -> list[str]:
         result: list[str] = []
         overfull = [
             float(value)
@@ -152,10 +152,15 @@ class LatexCompiler:
                 r"(?:undefined citations|Citation .* undefined)",
                 "В LaTeX остались неразрешённые цитаты.",
             ),
-            (r"LaTeX Error:", "Журнал компиляции содержит LaTeX Error."),
-            (r"Emergency stop", "Компиляция завершилась аварийно."),
         ]
         for pattern, message in patterns:
             if re.search(pattern, text, re.IGNORECASE):
                 result.append(message)
+        # Font discovery tools can emit these phrases in a child process even
+        # when XeLaTeX successfully falls back and writes the final PDF.
+        if not successful:
+            if re.search(r"LaTeX Error:", text, re.IGNORECASE):
+                result.append("Журнал компиляции содержит LaTeX Error.")
+            if re.search(r"Emergency stop", text, re.IGNORECASE):
+                result.append("Компиляция завершилась аварийно.")
         return result

@@ -118,6 +118,21 @@ class WorkspaceTests(TestCase):
             response.close()
         compile_mock.assert_called_once()
 
+    @patch.object(LatexCompiler, "compile")
+    def test_severe_layout_warning_marks_job_for_review(self, compile_mock):
+        def compile_pdf(project, log):
+            pdf = project / "main.pdf"
+            pdf.write_bytes(b"%PDF-1.4\ncontrolled compiler output")
+            return pdf, ["В PDF есть существенное переполнение до 80.00 pt."]
+
+        compile_mock.side_effect = compile_pdf
+        job = self.create_job()
+        run_job(job.pk)
+        job.refresh_from_db()
+
+        self.assertEqual(job.status, "partial")
+        self.assertIn("требует проверки", job.message)
+
     def test_compiler_disables_shell_and_local_latexmk_configuration(self):
         command = LatexCompiler._command("latexmk", "latexmk")
         self.assertIn("-no-shell-escape", command)

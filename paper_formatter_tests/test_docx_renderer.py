@@ -198,6 +198,29 @@ def test_pdf_profile_geometry_ignores_sidebar_and_detects_indent() -> None:
     assert analyzer._word_font_name("URWPalladioL-Roma") == "Palatino Linotype"
 
 
+def test_pdf_profile_rejects_brochure_panels_as_article_columns() -> None:
+    analyzer = PdfTemplateAnalyzer()
+
+    assert analyzer._layout_is_unsafe(
+        page_width=841.92,
+        body_left_pt=303.0,
+        body_right_pt=550.15,
+        column_bases=[303.0, 573.0],
+        column_gap_mm=10.35,
+        title_margin_left_mm=215.82,
+        title_margin_right_mm=18.51,
+    )
+    assert not analyzer._layout_is_unsafe(
+        page_width=595.28,
+        body_left_pt=56.7,
+        body_right_pt=538.58,
+        column_bases=[56.7, 307.0],
+        column_gap_mm=8.0,
+        title_margin_left_mm=20.0,
+        title_margin_right_mm=20.0,
+    )
+
+
 def test_docx_template_uses_multicolumn_body_not_opening_section(
     tmp_path: Path,
 ) -> None:
