@@ -11,6 +11,7 @@ from .models import TemplateJob
 from .services import expire_jobs, launch_job, output_directory
 
 FILES = {"pdf": ("result/result.pdf", "application/pdf", "article.pdf"),
+         "docx": ("result/result.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "article.docx"),
          "latex": ("result/latex_project.zip", "application/zip", "latex_project.zip"),
          "tex": ("generated/latex/main.tex", "text/plain; charset=utf-8", "main.tex"),
          "report": ("result/conversion_report.json", "application/json", "report.json")}

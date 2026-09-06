@@ -92,11 +92,18 @@ class WorkspaceTests(TestCase):
         with ZipFile(archive) as z:
             self.assertIn("main.tex", z.namelist())
             self.assertIn("Сохраняемый", z.read("body.tex").decode())
-        self.assertFalse((output_directory(job) / "result/result.docx").exists())
+        self.assertTrue((output_directory(job) / "result/result.docx").exists())
         response = self.client.get(reverse("template_workspace:download", args=[job.pk, "latex"]))
         self.assertEqual(response.status_code, 200)
         response.close()
         self.assertEqual(self.client.get(reverse("template_workspace:download", args=[job.pk, "pdf"])).status_code, 404)
+        response = self.client.get(reverse("template_workspace:download", args=[job.pk, "docx"]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        response.close()
 
     @patch.object(LatexCompiler, "compile")
     def test_pdf_download_uses_compiler_artifact_without_rebuilding(self, compile_mock):

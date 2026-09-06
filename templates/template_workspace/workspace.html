@@ -1,8 +1,8 @@
 {% extends "template_workspace/base.html" %}
 {% block workspace_content %}
 <h1>Статья по вашему шаблону</h1>
-<p class="tw-muted">Загрузите статью и образец оформления. Получите LaTeX-проект и новую статью в PDF, собранную из него.</p>
-<div class="tw-steps"><span class="tw-step">1. Статья и шаблон</span><span class="tw-step">2. Структура и LaTeX</span><span class="tw-step">3. Готовая статья</span></div>
+<p class="tw-muted">Загрузите статью и образец оформления. Получите редактируемую статью Word, PDF и LaTeX-проект.</p>
+<div class="tw-steps"><span class="tw-step">1. Статья и шаблон</span><span class="tw-step">2. Структура и LaTeX</span><span class="tw-step">3. Word и PDF</span></div>
 <form method="post" enctype="multipart/form-data" class="tw-card" id="tw-form">
 {% csrf_token %}{{ form.non_field_errors }}
 <div class="tw-grid">{% for field in form %}<div class="tw-upload">{{ field.label_tag }}{{ field }}<small>{{ field.help_text }}</small>{{ field.errors }}</div>{% endfor %}</div>

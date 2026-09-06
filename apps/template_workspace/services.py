@@ -56,7 +56,7 @@ def run_job(job_id):
         result = ConversionPipeline(semantic_settings=semantic,
             semantic_provider=QwenSemanticProvider(semantic)).run(
             Path(job.article.path), output_directory(job), example=Path(job.template.path),
-            compile_pdf=True, render_docx=False)
+            compile_pdf=True, render_docx=True)
         plan = []
         metadata = result.article_ir.metadata
         for title in metadata.titles:
@@ -86,10 +86,11 @@ def run_job(job_id):
             or "аварийно" in warning.lower()
             for warning in diagnostics
         )
-        status = "completed" if result.pdf and not errors and not severe_layout_warning else "partial"
-        message = ("Статья собрана из LaTeX. Проверьте предпросмотр перед использованием."
+        all_primary_results = bool(result.pdf and result.docx)
+        status = "completed" if all_primary_results and not errors and not severe_layout_warning else "partial"
+        message = ("Word и PDF собраны из общей структуры статьи. Проверьте предпросмотр перед использованием."
                    if status == "completed" else
-                   "LaTeX подготовлен, но сборка требует проверки. Скачайте проект и отчёт.")
+                   "Word и LaTeX подготовлены, но сборка требует проверки. Скачайте файлы и отчёт.")
         TemplateJob.objects.filter(pk=job_id, status="running").update(
             status=status, message=message, plan=plan, warnings=diagnostics, updated_at=timezone.now())
     except Exception:
