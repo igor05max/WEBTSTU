@@ -406,8 +406,9 @@ class DocxRenderer:
                                 usable_width_mm if full_width else column_width_mm
                             ),
                             number=figure_index,
-                        )
+                    )
                     elif any(item.caption for item in grouped):
+                        self._set_last_body_element_keep_with_next(document)
                         self._append_figure_caption(
                             document,
                             next(
@@ -457,6 +458,7 @@ class DocxRenderer:
                     else:
                         paragraph.add_run("[рисунок]")
                 if block.caption:
+                    self._set_last_body_element_keep_with_next(document)
                     self._append_figure_caption(
                         document,
                         block.caption,
@@ -471,7 +473,10 @@ class DocxRenderer:
             elif isinstance(block, TableBlock):
                 table_index += 1
                 table_columns = max((len(row) for row in block.rows), default=0)
-                full_width = profile.page.columns > 1 and table_columns >= 4
+                full_width = profile.page.columns > 1 and self._table_needs_full_width(
+                    block,
+                    column_width_mm,
+                )
                 if full_width:
                     self._add_layout_section(document, profile, columns=1)
                 if block.caption:
@@ -486,6 +491,8 @@ class DocxRenderer:
                     block.source_xml,
                     "table_body",
                     profile=profile,
+                    table_block=block,
+                    usable_width_mm=(usable_width_mm if full_width else column_width_mm),
                 ):
                     self._append_table(
                         document,
@@ -746,6 +753,12 @@ class DocxRenderer:
         secondary_abstract = (
             secondary_abstracts[0].text if secondary_abstracts else ""
         )
+        abstract_label = "Abstract" if primary_language == "en" else "Аннотация"
+        secondary_abstract_label = "Abstract" if primary_language != "en" else "Аннотация"
+        keywords_label = "Keywords" if primary_language == "en" else "Ключевые слова"
+        secondary_keywords_label = (
+            "Keywords" if primary_language != "en" else "Ключевые слова"
+        )
         values = {
             "udc": f"УДК: {article.metadata.udc}" if article.metadata.udc else "",
             "doi": f"DOI: {article.metadata.doi}" if article.metadata.doi else "",
@@ -756,32 +769,36 @@ class DocxRenderer:
             "affiliations": affiliations,
             "secondary_affiliations": secondary_affiliation,
             "email": email,
-            "abstract": self._labelled_front_value(
-                "Abstract" if primary_language == "en" else "Аннотация",
-                abstract,
-            ),
-            "secondary_abstract": self._labelled_front_value(
-                "Abstract" if primary_language != "en" else "Аннотация",
-                secondary_abstract,
-            ),
-            "keywords": self._labelled_front_value(
-                "Keywords" if primary_language == "en" else "Ключевые слова",
-                ", ".join(front_keywords),
-            ),
-            "secondary_keywords": self._labelled_front_value(
-                "Keywords" if primary_language != "en" else "Ключевые слова",
-                ", ".join(secondary_keywords),
-            ),
+            "abstract": abstract,
+            "secondary_abstract": secondary_abstract,
+            "keywords": ", ".join(front_keywords),
+            "secondary_keywords": ", ".join(secondary_keywords),
             "citation": "",
             "editorial_metadata": "",
         }
+        labels = {
+            "abstract": abstract_label,
+            "secondary_abstract": secondary_abstract_label,
+            "keywords": keywords_label,
+            "secondary_keywords": secondary_keywords_label,
+        }
         used_roles: set[str] = set()
         kept: set[int] = set()
+        anchors: dict[str, object] = {}
         for child, role, original_text in slots:
-            value = self._slot_value(role, values, used_roles)
+            target_role = self._slot_target_role(role, used_roles)
+            value = values.get(target_role, "").strip()
             if value:
-                self._replace_paragraph_text_xml(child, value)
+                if target_role in labels:
+                    self._replace_labelled_paragraph_text_xml(
+                        child,
+                        labels[target_role],
+                        value,
+                    )
+                else:
+                    self._replace_paragraph_text_xml(child, value)
                 kept.add(id(child))
+                anchors[target_role] = child
                 continue
             if self._slot_has_literal_content(original_text):
                 kept.add(id(child))
@@ -791,6 +808,32 @@ class DocxRenderer:
                 continue
             if id(child) not in kept:
                 body.remove(child)
+        anchor = anchors.get("title")
+        if anchor is None:
+            anchor = next(
+                (child for child, _, _ in reversed(slots) if id(child) in kept),
+                None,
+            )
+        if article.metadata.authors and "authors" not in anchors:
+            inserted = self._insert_front_paragraph_after(
+                body,
+                anchor,
+                authors,
+                "authors",
+            )
+            anchors["authors"] = inserted
+            anchor = inserted
+        if front_affiliations and "affiliations" not in anchors:
+            inserted = self._insert_front_paragraph_after(
+                body,
+                anchor,
+                affiliations,
+                "affiliation",
+            )
+            anchors["affiliations"] = inserted
+            anchor = inserted
+        if email and "email" not in anchors:
+            self._insert_front_paragraph_after(body, anchor, email, "affiliation")
         return True
 
     @staticmethod
@@ -799,9 +842,8 @@ class DocxRenderer:
         return f"{label}. {value}" if value else ""
 
     @staticmethod
-    def _slot_value(
+    def _slot_target_role(
         role: str,
-        values: dict[str, str],
         used_roles: set[str],
     ) -> str:
         if role == "title" and "title" in used_roles:
@@ -815,7 +857,7 @@ class DocxRenderer:
         elif role == "keywords" and "keywords" in used_roles:
             role = "secondary_keywords"
         used_roles.add(role)
-        return values.get(role, "").strip()
+        return role
 
     @staticmethod
     def _slot_has_literal_content(text: str) -> bool:
@@ -895,6 +937,71 @@ class DocxRenderer:
             text.text = ""
 
     @staticmethod
+    def _replace_labelled_paragraph_text_xml(
+        paragraph_element,
+        label: str,
+        value: str,
+    ) -> None:
+        first_run = next(iter(paragraph_element.xpath("./*[local-name()='r']")), None)
+        label_properties = None
+        content_properties = None
+        if first_run is not None:
+            run_properties = first_run.find(qn("w:rPr"))
+            if run_properties is not None:
+                label_properties = deepcopy(run_properties)
+                content_properties = deepcopy(run_properties)
+        for child in list(paragraph_element):
+            if etree.QName(child).localname != "pPr":
+                paragraph_element.remove(child)
+
+        label_run = OxmlElement("w:r")
+        if label_properties is None:
+            label_properties = OxmlElement("w:rPr")
+        if label_properties.find(qn("w:b")) is None:
+            label_properties.append(OxmlElement("w:b"))
+        label_run.append(label_properties)
+        label_text = OxmlElement("w:t")
+        label_text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        label_text.text = f"{label}. "
+        label_run.append(label_text)
+        paragraph_element.append(label_run)
+
+        content_run = OxmlElement("w:r")
+        if content_properties is not None:
+            for tag in ("w:b", "w:bCs"):
+                bold = content_properties.find(qn(tag))
+                if bold is not None:
+                    content_properties.remove(bold)
+            content_run.append(content_properties)
+        content_text = OxmlElement("w:t")
+        content_text.text = value
+        content_run.append(content_text)
+        paragraph_element.append(content_run)
+
+    def _insert_front_paragraph_after(
+        self,
+        body,
+        anchor,
+        value: str,
+        role: str,
+    ):
+        paragraph = OxmlElement("w:p")
+        self._apply_paragraph_style_xml(paragraph, role)
+        run = OxmlElement("w:r")
+        text = OxmlElement("w:t")
+        text.text = value
+        run.append(text)
+        paragraph.append(run)
+        sect_pr = body.find(qn("w:sectPr"))
+        if anchor is not None and anchor in body:
+            body.insert(body.index(anchor) + 1, paragraph)
+        elif sect_pr is not None:
+            body.insert(body.index(sect_pr), paragraph)
+        else:
+            body.append(paragraph)
+        return paragraph
+
+    @staticmethod
     def _source_xml_has_complex_content(source_xml: str | None) -> bool:
         if not source_xml:
             return False
@@ -933,6 +1040,8 @@ class DocxRenderer:
         role: str,
         *,
         profile: TemplateProfile,
+        table_block: TableBlock | None = None,
+        usable_width_mm: float | None = None,
     ) -> bool:
         if not source_xml or self._source_document is None:
             return False
@@ -947,6 +1056,14 @@ class DocxRenderer:
             elif local_name == "tbl":
                 self._apply_table_style_xml(element)
                 self._apply_table_body_style_xml(element)
+                if table_block is not None and usable_width_mm is not None:
+                    self._adapt_source_table_geometry_xml(
+                        element,
+                        table_block,
+                        usable_width_mm,
+                    )
+                if role == "figure":
+                    self._set_table_keep_with_next_xml(element)
                 self._prevent_table_row_splits_xml(element)
             else:
                 return False
@@ -1011,6 +1128,79 @@ class DocxRenderer:
             p_pr.insert(0, p_style)
         p_style.set(qn("w:val"), style_name)
 
+    def _adapt_source_table_geometry_xml(
+        self,
+        table,
+        block: TableBlock,
+        usable_width_mm: float,
+    ) -> None:
+        columns = max((len(row) for row in block.rows), default=0)
+        if columns <= 0:
+            grid = table.find(qn("w:tblGrid"))
+            columns = len(grid.findall(qn("w:gridCol"))) if grid is not None else 1
+        widths_mm = self._column_widths_mm(block, columns, usable_width_mm)
+        widths_dxa = [max(240, round(width * 1440 / 25.4)) for width in widths_mm]
+
+        tbl_pr = table.find(qn("w:tblPr"))
+        if tbl_pr is None:
+            tbl_pr = OxmlElement("w:tblPr")
+            table.insert(0, tbl_pr)
+        self._set_child_value(tbl_pr, "w:tblW", {"w:type": "dxa", "w:w": str(sum(widths_dxa))})
+        self._set_child_value(tbl_pr, "w:tblLayout", {"w:type": "fixed"})
+        self._set_child_value(tbl_pr, "w:jc", {"w:val": "center"})
+        for removable in ("w:tblInd", "w:tblCellSpacing"):
+            child = tbl_pr.find(qn(removable))
+            if child is not None:
+                tbl_pr.remove(child)
+
+        grid = table.find(qn("w:tblGrid"))
+        if grid is None:
+            grid = OxmlElement("w:tblGrid")
+            insert_at = 1 if table.find(qn("w:tblPr")) is not None else 0
+            table.insert(insert_at, grid)
+        for child in list(grid):
+            grid.remove(child)
+        for width in widths_dxa:
+            column = OxmlElement("w:gridCol")
+            column.set(qn("w:w"), str(width))
+            grid.append(column)
+
+        for row in table.xpath("./*[local-name()='tr']"):
+            tr_pr = row.find(qn("w:trPr"))
+            if tr_pr is not None:
+                for height in list(tr_pr.findall(qn("w:trHeight"))):
+                    tr_pr.remove(height)
+            grid_index = 0
+            for cell in row.xpath("./*[local-name()='tc']"):
+                tc_pr = cell.find(qn("w:tcPr"))
+                if tc_pr is None:
+                    tc_pr = OxmlElement("w:tcPr")
+                    cell.insert(0, tc_pr)
+                span_el = tc_pr.find(qn("w:gridSpan"))
+                span = 1
+                if span_el is not None:
+                    try:
+                        span = max(1, int(span_el.get(qn("w:val")) or "1"))
+                    except ValueError:
+                        span = 1
+                end = min(columns, grid_index + span)
+                width = sum(widths_dxa[grid_index:end]) or widths_dxa[min(grid_index, columns - 1)]
+                self._set_child_value(tc_pr, "w:tcW", {"w:type": "dxa", "w:w": str(width)})
+                for removable in ("w:noWrap", "w:tcFitText"):
+                    child = tc_pr.find(qn(removable))
+                    if child is not None:
+                        tc_pr.remove(child)
+                grid_index += span
+
+    @staticmethod
+    def _set_child_value(parent, tag: str, attrs: dict[str, str]) -> None:
+        child = parent.find(qn(tag))
+        if child is None:
+            child = OxmlElement(tag)
+            parent.append(child)
+        for key, value in attrs.items():
+            child.set(qn(key), value)
+
     def _apply_table_style_xml(self, table) -> None:
         if not self._styles.table_style:
             return
@@ -1040,6 +1230,24 @@ class DocxRenderer:
                 row.insert(0, tr_pr)
             if tr_pr.find(qn("w:cantSplit")) is None:
                 tr_pr.append(OxmlElement("w:cantSplit"))
+
+    @staticmethod
+    def _set_table_keep_with_next_xml(table) -> None:
+        for paragraph in table.xpath(".//*[local-name()='p']"):
+            DocxRenderer._set_keep_with_next_xml(paragraph)
+
+    @staticmethod
+    def _set_last_body_element_keep_with_next(document: Document) -> None:
+        body = document._element.body
+        for child in reversed(list(body)):
+            if child.tag == qn("w:sectPr"):
+                continue
+            local_name = etree.QName(child).localname
+            if local_name == "p":
+                DocxRenderer._set_keep_with_next_xml(child)
+            elif local_name == "tbl":
+                DocxRenderer._set_table_keep_with_next_xml(child)
+            return
 
     @staticmethod
     def _set_keep_with_next_xml(paragraph) -> None:
@@ -1693,6 +1901,7 @@ class DocxRenderer:
             None,
         )
         if caption_text:
+            self._set_table_keep_with_next_xml(table._tbl)
             self._append_figure_caption(document, caption_text, number)
 
     def _append_figure_caption(
@@ -1702,6 +1911,7 @@ class DocxRenderer:
         number: int,
     ):
         caption = self._add_paragraph(document, "figure_caption", "Caption")
+        caption.paragraph_format.keep_together = True
         if not self._styles.is_template_role("figure_caption"):
             caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
             self._clear_first_line_indent(caption)
@@ -1880,6 +2090,60 @@ class DocxRenderer:
                     else remaining / max(1, len(flexible))
                 )
         return [round(value, 2) for value in widths]
+
+    @staticmethod
+    def _table_needs_full_width(block: TableBlock, column_width_mm: float) -> bool:
+        columns = max((len(row) for row in block.rows), default=0)
+        source_width = DocxRenderer._source_table_width_mm(block)
+        if source_width is not None and source_width > column_width_mm * 1.08:
+            return True
+        if columns >= 4:
+            return True
+        if columns >= 3:
+            longest = max(
+                (
+                    len(cell.strip())
+                    for row in block.rows
+                    for cell in row
+                    if cell.strip()
+                ),
+                default=0,
+            )
+            return longest >= 18
+        return False
+
+    @staticmethod
+    def _source_table_width_mm(block: TableBlock) -> float | None:
+        if block.column_widths_pt and any(
+            width is not None and width > 0 for width in block.column_widths_pt
+        ):
+            return sum(float(width or 0.0) for width in block.column_widths_pt) * 25.4 / 72
+        if not block.source_xml:
+            return None
+        try:
+            element = parse_xml(block.source_xml)
+        except Exception:
+            return None
+        values: list[int] = []
+        for column in element.xpath("./*[local-name()='tblGrid']/*[local-name()='gridCol']"):
+            raw = column.get(qn("w:w"))
+            if raw:
+                try:
+                    values.append(int(raw))
+                except ValueError:
+                    pass
+        if values:
+            return sum(values) * 25.4 / 1440
+        tbl_w = element.xpath("./*[local-name()='tblPr']/*[local-name()='tblW']")
+        if tbl_w:
+            raw = tbl_w[0].get(qn("w:w"))
+            kind = tbl_w[0].get(qn("w:type"))
+            if raw and kind == "dxa":
+                try:
+                    return int(raw) * 25.4 / 1440
+                except ValueError:
+                    return None
+        return None
 
     @staticmethod
     def _configure_template_table(table, widths_mm: list[float]) -> None:

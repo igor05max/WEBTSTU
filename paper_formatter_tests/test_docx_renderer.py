@@ -469,6 +469,7 @@ def test_docx_journal_template_keeps_bilingual_front_matter_and_figure_group(
     assert texts.index("English title") < texts.index("Introduction")
     assert len(result.tables) == 1
     assert len(result.tables[0].rows) == 1
+    assert "w:keepNext" in result.tables[0]._tbl.xml
     assert "2026;11(3):000-000" in result.sections[0].even_page_header.paragraphs[0].text
     assert "Author E.A. et al." in result.sections[0].footer.paragraphs[0].text
 
@@ -692,6 +693,10 @@ def test_docx_renderer_fills_template_front_matter_slots(tmp_path: Path) -> None
         profile=profile,
     )
     texts = [paragraph.text for paragraph in Document(output).paragraphs if paragraph.text]
+    result = Document(output)
+    abstract_paragraph = next(
+        paragraph for paragraph in result.paragraphs if paragraph.text.startswith("Abstract.")
+    )
 
     assert texts[:6] == [
         "УДК: 004.89",
@@ -704,6 +709,45 @@ def test_docx_renderer_fills_template_front_matter_slots(tmp_path: Path) -> None
     assert "For citation" not in texts
     assert "Template body placeholder" not in texts
     assert texts[-1] == "Generated body"
+    assert abstract_paragraph.runs[0].bold is True
+    assert abstract_paragraph.runs[1].bold is not True
+
+
+def test_docx_renderer_inserts_missing_front_matter_slots(tmp_path: Path) -> None:
+    template_path = tmp_path / "sparse-slots-template.docx"
+    template = Document()
+    template.add_paragraph("Title")
+    template.add_paragraph("Abstract")
+    template.add_paragraph("Keywords")
+    template.add_paragraph("Template body placeholder")
+    template.save(template_path)
+
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    article = ArticleIR(
+        metadata=ArticleMetadata(
+            titles=[LocalizedText(language="en", text="Generated title")],
+            authors=[Author(id="a1", name="E.A. Boichenko")],
+            affiliations=[Affiliation(id="af1", name="Tambov State Technical University")],
+            abstracts=[LocalizedText(language="en", text="Short abstract.")],
+            keywords=["materials"],
+        ),
+        body=[ParagraphBlock(id="p1", runs=[TextRun(text="Body")])],
+    )
+
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "sparse-slots-result.docx",
+        profile=profile,
+    )
+    texts = [paragraph.text for paragraph in Document(output).paragraphs if paragraph.text]
+
+    assert texts[:5] == [
+        "Generated title",
+        "E.A. Boichenko",
+        "Tambov State Technical University",
+        "Abstract. Short abstract.",
+        "Keywords. materials",
+    ]
 
 
 def test_docx_renderer_preserves_source_table_ooxml(tmp_path: Path) -> None:
@@ -717,6 +761,8 @@ def test_docx_renderer_preserves_source_table_ooxml(tmp_path: Path) -> None:
     table.cell(0, 0).merge(table.cell(0, 1))
     table.cell(1, 0).text = "A"
     table.cell(1, 1).text = "B"
+    for grid_column in table._tbl.tblGrid.gridCol_lst:
+        grid_column.set(qn("w:w"), "6000")
     shading = OxmlElement("w:shd")
     shading.set(qn("w:fill"), "D9EAD3")
     table.cell(1, 0)._tc.get_or_add_tcPr().append(shading)
@@ -745,5 +791,27 @@ def test_docx_renderer_preserves_source_table_ooxml(tmp_path: Path) -> None:
 
     assert len(result.tables) == 1
     assert 'w:fill="D9EAD3"' in result.tables[0]._tbl.xml
+    assert 'w:w="6000"' not in result.tables[0]._tbl.xml
+    assert 'w:type="fixed"' in result.tables[0]._tbl.xml
     assert audit["critical_errors"] == []
     assert audit["preserved"]["tables"] == {"source": 1, "result": 1}
+
+
+def test_validator_marks_missing_docx_authors_as_critical(tmp_path: Path) -> None:
+    article = ArticleIR(
+        metadata=ArticleMetadata(
+            authors=[Author(id="a1", name="E.A. Boichenko")],
+            affiliations=[Affiliation(id="af1", name="Tambov State Technical University")],
+        )
+    )
+    output = tmp_path / "missing-front.docx"
+    doc = Document()
+    doc.add_paragraph("Article without front matter")
+    doc.save(output)
+
+    audit = ConversionValidator._docx_content_audit(article, output)
+
+    assert audit["authors"]["result"] == 0
+    assert audit["affiliations"]["result"] == 0
+    assert any("потерял авторов" in error for error in audit["critical_errors"])
+    assert any("потерял организации" in error for error in audit["critical_errors"])

@@ -131,7 +131,13 @@ class ConversionValidator:
             docx_path if docx_exists else None,
         )
         warnings.extend(docx_object_audit.get("warnings", []))
+        docx_content_audit = self._docx_content_audit(
+            article,
+            docx_path if docx_exists else None,
+        )
+        warnings.extend(docx_content_audit.get("warnings", []))
         critical_errors = list(docx_object_audit.get("critical_errors", []))
+        critical_errors.extend(docx_content_audit.get("critical_errors", []))
         errors.extend(critical_errors)
 
         structure_score = self._structure_score(source_counts, article_counts)
@@ -162,6 +168,7 @@ class ConversionValidator:
                 "latex": tex_integrity,
                 "docx_styles": docx_style_audit,
                 "docx_objects": docx_object_audit,
+                "docx_content": docx_content_audit,
             },
             "outputs": {
                 "main_tex_exists": tex_exists,
@@ -181,6 +188,119 @@ class ConversionValidator:
             "warnings": warnings,
             "errors": errors,
         }
+
+    @staticmethod
+    def _docx_content_audit(article: ArticleIR, docx_path: Path | None) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "authors": {"source": len(article.metadata.authors), "result": None, "missing": []},
+            "affiliations": {
+                "source": len(article.metadata.affiliations),
+                "result": None,
+                "missing": [],
+            },
+            "critical_errors": [],
+            "warnings": [],
+        }
+        if docx_path is None:
+            return result
+        text = ConversionValidator._docx_plain_text(docx_path)
+        if not text:
+            result["warnings"].append(
+                "VALIDATION: не удалось извлечь текст итогового DOCX для проверки front matter."
+            )
+            return result
+
+        author_candidates = ConversionValidator._identity_candidates(
+            [author.name for author in article.metadata.authors]
+            + [variant.text for variant in article.metadata.author_variants]
+        )
+        affiliation_candidates = ConversionValidator._identity_candidates(
+            [affiliation.name for affiliation in article.metadata.affiliations]
+        )
+        author_missing = [
+            candidate
+            for candidate in author_candidates
+            if not ConversionValidator._identity_in_text(candidate, text)
+        ]
+        affiliation_missing = [
+            candidate
+            for candidate in affiliation_candidates
+            if not ConversionValidator._identity_in_text(candidate, text)
+        ]
+        result["authors"] = {
+            "source": len(author_candidates),
+            "result": len(author_candidates) - len(author_missing),
+            "missing": author_missing[:12],
+        }
+        result["affiliations"] = {
+            "source": len(affiliation_candidates),
+            "result": len(affiliation_candidates) - len(affiliation_missing),
+            "missing": affiliation_missing[:12],
+        }
+        if author_candidates and len(author_missing) == len(author_candidates):
+            result["critical_errors"].append(
+                "VALIDATION: итоговый DOCX потерял авторов: "
+                f"0 из {len(author_candidates)} найденных записей присутствуют в документе."
+            )
+        elif author_missing:
+            result["warnings"].append(
+                "VALIDATION: часть авторов не найдена в итоговом DOCX: "
+                + ", ".join(author_missing[:5])
+                + "."
+            )
+        if affiliation_candidates and len(affiliation_missing) == len(affiliation_candidates):
+            result["critical_errors"].append(
+                "VALIDATION: итоговый DOCX потерял организации: "
+                f"0 из {len(affiliation_candidates)} найденных записей присутствуют в документе."
+            )
+        elif affiliation_missing:
+            result["warnings"].append(
+                "VALIDATION: часть организаций не найдена в итоговом DOCX: "
+                + ", ".join(affiliation_missing[:5])
+                + "."
+            )
+        return result
+
+    @staticmethod
+    def _docx_plain_text(docx_path: Path) -> str:
+        try:
+            with zipfile.ZipFile(docx_path) as archive:
+                root = etree.fromstring(archive.read("word/document.xml"))
+        except Exception:
+            return ""
+        return "\n".join(root.xpath(".//*[local-name()='t']/text()"))
+
+    @staticmethod
+    def _identity_candidates(values: list[str]) -> list[str]:
+        candidates: list[str] = []
+        for value in values:
+            clean = re.sub(r"^\s*©\s*", "", value or "").strip()
+            for part in re.split(r"\s*[;,]\s*", clean):
+                part = re.sub(r"\s+", " ", part).strip()
+                if len(part) >= 4 and not re.fullmatch(r"[\W\d_]+", part):
+                    candidates.append(part)
+        return list(dict.fromkeys(candidates))
+
+    @staticmethod
+    def _identity_in_text(candidate: str, text: str) -> bool:
+        normalized_text = ConversionValidator._identity_normalize(text)
+        normalized_candidate = ConversionValidator._identity_normalize(candidate)
+        if normalized_candidate and normalized_candidate in normalized_text:
+            return True
+        tokens = [
+            token
+            for token in normalized_candidate.split()
+            if len(token) >= 4 or re.search(r"[А-Яа-яЁё]", token)
+        ]
+        return bool(tokens) and all(token in normalized_text for token in tokens)
+
+    @staticmethod
+    def _identity_normalize(value: str) -> str:
+        value = value.casefold()
+        value = re.sub(r"©", " ", value)
+        value = re.sub(r"(?<=[a-zа-яё])[a-d]\*?(?=\s|$)", "", value)
+        value = re.sub(r"[^0-9a-zа-яё]+", " ", value)
+        return re.sub(r"\s+", " ", value).strip()
 
     @staticmethod
     def _docx_object_audit(
