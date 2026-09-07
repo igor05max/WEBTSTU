@@ -316,6 +316,7 @@ class DocxParser:
                             runs=list_runs,
                             ordered=ordered,
                             level=self._list_level(item),
+                            source_xml=self._xml(item._p),
                             source=SourceTrace(
                                 format="docx",
                                 location=location,
@@ -331,6 +332,7 @@ class DocxParser:
                         ParagraphBlock(
                             id=paragraph_id,
                             runs=runs,
+                            source_xml=self._xml(item._p),
                             source=SourceTrace(
                                 format="docx",
                                 location=location,
@@ -355,6 +357,7 @@ class DocxParser:
                     group_label = f"figure-group-{order}"
                     for figure in table_figures:
                         figure.group_id = group_label
+                        figure.source_xml = self._xml(item._tbl)
                     if pending_caption:
                         table_figures[0].caption = pending_caption
                         pending_caption = None
@@ -389,6 +392,7 @@ class DocxParser:
                     caption=pending_caption,
                     header_rows=header_rows,
                     merged_cells=merged_cells,
+                    source_xml=self._xml(item._tbl),
                     source=SourceTrace(format="docx", location=location),
                 )
                 pending_caption = None
@@ -1304,6 +1308,7 @@ class DocxParser:
         return ParagraphBlock(
             id=self._next_id("p"),
             runs=self._paragraph_runs(paragraph),
+            source_xml=self._xml(paragraph._p),
             source=SourceTrace(format="docx", location=location),
         )
 
@@ -1331,6 +1336,7 @@ class DocxParser:
                     id=self._next_id("eq"),
                     latex=latex,
                     display=etree.QName(element).localname == "oMathPara" or not clean_text(paragraph.text),
+                    source_xml=self._xml(paragraph._p),
                     source=SourceTrace(
                         format="docx_omml",
                         location=location,
@@ -1410,6 +1416,7 @@ class DocxParser:
                 location=location,
                 confidence=0.95,
             ),
+            source_xml=self._xml(table._tbl),
         )
 
     def _extract_images(
@@ -1455,10 +1462,15 @@ class DocxParser:
                 FigureBlock(
                     id=self._next_id("fig"),
                     asset_id=asset.id,
+                    source_xml=self._xml(paragraph._p),
                     source=SourceTrace(format="docx_image", location=location),
                 )
             )
         return figures
+
+    @staticmethod
+    def _xml(element: etree._Element) -> str:
+        return etree.tostring(element, encoding="unicode")
 
     def _unique_asset_name(self, original_name: str) -> str:
         base = safe_filename(original_name, fallback="image.bin")

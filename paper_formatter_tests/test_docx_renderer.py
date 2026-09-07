@@ -31,9 +31,11 @@ from paper_formatter.models import (
     TextRun,
     TypographyProfile,
 )
+from paper_formatter.parsers.docx_parser import DocxParser
 from paper_formatter.renderers.docx_renderer import DocxRenderer
 from paper_formatter.template_analyzers.docx_analyzer import DocxTemplateAnalyzer
 from paper_formatter.template_analyzers.pdf_analyzer import PdfTemplateAnalyzer
+from paper_formatter.validator import ConversionValidator
 
 
 def test_docx_renderer_applies_template_geometry_and_typography(
@@ -651,3 +653,97 @@ def test_docx_renderer_prints_typed_heading_number_without_word_numbering(
     heading = Document(output).paragraphs[0]
 
     assert heading.text == "2.1. Методы исследования"
+
+
+def test_docx_renderer_fills_template_front_matter_slots(tmp_path: Path) -> None:
+    template_path = tmp_path / "slots-template.docx"
+    template = Document()
+    title_style = template.styles.add_style(
+        "JournalTitle",
+        WD_STYLE_TYPE.PARAGRAPH,
+    )
+    title_style.font.size = Pt(16)
+    template.add_paragraph("УДК")
+    template.add_paragraph("Title", style="JournalTitle")
+    template.add_paragraph("Authors")
+    template.add_paragraph("Affiliations")
+    template.add_paragraph("Abstract")
+    template.add_paragraph("Keywords")
+    template.add_paragraph("For citation")
+    template.add_paragraph("Template body placeholder")
+    template.save(template_path)
+
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    article = ArticleIR(
+        metadata=ArticleMetadata(
+            titles=[LocalizedText(language="en", text="Generated research title")],
+            authors=[Author(id="a1", name="I. Author")],
+            affiliations=[Affiliation(id="af1", name="Research University")],
+            abstracts=[LocalizedText(language="en", text="Short abstract.")],
+            keywords=["materials", "testing"],
+            udc="004.89",
+        ),
+        body=[ParagraphBlock(id="p1", runs=[TextRun(text="Generated body")])],
+    )
+
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "slots-result.docx",
+        profile=profile,
+    )
+    texts = [paragraph.text for paragraph in Document(output).paragraphs if paragraph.text]
+
+    assert texts[:6] == [
+        "УДК: 004.89",
+        "Generated research title",
+        "I. Author",
+        "Research University",
+        "Abstract. Short abstract.",
+        "Keywords. materials, testing",
+    ]
+    assert "For citation" not in texts
+    assert "Template body placeholder" not in texts
+    assert texts[-1] == "Generated body"
+
+
+def test_docx_renderer_preserves_source_table_ooxml(tmp_path: Path) -> None:
+    source_path = tmp_path / "article.docx"
+    source = Document()
+    source.add_heading("Article title", 0)
+    source.add_paragraph("I. Author")
+    source.add_paragraph("Table 1. Source table")
+    table = source.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Merged header"
+    table.cell(0, 0).merge(table.cell(0, 1))
+    table.cell(1, 0).text = "A"
+    table.cell(1, 1).text = "B"
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:fill"), "D9EAD3")
+    table.cell(1, 0)._tc.get_or_add_tcPr().append(shading)
+    source.save(source_path)
+
+    template_path = tmp_path / "template.docx"
+    template = Document()
+    template.add_paragraph("Title")
+    template.add_paragraph("Abstract")
+    template.save(template_path)
+
+    parser = DocxParser(source_path, tmp_path / "parsed-assets")
+    article = parser.parse()
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "result.docx",
+        profile=profile,
+        source_docx_path=source_path,
+    )
+    result = Document(output)
+    audit = ConversionValidator._docx_object_audit(
+        ConversionValidator._docx_counts(source_path),
+        output,
+    )
+
+    assert len(result.tables) == 1
+    assert 'w:fill="D9EAD3"' in result.tables[0]._tbl.xml
+    assert audit["critical_errors"] == []
+    assert audit["preserved"]["tables"] == {"source": 1, "result": 1}

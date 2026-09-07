@@ -82,6 +82,7 @@ class ParagraphBlock(BaseModel):
     type: Literal["paragraph"] = "paragraph"
     id: str
     runs: list[TextRun] = Field(default_factory=list)
+    source_xml: str | None = None
     source: SourceTrace | None = None
 
     @property
@@ -95,6 +96,7 @@ class ListItemBlock(BaseModel):
     runs: list[TextRun] = Field(default_factory=list)
     ordered: bool = False
     level: int = 0
+    source_xml: str | None = None
     source: SourceTrace | None = None
 
 
@@ -105,6 +107,7 @@ class EquationBlock(BaseModel):
     label: str | None = None
     number: str | None = None
     display: bool = True
+    source_xml: str | None = None
     source: SourceTrace | None = None
 
 
@@ -118,6 +121,7 @@ class FigureBlock(BaseModel):
     width_pt: float | None = None
     height_pt: float | None = None
     placement: str | None = None
+    source_xml: str | None = None
     source: SourceTrace | None = None
 
 
@@ -130,6 +134,7 @@ class TableBlock(BaseModel):
     header_rows: int = 0
     column_widths_pt: list[float | None] = Field(default_factory=list)
     merged_cells: list["MergedTableCell"] = Field(default_factory=list)
+    source_xml: str | None = None
     source: SourceTrace | None = None
 
 

@@ -15,6 +15,7 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.opc.packuri import PackURI
 from docx.opc.part import Part
 from docx.shared import Mm, Pt, RGBColor
+from lxml import etree
 
 from paper_formatter.models import (
     ArticleIR,
@@ -42,6 +43,8 @@ class DocxRenderer:
         self.warnings: list[str] = []
         self._styles = DocxTemplateStyleMap()
         self._template_document_used = False
+        self._source_document: Document | None = None
+        self._source_rel_map: dict[str, str] = {}
 
     def render(
         self,
@@ -50,8 +53,11 @@ class DocxRenderer:
         *,
         profile: TemplateProfile | None = None,
         asset_root: Path | None = None,
+        source_docx_path: Path | None = None,
     ) -> Path:
         self.warnings = []
+        self._source_document = self._open_source_document(source_docx_path)
+        self._source_rel_map = {}
         profile = profile or TemplateProfile()
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,7 +103,27 @@ class DocxRenderer:
                 front_keywords,
             )
         )
-        document = self._create_document(profile)
+        document = self._create_document(profile, keep_template_body=True)
+        front_matter_slots_used = False
+        if self._template_document_used:
+            front_matter_slots_used = self._render_front_matter_slots(
+                document,
+                article,
+                profile,
+                front_abstracts=front_abstracts,
+                front_keywords=front_keywords,
+                front_affiliations=front_affiliations,
+                secondary_abstracts=secondary_abstracts,
+                secondary_keywords=secondary_keywords,
+                secondary_affiliations=secondary_affiliations,
+                primary_language=primary_language,
+            )
+            if front_matter_slots_used:
+                self.warnings.append(
+                    "DOCX: первая страница заполнена по слотам DOCX-шаблона."
+                )
+            else:
+                self._clear_document_body(document)
         self._configure_document(
             document,
             profile,
@@ -118,9 +144,9 @@ class DocxRenderer:
             min(170.0, usable_width_mm * profile.figure_width_fraction),
         )
 
-        if identifier_before_title:
+        if not front_matter_slots_used and identifier_before_title:
             self._append_identifiers(document, article, profile)
-        if article.metadata.titles:
+        if not front_matter_slots_used and article.metadata.titles:
             paragraph = self._add_paragraph(document, "title", "Title")
             paragraph.alignment = self._alignment(profile.typography.title_alignment)
             self._clear_first_line_indent(paragraph)
@@ -133,13 +159,13 @@ class DocxRenderer:
             if profile.typography.title_size_pt:
                 run.font.size = Pt(profile.typography.title_size_pt)
             run.bold = profile.typography.title_bold
-        if article.metadata.subtitles:
+        if not front_matter_slots_used and article.metadata.subtitles:
             paragraph = self._add_paragraph(document, "subtitle", "Subtitle")
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             self._clear_first_line_indent(paragraph)
             self._apply_front_matter_geometry(paragraph, profile)
             paragraph.add_run(article.metadata.subtitles[0].text)
-        if article.metadata.authors:
+        if not front_matter_slots_used and article.metadata.authors:
             paragraph = self._add_paragraph(document, "authors")
             paragraph.alignment = self._alignment(profile.typography.author_alignment)
             self._clear_first_line_indent(paragraph)
@@ -149,7 +175,11 @@ class DocxRenderer:
                 ", ".join(author.name for author in article.metadata.authors),
                 profile,
             )
-        for affiliation in front_affiliations:
+        if not front_matter_slots_used:
+            affiliations_to_render = front_affiliations
+        else:
+            affiliations_to_render = []
+        for affiliation in affiliations_to_render:
             paragraph = self._add_paragraph(document, "affiliation")
             paragraph.alignment = self._alignment(
                 profile.typography.affiliation_alignment
@@ -159,23 +189,23 @@ class DocxRenderer:
             run = paragraph.add_run(affiliation.name)
             if not self._styles.is_template_role("affiliation"):
                 run.italic = True
-        if not identifier_before_title:
+        if not front_matter_slots_used and not identifier_before_title:
             self._append_identifiers(document, article, profile)
-        for abstract in front_abstracts:
+        for abstract in ([] if front_matter_slots_used else front_abstracts):
             paragraph = self._add_paragraph(document, "abstract")
             self._clear_first_line_indent(paragraph)
             paragraph.add_run(
                 "Abstract. " if abstract.language == "en" else "Аннотация. "
             ).bold = True
             paragraph.add_run(abstract.text)
-        if front_keywords:
+        if not front_matter_slots_used and front_keywords:
             paragraph = self._add_paragraph(document, "keywords")
             self._clear_first_line_indent(paragraph)
             paragraph.add_run("Ключевые слова: ").bold = True
             paragraph.add_run(", ".join(front_keywords))
 
         secondary_titles = article.metadata.titles[1:]
-        if bilingual_front_matter and (
+        if not front_matter_slots_used and bilingual_front_matter and (
             secondary_titles
             or article.metadata.author_variants
             or secondary_affiliations
@@ -290,13 +320,22 @@ class DocxRenderer:
                     heading_text = f"{block.number}. {heading_text}"
                 paragraph.add_run(heading_text)
             elif isinstance(block, ParagraphBlock):
-                self._append_paragraph_block(
-                    document,
-                    block,
-                    assets,
-                    asset_root,
-                    column_width_mm=column_width_mm,
-                )
+                if not (
+                    self._source_xml_has_complex_content(block.source_xml)
+                    and self._append_source_xml_block(
+                        document,
+                        block.source_xml,
+                        "body",
+                        profile=profile,
+                    )
+                ):
+                    self._append_paragraph_block(
+                        document,
+                        block,
+                        assets,
+                        asset_root,
+                        column_width_mm=column_width_mm,
+                    )
             elif isinstance(block, ListItemBlock):
                 role = "list_number" if block.ordered else "list_bullet"
                 fallback = "List Number" if block.ordered else "List Bullet"
@@ -312,19 +351,25 @@ class DocxRenderer:
                 full_width = profile.page.columns > 1
                 if full_width:
                     self._add_layout_section(document, profile, columns=1)
-                paragraph = self._add_paragraph(document, "equation")
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                self._clear_first_line_indent(paragraph)
-                converted = self._append_math(
-                    paragraph,
-                    block.latex,
-                    display=block.display,
-                )
-                if not converted:
-                    run = paragraph.add_run(block.latex)
-                    run.font.name = "Cambria Math"
-                if block.number:
-                    paragraph.add_run(f"    ({block.number})")
+                if not self._append_source_xml_block(
+                    document,
+                    block.source_xml,
+                    "equation",
+                    profile=profile,
+                ):
+                    paragraph = self._add_paragraph(document, "equation")
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    self._clear_first_line_indent(paragraph)
+                    converted = self._append_math(
+                        paragraph,
+                        block.latex,
+                        display=block.display,
+                    )
+                    if not converted:
+                        run = paragraph.add_run(block.latex)
+                        run.font.name = "Cambria Math"
+                    if block.number:
+                        paragraph.add_run(f"    ({block.number})")
                 if full_width:
                     self._add_layout_section(
                         document,
@@ -345,16 +390,33 @@ class DocxRenderer:
                     full_width = profile.page.columns > 1
                     if full_width:
                         self._add_layout_section(document, profile, columns=1)
-                    self._append_figure_group(
+                    preserved_group = self._append_source_xml_block(
                         document,
-                        grouped,
-                        assets,
-                        asset_root,
-                        usable_width_mm=(
-                            usable_width_mm if full_width else column_width_mm
-                        ),
-                        number=figure_index,
+                        grouped[0].source_xml,
+                        "figure",
+                        profile=profile,
                     )
+                    if not preserved_group:
+                        self._append_figure_group(
+                            document,
+                            grouped,
+                            assets,
+                            asset_root,
+                            usable_width_mm=(
+                                usable_width_mm if full_width else column_width_mm
+                            ),
+                            number=figure_index,
+                        )
+                    elif any(item.caption for item in grouped):
+                        self._append_figure_caption(
+                            document,
+                            next(
+                                item.caption
+                                for item in reversed(grouped)
+                                if item.caption
+                            ),
+                            figure_index,
+                        )
                     if full_width:
                         self._add_layout_section(
                             document,
@@ -369,46 +431,37 @@ class DocxRenderer:
                 full_width = profile.page.columns > 1
                 if full_width:
                     self._add_layout_section(document, profile, columns=1)
-                paragraph = self._add_paragraph(document, "figure")
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                self._clear_first_line_indent(paragraph)
-                asset = assets.get(block.asset_id)
-                path = self._asset_path(asset.path, asset_root) if asset else None
-                if path and path.exists() and path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
-                    paragraph.add_run().add_picture(
-                        str(path),
-                        width=Mm(
-                            full_figure_width_mm
-                            if full_width
-                            else max(
-                                20.0,
-                                column_width_mm * profile.figure_width_fraction,
-                            )
-                        ),
-                    )
-                else:
-                    paragraph.add_run("[рисунок]")
-                if block.caption:
-                    caption = self._add_paragraph(
-                        document, "figure_caption", "Caption"
-                    )
-                    if not self._styles.is_template_role("figure_caption"):
-                        caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        self._clear_first_line_indent(caption)
-                    if re.match(
-                        r"^(?:Рис(?:унок)?|Fig(?:ure)?)\.?\s*\d+",
-                        block.caption,
-                        flags=re.IGNORECASE,
-                    ):
-                        caption.add_run(block.caption)
-                    else:
-                        label = (
-                            "Рис."
-                            if re.search(r"[А-Яа-яЁё]", block.caption)
-                            else "Fig."
+                if not self._append_source_xml_block(
+                    document,
+                    block.source_xml,
+                    "figure",
+                    profile=profile,
+                ):
+                    paragraph = self._add_paragraph(document, "figure")
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    self._clear_first_line_indent(paragraph)
+                    asset = assets.get(block.asset_id)
+                    path = self._asset_path(asset.path, asset_root) if asset else None
+                    if path and path.exists() and path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+                        paragraph.add_run().add_picture(
+                            str(path),
+                            width=Mm(
+                                full_figure_width_mm
+                                if full_width
+                                else max(
+                                    20.0,
+                                    column_width_mm * profile.figure_width_fraction,
+                                )
+                            ),
                         )
-                        caption.add_run(f"{label} {figure_index}. ")
-                        caption.add_run(block.caption)
+                    else:
+                        paragraph.add_run("[рисунок]")
+                if block.caption:
+                    self._append_figure_caption(
+                        document,
+                        block.caption,
+                        figure_index,
+                    )
                 if full_width:
                     self._add_layout_section(
                         document,
@@ -421,15 +474,29 @@ class DocxRenderer:
                 full_width = profile.page.columns > 1 and table_columns >= 4
                 if full_width:
                     self._add_layout_section(document, profile, columns=1)
-                self._append_table(
+                if block.caption:
+                    caption = self._append_table_caption(
+                        document,
+                        block.caption,
+                        table_index,
+                    )
+                    caption.paragraph_format.keep_with_next = True
+                if not self._append_source_xml_block(
                     document,
-                    block,
+                    block.source_xml,
+                    "table_body",
                     profile=profile,
-                    usable_width_mm=(
-                        usable_width_mm if full_width else column_width_mm
-                    ),
-                    number=table_index,
-                )
+                ):
+                    self._append_table(
+                        document,
+                        block,
+                        profile=profile,
+                        usable_width_mm=(
+                            usable_width_mm if full_width else column_width_mm
+                        ),
+                        number=table_index,
+                        render_caption=not bool(block.caption),
+                    )
                 if full_width:
                     self._add_layout_section(
                         document,
@@ -487,7 +554,8 @@ class DocxRenderer:
             paragraph.add_run(note.text)
 
         if (
-            not bilingual_front_matter
+            not front_matter_slots_used
+            and not bilingual_front_matter
             and (secondary_titles or secondary_abstracts or secondary_keywords)
         ):
             self._add_layout_section(
@@ -577,7 +645,12 @@ class DocxRenderer:
             renamed += 1
         return renamed
 
-    def _create_document(self, profile: TemplateProfile) -> Document:
+    def _create_document(
+        self,
+        profile: TemplateProfile,
+        *,
+        keep_template_body: bool = False,
+    ) -> Document:
         source_path = Path(profile.source_path) if profile.source_path else None
         if (
             profile.source_type == "docx"
@@ -589,7 +662,8 @@ class DocxRenderer:
                 self._styles = DocxTemplateStyleMap.from_document(
                     document, source_path=source_path
                 )
-                self._clear_document_body(document)
+                if not keep_template_body:
+                    self._clear_document_body(document)
                 self._template_document_used = True
                 return document
             except Exception as exc:
@@ -603,11 +677,240 @@ class DocxRenderer:
         return document
 
     @staticmethod
+    def _open_source_document(source_docx_path: Path | None) -> Document | None:
+        if source_docx_path is None:
+            return None
+        path = Path(source_docx_path)
+        if path.suffix.lower() != ".docx" or not path.exists():
+            return None
+        try:
+            return Document(path)
+        except Exception:
+            return None
+
+    @staticmethod
     def _clear_document_body(document: Document) -> None:
         body = document._element.body
         for child in list(body):
             if child.tag != qn("w:sectPr"):
                 body.remove(child)
+
+    def _render_front_matter_slots(
+        self,
+        document: Document,
+        article: ArticleIR,
+        profile: TemplateProfile,
+        *,
+        front_abstracts,
+        front_keywords: list[str],
+        front_affiliations,
+        secondary_abstracts,
+        secondary_keywords: list[str],
+        secondary_affiliations,
+        primary_language: str | None,
+    ) -> bool:
+        slots: list[tuple[object, str, str]] = []
+        body = document._element.body
+        for index, child in enumerate(list(body)):
+            if child.tag == qn("w:sectPr"):
+                continue
+            if child.tag != qn("w:p"):
+                continue
+            text = self._xml_text(child)
+            role = self._front_slot_role(text, index)
+            if role:
+                slots.append((child, role, text))
+
+        roles = {role for _, role, _ in slots}
+        if not ({"title", "abstract", "keywords"} & roles):
+            return False
+
+        title = article.metadata.titles[0].text if article.metadata.titles else ""
+        secondary_title = (
+            article.metadata.titles[1].text
+            if len(article.metadata.titles) > 1
+            else ""
+        )
+        authors = ", ".join(author.name for author in article.metadata.authors)
+        secondary_authors = next(
+            (item.text for item in article.metadata.author_variants),
+            "",
+        )
+        affiliations = "; ".join(item.name for item in front_affiliations)
+        secondary_affiliation = "; ".join(item.name for item in secondary_affiliations)
+        email = next(
+            (author.email for author in article.metadata.authors if author.email),
+            "",
+        )
+        abstract = front_abstracts[0].text if front_abstracts else ""
+        secondary_abstract = (
+            secondary_abstracts[0].text if secondary_abstracts else ""
+        )
+        values = {
+            "udc": f"УДК: {article.metadata.udc}" if article.metadata.udc else "",
+            "doi": f"DOI: {article.metadata.doi}" if article.metadata.doi else "",
+            "title": title,
+            "secondary_title": secondary_title,
+            "authors": authors,
+            "secondary_authors": secondary_authors,
+            "affiliations": affiliations,
+            "secondary_affiliations": secondary_affiliation,
+            "email": email,
+            "abstract": self._labelled_front_value(
+                "Abstract" if primary_language == "en" else "Аннотация",
+                abstract,
+            ),
+            "secondary_abstract": self._labelled_front_value(
+                "Abstract" if primary_language != "en" else "Аннотация",
+                secondary_abstract,
+            ),
+            "keywords": self._labelled_front_value(
+                "Keywords" if primary_language == "en" else "Ключевые слова",
+                ", ".join(front_keywords),
+            ),
+            "secondary_keywords": self._labelled_front_value(
+                "Keywords" if primary_language != "en" else "Ключевые слова",
+                ", ".join(secondary_keywords),
+            ),
+            "citation": "",
+            "editorial_metadata": "",
+        }
+        used_roles: set[str] = set()
+        kept: set[int] = set()
+        for child, role, original_text in slots:
+            value = self._slot_value(role, values, used_roles)
+            if value:
+                self._replace_paragraph_text_xml(child, value)
+                kept.add(id(child))
+                continue
+            if self._slot_has_literal_content(original_text):
+                kept.add(id(child))
+
+        for child in list(body):
+            if child.tag == qn("w:sectPr"):
+                continue
+            if id(child) not in kept:
+                body.remove(child)
+        return True
+
+    @staticmethod
+    def _labelled_front_value(label: str, value: str) -> str:
+        value = value.strip()
+        return f"{label}. {value}" if value else ""
+
+    @staticmethod
+    def _slot_value(
+        role: str,
+        values: dict[str, str],
+        used_roles: set[str],
+    ) -> str:
+        if role == "title" and "title" in used_roles:
+            role = "secondary_title"
+        elif role == "authors" and "authors" in used_roles:
+            role = "secondary_authors"
+        elif role == "affiliations" and "affiliations" in used_roles:
+            role = "secondary_affiliations"
+        elif role == "abstract" and "abstract" in used_roles:
+            role = "secondary_abstract"
+        elif role == "keywords" and "keywords" in used_roles:
+            role = "secondary_keywords"
+        used_roles.add(role)
+        return values.get(role, "").strip()
+
+    @staticmethod
+    def _slot_has_literal_content(text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", text).strip()
+        if not normalized:
+            return False
+        return not bool(DocxRenderer._front_slot_role(normalized, 0))
+
+    @staticmethod
+    def _front_slot_role(text: str, index: int) -> str | None:
+        normalized = re.sub(r"\s+", " ", text).strip(" .:;-–—").casefold()
+        if not normalized:
+            return None
+        exact = {
+            "title": "title",
+            "article title": "title",
+            "название": "title",
+            "заглавие": "title",
+            "authors": "authors",
+            "author names": "authors",
+            "авторы": "authors",
+            "author": "authors",
+            "affiliation": "affiliations",
+            "affiliations": "affiliations",
+            "organization": "affiliations",
+            "организация": "affiliations",
+            "организации": "affiliations",
+            "email": "email",
+            "e-mail": "email",
+            "abstract": "abstract",
+            "аннотация": "abstract",
+            "keywords": "keywords",
+            "key words": "keywords",
+            "ключевые слова": "keywords",
+            "for citation": "citation",
+            "для цитирования": "citation",
+            "type of the paper": "editorial_metadata",
+            "article type": "editorial_metadata",
+            "тип статьи": "editorial_metadata",
+        }
+        if normalized in exact:
+            return exact[normalized]
+        if re.match(r"^(?:удк|udc)\b", normalized):
+            return "udc"
+        if re.match(r"^doi\b", normalized):
+            return "doi"
+        if normalized.startswith(("abstract.", "аннотация.")):
+            return "abstract"
+        if normalized.startswith(("keywords", "key words", "ключевые слова")):
+            return "keywords"
+        if normalized.startswith(("for citation", "для цитирования")):
+            return "citation"
+        if "рубрика журнала" in normalized:
+            return "editorial_metadata"
+        if index < 12 and normalized in {"заглавие статьи", "название статьи"}:
+            return "title"
+        return None
+
+    @staticmethod
+    def _xml_text(element) -> str:
+        return "".join(element.xpath(".//*[local-name()='t']/text()"))
+
+    @staticmethod
+    def _replace_paragraph_text_xml(paragraph_element, value: str) -> None:
+        texts = paragraph_element.xpath(".//*[local-name()='t']")
+        if not texts:
+            run = OxmlElement("w:r")
+            text = OxmlElement("w:t")
+            text.text = value
+            run.append(text)
+            paragraph_element.append(run)
+            return
+        texts[0].text = value
+        if value[:1].isspace() or value[-1:].isspace():
+            texts[0].set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        for text in texts[1:]:
+            text.text = ""
+
+    @staticmethod
+    def _source_xml_has_complex_content(source_xml: str | None) -> bool:
+        if not source_xml:
+            return False
+        return any(
+            token in source_xml
+            for token in (
+                "<w:hyperlink",
+                "<w:fldSimple",
+                "<w:object",
+                "<m:oMath",
+                "<m:oMathPara",
+                "<w:drawing",
+                "<w:pict",
+            )
+        )
+
 
     def _add_paragraph(
         self,
@@ -622,6 +925,130 @@ class DocxRenderer:
             paragraph = document.add_paragraph()
         self._styles.apply_paragraph_properties(paragraph, role)
         return paragraph
+
+    def _append_source_xml_block(
+        self,
+        document: Document,
+        source_xml: str | None,
+        role: str,
+        *,
+        profile: TemplateProfile,
+    ) -> bool:
+        if not source_xml or self._source_document is None:
+            return False
+        try:
+            element = parse_xml(source_xml)
+            self._remap_source_relationships(document, element)
+            local_name = etree.QName(element).localname
+            if local_name == "p":
+                self._apply_paragraph_style_xml(element, role)
+                if role in {"figure", "equation"}:
+                    self._set_keep_with_next_xml(element)
+            elif local_name == "tbl":
+                self._apply_table_style_xml(element)
+                self._apply_table_body_style_xml(element)
+                self._prevent_table_row_splits_xml(element)
+            else:
+                return False
+            self._append_body_element(document, element)
+            return True
+        except Exception as exc:
+            warning = (
+                "DOCX: исходный Word-блок не удалось перенести целиком; "
+                f"использована пересборка ({exc})."
+            )
+            if warning not in self.warnings:
+                self.warnings.append(warning)
+            return False
+
+    @staticmethod
+    def _append_body_element(document: Document, element) -> None:
+        body = document._element.body
+        sect_pr = body.find(qn("w:sectPr"))
+        if sect_pr is None:
+            body.append(element)
+        else:
+            body.insert(body.index(sect_pr), element)
+
+    def _remap_source_relationships(self, document: Document, element) -> None:
+        if self._source_document is None:
+            return
+        for node in element.iter():
+            for attr_name in (qn("r:id"), qn("r:embed"), qn("r:link")):
+                rel_id = node.get(attr_name)
+                if not rel_id:
+                    continue
+                mapped = self._source_rel_map.get(rel_id)
+                if mapped is None:
+                    relationship = self._source_document.part.rels.get(rel_id)
+                    if relationship is None:
+                        continue
+                    if relationship.is_external:
+                        mapped = document.part.relate_to(
+                            relationship.target_ref,
+                            relationship.reltype,
+                            is_external=True,
+                        )
+                    else:
+                        mapped = document.part.relate_to(
+                            relationship.target_part,
+                            relationship.reltype,
+                        )
+                    self._source_rel_map[rel_id] = mapped
+                node.set(attr_name, mapped)
+
+    def _apply_paragraph_style_xml(self, paragraph, role: str) -> None:
+        style_name = self._styles.paragraph(role)
+        if not style_name:
+            return
+        p_pr = paragraph.find(qn("w:pPr"))
+        if p_pr is None:
+            p_pr = OxmlElement("w:pPr")
+            paragraph.insert(0, p_pr)
+        p_style = p_pr.find(qn("w:pStyle"))
+        if p_style is None:
+            p_style = OxmlElement("w:pStyle")
+            p_pr.insert(0, p_style)
+        p_style.set(qn("w:val"), style_name)
+
+    def _apply_table_style_xml(self, table) -> None:
+        if not self._styles.table_style:
+            return
+        tbl_pr = table.find(qn("w:tblPr"))
+        if tbl_pr is None:
+            tbl_pr = OxmlElement("w:tblPr")
+            table.insert(0, tbl_pr)
+        tbl_style = tbl_pr.find(qn("w:tblStyle"))
+        if tbl_style is None:
+            tbl_style = OxmlElement("w:tblStyle")
+            tbl_pr.insert(0, tbl_style)
+        tbl_style.set(qn("w:val"), self._styles.table_style)
+
+    def _apply_table_body_style_xml(self, table) -> None:
+        style_name = self._styles.paragraph("table_body")
+        if not style_name:
+            return
+        for paragraph in table.xpath(".//*[local-name()='p']"):
+            self._apply_paragraph_style_xml(paragraph, "table_body")
+
+    @staticmethod
+    def _prevent_table_row_splits_xml(table) -> None:
+        for row in table.xpath("./*[local-name()='tr']"):
+            tr_pr = row.find(qn("w:trPr"))
+            if tr_pr is None:
+                tr_pr = OxmlElement("w:trPr")
+                row.insert(0, tr_pr)
+            if tr_pr.find(qn("w:cantSplit")) is None:
+                tr_pr.append(OxmlElement("w:cantSplit"))
+
+    @staticmethod
+    def _set_keep_with_next_xml(paragraph) -> None:
+        p_pr = paragraph.find(qn("w:pPr"))
+        if p_pr is None:
+            p_pr = OxmlElement("w:pPr")
+            paragraph.insert(0, p_pr)
+        if p_pr.find(qn("w:keepNext")) is None:
+            p_pr.append(OxmlElement("w:keepNext"))
 
     def _configure_document(
         self,
@@ -1266,20 +1693,54 @@ class DocxRenderer:
             None,
         )
         if caption_text:
-            caption = self._add_paragraph(document, "figure_caption", "Caption")
-            if not self._styles.is_template_role("figure_caption"):
-                caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                self._clear_first_line_indent(caption)
-            if re.match(
-                r"^(?:Рис(?:унок)?|Fig(?:ure)?)\.?\s*\d+",
-                caption_text,
-                flags=re.IGNORECASE,
-            ):
-                caption.add_run(caption_text)
-            else:
-                label = "Рис." if re.search(r"[А-Яа-яЁё]", caption_text) else "Fig."
-                caption.add_run(f"{label} {number}. ")
-                caption.add_run(caption_text)
+            self._append_figure_caption(document, caption_text, number)
+
+    def _append_figure_caption(
+        self,
+        document: Document,
+        caption_text: str,
+        number: int,
+    ):
+        caption = self._add_paragraph(document, "figure_caption", "Caption")
+        if not self._styles.is_template_role("figure_caption"):
+            caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            self._clear_first_line_indent(caption)
+        if re.match(
+            r"^(?:Рис(?:унок)?|Fig(?:ure)?)\.?\s*\d+",
+            caption_text,
+            flags=re.IGNORECASE,
+        ):
+            caption.add_run(caption_text)
+        else:
+            label = "Рис." if re.search(r"[А-Яа-яЁё]", caption_text) else "Fig."
+            caption.add_run(f"{label} {number}. ")
+            caption.add_run(caption_text)
+        return caption
+
+    def _append_table_caption(
+        self,
+        document: Document,
+        caption_text: str,
+        number: int,
+    ):
+        caption = self._add_paragraph(document, "table_caption", "Caption")
+        if not self._styles.is_template_role("table_caption"):
+            self._clear_first_line_indent(caption)
+            caption.paragraph_format.space_before = Pt(6)
+            caption.paragraph_format.space_after = Pt(3)
+        match = re.match(
+            r"^((?:Table|Таблица)\s+\d+[.:]?)\s*(.*)$",
+            caption_text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            caption.add_run(match.group(1) + " ").bold = True
+            caption.add_run(match.group(2))
+        else:
+            label = "Таблица" if re.search(r"[А-Яа-яЁё]", caption_text) else "Table"
+            caption.add_run(f"{label} {number}. ").bold = True
+            caption.add_run(caption_text)
+        return caption
 
     def _append_table(
         self,
@@ -1289,34 +1750,13 @@ class DocxRenderer:
         profile: TemplateProfile,
         usable_width_mm: float,
         number: int,
+        render_caption: bool = True,
     ) -> None:
         if not block.rows:
             return
         columns = max(len(row) for row in block.rows)
-        if block.caption:
-            caption = self._add_paragraph(
-                document, "table_caption", "Caption"
-            )
-            if not self._styles.is_template_role("table_caption"):
-                self._clear_first_line_indent(caption)
-                caption.paragraph_format.space_before = Pt(6)
-                caption.paragraph_format.space_after = Pt(3)
-            match = re.match(
-                r"^((?:Table|Таблица)\s+\d+[.:]?)\s*(.*)$",
-                block.caption,
-                flags=re.IGNORECASE,
-            )
-            if match:
-                caption.add_run(match.group(1) + " ").bold = True
-                caption.add_run(match.group(2))
-            else:
-                label = (
-                    "Таблица"
-                    if re.search(r"[А-Яа-яЁё]", block.caption)
-                    else "Table"
-                )
-                caption.add_run(f"{label} {number}. ").bold = True
-                caption.add_run(block.caption)
+        if render_caption and block.caption:
+            self._append_table_caption(document, block.caption, number)
         table = document.add_table(rows=len(block.rows), cols=columns)
         if self._styles.table_style and self._styles.table_style in document.styles:
             table.style = self._styles.table_style

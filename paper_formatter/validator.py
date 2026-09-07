@@ -126,6 +126,13 @@ class ConversionValidator:
             article,
         )
         warnings.extend(docx_style_audit.get("warnings", []))
+        docx_object_audit = self._docx_object_audit(
+            source_counts,
+            docx_path if docx_exists else None,
+        )
+        warnings.extend(docx_object_audit.get("warnings", []))
+        critical_errors = list(docx_object_audit.get("critical_errors", []))
+        errors.extend(critical_errors)
 
         structure_score = self._structure_score(source_counts, article_counts)
         asset_score = asset_checks["score"]
@@ -154,6 +161,7 @@ class ConversionValidator:
                 "assets": asset_checks,
                 "latex": tex_integrity,
                 "docx_styles": docx_style_audit,
+                "docx_objects": docx_object_audit,
             },
             "outputs": {
                 "main_tex_exists": tex_exists,
@@ -169,8 +177,47 @@ class ConversionValidator:
             },
             "package": package_analysis,
             "manual_review_required": manual_review,
+            "critical_errors": critical_errors,
             "warnings": warnings,
             "errors": errors,
+        }
+
+    @staticmethod
+    def _docx_object_audit(
+        source_counts: dict[str, int | None],
+        docx_path: Path | None,
+    ) -> dict[str, Any]:
+        result_counts = (
+            ConversionValidator._docx_counts(docx_path)
+            if docx_path is not None
+            else {}
+        )
+        warnings: list[str] = []
+        critical_errors: list[str] = []
+        preserved: dict[str, dict[str, int | None]] = {}
+        labels = {
+            "tables": "таблицы",
+            "drawings": "рисунки",
+            "formulas": "формулы",
+            "media_files": "media-файлы",
+        }
+        for key, label in labels.items():
+            source = source_counts.get(key)
+            target = result_counts.get(key)
+            preserved[key] = {"source": source, "result": target}
+            if source is None or source <= 0 or target is None:
+                continue
+            if target < source:
+                critical_errors.append(
+                    "VALIDATION: итоговый DOCX потерял "
+                    f"{label}: {target} < {source}."
+                )
+        return {
+            "source_counts": source_counts,
+            "result_counts": result_counts,
+            "preserved": preserved,
+            "critical_errors": critical_errors,
+            "warnings": warnings,
         }
 
     @staticmethod
