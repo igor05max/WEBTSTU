@@ -214,6 +214,31 @@ def test_docx_parser_recognizes_bilingual_publisher_front_matter(
     assert section.number == "1"
 
 
+def test_docx_parser_skips_editorial_metadata_continuation(tmp_path: Path) -> None:
+    source = tmp_path / "rubric-continuation.docx"
+    document = Document()
+    document.add_paragraph("Рубрика журнала (необходимо выбрать из списка):")
+    document.add_paragraph("Materials Science")
+    title = document.add_paragraph("Actual article title")
+    title.runs[0].bold = True
+    title.runs[0].font.size = Pt(16)
+    document.add_paragraph("E.A. Author")
+    document.add_paragraph("Abstract. Abstract text.")
+    document.add_paragraph("Keywords: table")
+    document.add_heading("Introduction", 1)
+    document.add_paragraph("Main body text.")
+    document.save(source)
+
+    article = DocxParser(source, tmp_path / "assets").parse()
+    body_text = "\n".join(
+        block.text for block in article.body if isinstance(block, ParagraphBlock)
+    )
+
+    assert [title.text for title in article.metadata.titles] == ["Actual article title"]
+    assert "Materials Science" not in body_text
+    assert "Рубрика журнала" not in body_text
+
+
 def test_docx_parser_preserves_inline_omml_inside_text_paragraph(
     tmp_path: Path,
 ) -> None:

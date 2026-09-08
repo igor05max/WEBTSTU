@@ -474,12 +474,15 @@ class DocxRenderer:
                     )
             elif isinstance(block, TableBlock):
                 table_index += 1
+                base_table_font_size = self._table_font_size(profile)
                 table_layout = self._table_adapter.decide(
                     block,
                     column_width_mm=column_width_mm,
                     full_width_mm=usable_width_mm,
                     template_columns=profile.page.columns,
+                    table_font_size_pt=base_table_font_size,
                 )
+                self._extend_unique_warnings(table_layout.warnings)
                 full_width = table_layout.mode == "wide"
                 if full_width:
                     self._add_layout_section(document, profile, columns=1)
@@ -497,12 +500,16 @@ class DocxRenderer:
                     profile=profile,
                     table_block=block,
                     usable_width_mm=table_layout.usable_width_mm,
+                    table_widths_mm=table_layout.widths_mm,
+                    table_font_size_pt=table_layout.font_size_pt,
                 ):
                     self._append_table(
                         document,
                         block,
                         profile=profile,
                         usable_width_mm=table_layout.usable_width_mm,
+                        widths_mm=table_layout.widths_mm,
+                        table_font_size_pt=table_layout.font_size_pt,
                         number=table_index,
                         render_caption=not bool(block.caption),
                     )
@@ -789,7 +796,7 @@ class DocxRenderer:
         anchors: dict[str, object] = {}
         for child, role, original_text in slots:
             target_role = self._slot_target_role(role, used_roles)
-            value = values.get(target_role, "").strip()
+            value = values.get(target_role, "").strip() if target_role else ""
             if value:
                 if target_role in labels:
                     self._replace_labelled_paragraph_text_xml(
@@ -847,7 +854,10 @@ class DocxRenderer:
     def _slot_target_role(
         role: str,
         used_roles: set[str],
-    ) -> str:
+    ) -> str | None:
+        singleton_roles = {"email", "udc", "doi", "citation", "editorial_metadata"}
+        if role in singleton_roles and role in used_roles:
+            return None
         if role == "title" and "title" in used_roles:
             role = "secondary_title"
         elif role == "authors" and "authors" in used_roles:
@@ -1036,6 +1046,18 @@ class DocxRenderer:
         self._styles.apply_paragraph_properties(paragraph, role)
         return paragraph
 
+    def _extend_unique_warnings(self, warnings: list[str]) -> None:
+        for warning in warnings:
+            if warning and warning not in self.warnings:
+                self.warnings.append(warning)
+
+    @staticmethod
+    def _table_font_size(profile: TemplateProfile) -> float:
+        return profile.typography.caption_size_pt or max(
+            8.0,
+            profile.typography.main_size_pt - 1.0,
+        )
+
     def _append_source_xml_block(
         self,
         document: Document,
@@ -1045,6 +1067,8 @@ class DocxRenderer:
         profile: TemplateProfile,
         table_block: TableBlock | None = None,
         usable_width_mm: float | None = None,
+        table_widths_mm: list[float] | None = None,
+        table_font_size_pt: float | None = None,
     ) -> bool:
         if not source_xml or self._source_document is None:
             return False
@@ -1064,6 +1088,14 @@ class DocxRenderer:
                         element,
                         table_block,
                         usable_width_mm,
+                        widths_mm=table_widths_mm,
+                    )
+                if table_block is not None:
+                    self._normalize_source_table_typography_xml(
+                        element,
+                        profile,
+                        font_size_pt=table_font_size_pt
+                        or self._table_font_size(profile),
                     )
                 if role == "figure":
                     self._set_table_keep_with_next_xml(element)
@@ -1136,12 +1168,68 @@ class DocxRenderer:
         table,
         block: TableBlock,
         usable_width_mm: float,
+        *,
+        widths_mm: list[float] | None = None,
     ) -> None:
         self._table_adapter.adapt_source_table_geometry_xml(
             table,
             block,
             usable_width_mm,
+            widths_mm=widths_mm,
         )
+
+    def _normalize_source_table_typography_xml(
+        self,
+        table,
+        profile: TemplateProfile,
+        *,
+        font_size_pt: float,
+    ) -> None:
+        style_name = self._styles.paragraph("table_body")
+        for paragraph in table.xpath(".//*[local-name()='p']"):
+            self._apply_paragraph_style_xml(paragraph, "table_body")
+            p_pr = paragraph.find(qn("w:pPr"))
+            if p_pr is None:
+                p_pr = OxmlElement("w:pPr")
+                paragraph.insert(0, p_pr)
+            for tag in ("w:ind", "w:spacing"):
+                child = p_pr.find(qn(tag))
+                if child is not None:
+                    p_pr.remove(child)
+            spacing = OxmlElement("w:spacing")
+            spacing.set(qn("w:before"), "0")
+            spacing.set(qn("w:after"), "0")
+            spacing.set(qn("w:line"), "240")
+            spacing.set(qn("w:lineRule"), "auto")
+            p_pr.append(spacing)
+            if style_name:
+                p_style = p_pr.find(qn("w:pStyle"))
+                if p_style is None:
+                    p_style = OxmlElement("w:pStyle")
+                    p_pr.insert(0, p_style)
+                p_style.set(qn("w:val"), style_name)
+
+        font_name = profile.typography.main_font
+        size_value = str(max(1, round(font_size_pt * 2)))
+        for run in table.xpath(".//*[local-name()='r']"):
+            r_pr = run.find(qn("w:rPr"))
+            if r_pr is None:
+                r_pr = OxmlElement("w:rPr")
+                run.insert(0, r_pr)
+            for tag in ("w:rFonts", "w:sz", "w:szCs"):
+                child = r_pr.find(qn(tag))
+                if child is not None:
+                    r_pr.remove(child)
+            fonts = OxmlElement("w:rFonts")
+            for attr in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+                fonts.set(qn(attr), font_name)
+            r_pr.insert(0, fonts)
+            size = OxmlElement("w:sz")
+            size.set(qn("w:val"), size_value)
+            r_pr.append(size)
+            size_cs = OxmlElement("w:szCs")
+            size_cs.set(qn("w:val"), size_value)
+            r_pr.append(size_cs)
 
     def _apply_table_style_xml(self, table) -> None:
         if not self._styles.table_style:
@@ -1901,6 +1989,8 @@ class DocxRenderer:
         *,
         profile: TemplateProfile,
         usable_width_mm: float,
+        widths_mm: list[float] | None = None,
+        table_font_size_pt: float | None = None,
         number: int,
         render_caption: bool = True,
     ) -> None:
@@ -1916,15 +2006,12 @@ class DocxRenderer:
             table.style = None
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.autofit = False
-        widths_mm = self._column_widths_mm(block, columns, usable_width_mm)
+        widths_mm = widths_mm or self._column_widths_mm(block, columns, usable_width_mm)
         if self._styles.table_style:
             self._configure_template_table(table, widths_mm)
         else:
             self._configure_academic_table(table, widths_mm)
-        table_font_size = profile.typography.caption_size_pt or max(
-            8.0,
-            profile.typography.main_size_pt - 1.0,
-        )
+        table_font_size = table_font_size_pt or self._table_font_size(profile)
         for row_index, row in enumerate(block.rows):
             table.rows[row_index].height_rule = None
             self._prevent_row_split(table.rows[row_index])

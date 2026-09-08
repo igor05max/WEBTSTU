@@ -111,6 +111,7 @@ class DocxParser:
         pending_caption: str | None = None
         in_references = False
         in_secondary_metadata = False
+        pending_editorial_continuation = False
         heading_counters = [0] * 6
 
         for order, item in enumerate(items, start=1):
@@ -137,6 +138,16 @@ class DocxParser:
                     run.text or run.asset_id or run.math_latex is not None
                     for run in runs
                 )
+
+                if pending_editorial_continuation:
+                    pending_editorial_continuation = False
+                    if (
+                        role in {"paragraph", "unknown", "subtitle"}
+                        and self._looks_like_editorial_continuation_value(text)
+                    ):
+                        article.body.extend(equation_blocks)
+                        article.body.extend(image_blocks)
+                        continue
 
                 if pending_caption and image_blocks:
                     image_blocks[0].caption = pending_caption
@@ -204,6 +215,8 @@ class DocxParser:
                     continue
 
                 if role == "editorial_metadata":
+                    if self._is_rubric_prompt(text):
+                        pending_editorial_continuation = True
                     article.body.extend(equation_blocks)
                     article.body.extend(image_blocks)
                     continue
@@ -1541,6 +1554,36 @@ class DocxParser:
         return "keyword" in style_lower or "ключев" in style_lower or bool(
             re.match(r"^(ключевые слова|keywords|key words)\s*[:.]", text, flags=re.IGNORECASE)
         )
+
+    @staticmethod
+    def _is_rubric_prompt(text: str) -> bool:
+        return bool(
+            re.match(
+                r"^\s*(?:рубрика\s+журнала|journal\s+(?:section|category))\b",
+                text or "",
+                flags=re.IGNORECASE,
+            )
+        )
+
+    @staticmethod
+    def _looks_like_editorial_continuation_value(text: str) -> bool:
+        text = clean_text(text)
+        if not text or len(text) > 120:
+            return False
+        if re.match(
+            r"^(?:аннотация|abstract|ключевые\s+слова|keywords|key\s+words|"
+            r"автор(?:ы)?|authors?|doi|удк|udc)\b",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            return False
+        if re.match(
+            r"^(?:рисунок|рис\.?|figure|fig\.?|таблица|table|references|литература)\b",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            return False
+        return not text.endswith((".", "!", "?"))
 
     def _is_caption(self, style_lower: str, text: str) -> bool:
         if not text:

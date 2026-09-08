@@ -837,6 +837,163 @@ def test_wide_table_adapter_classifies_table_modes() -> None:
     assert sum(wide_decision.widths_mm) == pytest.approx(170.0, abs=0.2)
 
 
+def test_wide_table_with_long_headers_uses_content_widths() -> None:
+    adapter = WideTableAdapter()
+    block = TableBlock(
+        id="table3",
+        header_rows=2,
+        rows=[
+            [
+                "No.",
+                "Melt flow rate (200 C, 5 kg)",
+                "Maximum tensile strength, MPa",
+                "In air",
+                "",
+                "In oil",
+                "",
+            ],
+            ["", "", "", "7 days", "14 days", "7 days", "14 days"],
+            ["1", "2.14", "43.8", "0.81", "0.79", "0.76", "0.73"],
+        ],
+        column_widths_pt=[72, 72, 72, 72, 72, 72, 72],
+    )
+
+    decision = adapter.decide(
+        block,
+        column_width_mm=78.0,
+        full_width_mm=170.0,
+        template_columns=2,
+        table_font_size_pt=8.0,
+    )
+
+    assert decision.mode == "wide"
+    assert decision.font_size_pt <= 7.0
+    assert sum(decision.widths_mm) == pytest.approx(170.0, abs=0.2)
+    assert decision.widths_mm[1] > decision.widths_mm[0]
+    assert decision.widths_mm[2] > decision.widths_mm[0]
+    assert decision.widths_mm[0] < 12.0
+
+
+def test_wide_source_table_layout_and_typography_are_adapted(tmp_path: Path) -> None:
+    source_path = tmp_path / "wide-source.docx"
+    source = Document()
+    source.add_heading("Wide source table", 0)
+    source.add_paragraph("E.A. Author")
+    source.add_paragraph("Table 1. Mechanical properties")
+    table = source.add_table(rows=4, cols=7)
+    table.style = "Table Grid"
+    for grid_column in table._tbl.tblGrid.gridCol_lst:
+        grid_column.set(qn("w:w"), "3000")
+    headers = [
+        "No.",
+        "Melt flow rate (200 C, 5 kg)",
+        "Maximum tensile strength, MPa",
+        "In air",
+        "",
+        "In oil",
+        "",
+    ]
+    for index, value in enumerate(headers):
+        table.cell(0, index).text = value
+    table.cell(0, 3).merge(table.cell(0, 4))
+    table.cell(0, 5).merge(table.cell(0, 6))
+    table.cell(1, 3).text = "7 days"
+    table.cell(1, 4).text = "14 days"
+    table.cell(1, 5).text = "7 days"
+    table.cell(1, 6).text = "14 days"
+    for row_index in range(2, 4):
+        for column_index in range(7):
+            table.cell(row_index, column_index).text = f"{row_index}-{column_index}"
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:fill"), "D9EAD3")
+    table.cell(2, 1)._tc.get_or_add_tcPr().append(shading)
+    for row in table.rows:
+        for cell in row.cells:
+            paragraph = cell.paragraphs[0]
+            paragraph.paragraph_format.space_before = Pt(12)
+            paragraph.paragraph_format.space_after = Pt(12)
+            for run in paragraph.runs:
+                run.font.name = "Arial"
+                run.font.size = Pt(12)
+    source.save(source_path)
+
+    template_path = tmp_path / "two-column-template.docx"
+    template = Document()
+    template.add_paragraph("Title")
+    template.add_paragraph("Abstract")
+    body = template.add_section(WD_SECTION.CONTINUOUS)
+    cols = OxmlElement("w:cols")
+    cols.set(qn("w:num"), "2")
+    body._sectPr.append(cols)
+    template.save(template_path)
+
+    parser = DocxParser(source_path, tmp_path / "assets")
+    article = parser.parse()
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    output = DocxRenderer().render(
+        article,
+        tmp_path / "wide-result.docx",
+        profile=profile,
+        source_docx_path=source_path,
+    )
+    result = Document(output)
+    table_xml = result.tables[0]._tbl.xml
+    cols_by_section = [
+        section._sectPr.xpath("./w:cols")[0].get(qn("w:num"))
+        for section in result.sections
+        if section._sectPr.xpath("./w:cols")
+    ]
+    tbl_width = result.tables[0]._tbl.tblPr.find(qn("w:tblW"))
+
+    assert len(result.tables) == 1
+    assert len(result.tables[0].columns) == 7
+    assert len(result.sections) >= 4
+    assert cols_by_section[-2:] == ["1", "2"]
+    assert tbl_width is not None
+    expected_width_mm = (
+        (profile.page.width_mm or 210.0)
+        - profile.page.margin_left_mm
+        - profile.page.margin_right_mm
+    )
+    assert int(tbl_width.get(qn("w:w"))) == pytest.approx(
+        round(expected_width_mm * 1440 / 25.4),
+        abs=12,
+    )
+    assert 'w:w="3000"' not in table_xml
+    assert "Arial" not in table_xml
+    assert '<w:sz w:val="24"' not in table_xml
+    assert 'w:before="240"' not in table_xml
+    assert "w:gridSpan" in table_xml
+    assert 'w:fill="D9EAD3"' in table_xml
+
+
+def test_duplicate_email_rendered_once(tmp_path: Path) -> None:
+    template_path = tmp_path / "duplicate-email-template.docx"
+    template = Document()
+    template.add_paragraph("Title")
+    template.add_paragraph("Email")
+    template.add_paragraph("Email")
+    template.add_paragraph("Abstract")
+    template.add_paragraph("Keywords")
+    template.save(template_path)
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    article = ArticleIR(
+        metadata=ArticleMetadata(
+            titles=[LocalizedText(language="en", text="Email singleton")],
+            authors=[Author(id="a1", name="E.A. Author", email="author@example.test")],
+            abstracts=[LocalizedText(language="en", text="Abstract text.")],
+            keywords=["email"],
+        )
+    )
+
+    output = DocxRenderer().render(article, tmp_path / "email.docx", profile=profile)
+    texts = [paragraph.text for paragraph in Document(output).paragraphs]
+    text = "\n".join(texts)
+
+    assert text.count("author@example.test") == 1
+    assert "Email" not in texts
+
+
 def test_validator_marks_missing_docx_authors_as_critical(tmp_path: Path) -> None:
     article = ArticleIR(
         metadata=ArticleMetadata(
