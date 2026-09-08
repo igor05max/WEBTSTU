@@ -24,10 +24,14 @@ _REFERENCES = {
     "bibliography",
     "библиографический список",
 }
+_IDENTIFIER_FRONT_MATTER = re.compile(
+    r"^(?:\d+\s*[-–—]\s*)?(?:УДК|UDC|DOI|ISSN)\b",
+    re.IGNORECASE,
+)
 _ADMIN_FRONT_MATTER = re.compile(
-    r"^(?:(?:\d+\s*[-–—]\s*)?(?:УДК|UDC|DOI|ISSN)\b|"
-    r"тип\s+статьи\b|article\s+type\b|"
-    r"рубрика\s+журнала\b|journal\s+(?:section|category)\b)",
+    r"^(?:тип\s+статьи\b|article\s+type\b|"
+    r"рубрика\s+журнала\b|journal\s+(?:section|category)\b|"
+    r"for\s*citation\b|forcitation\b|для\s+цитирования\b)",
     re.IGNORECASE,
 )
 _AFFILIATION = re.compile(
@@ -142,9 +146,16 @@ class RuleSemanticClassifier:
         if not text:
             return _RuleResult("paragraph", 1.0, "Пустой служебный блок")
 
-        if _ADMIN_FRONT_MATTER.match(text):
+        if _IDENTIFIER_FRONT_MATTER.match(text):
             return _RuleResult(
                 "paragraph",
+                0.99,
+                "Идентификатор издательских метаданных, не название статьи",
+            )
+
+        if _ADMIN_FRONT_MATTER.match(text):
+            return _RuleResult(
+                "editorial_metadata",
                 0.99,
                 "Служебная строка издательского шаблона, не название статьи",
             )

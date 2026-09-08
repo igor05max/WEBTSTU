@@ -21,6 +21,7 @@ SemanticRole = Literal[
     "table_caption",
     "references_heading",
     "reference",
+    "editorial_metadata",
     "paragraph",
     "unknown",
 ]

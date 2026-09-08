@@ -204,6 +204,11 @@ def test_docx_parser_recognizes_bilingual_publisher_front_matter(
         "© E.A. Boychenkoa,b, S.M. Anshinc"
     )
     assert len(article.metadata.affiliations) == 2
+    body_text = "\n".join(
+        block.text for block in article.body if isinstance(block, ParagraphBlock)
+    )
+    assert "Тип статьи" not in body_text
+    assert "Рубрика журнала" not in body_text
     section = next(block for block in article.body if isinstance(block, SectionBlock))
     assert section.title == "Introduction"
     assert section.number == "1"

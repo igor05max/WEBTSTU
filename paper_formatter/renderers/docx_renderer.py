@@ -29,6 +29,7 @@ from paper_formatter.models import (
     TextRun,
 )
 from paper_formatter.renderers.docx_template_styles import DocxTemplateStyleMap
+from paper_formatter.renderers.docx_table_adapter import WideTableAdapter
 from paper_formatter.renderers.omml_renderer import (
     LatexToOmmlConverter,
     OmmlConversionError,
@@ -45,6 +46,7 @@ class DocxRenderer:
         self._template_document_used = False
         self._source_document: Document | None = None
         self._source_rel_map: dict[str, str] = {}
+        self._table_adapter = WideTableAdapter()
 
     def render(
         self,
@@ -472,11 +474,13 @@ class DocxRenderer:
                     )
             elif isinstance(block, TableBlock):
                 table_index += 1
-                table_columns = max((len(row) for row in block.rows), default=0)
-                full_width = profile.page.columns > 1 and self._table_needs_full_width(
+                table_layout = self._table_adapter.decide(
                     block,
-                    column_width_mm,
+                    column_width_mm=column_width_mm,
+                    full_width_mm=usable_width_mm,
+                    template_columns=profile.page.columns,
                 )
+                full_width = table_layout.mode == "wide"
                 if full_width:
                     self._add_layout_section(document, profile, columns=1)
                 if block.caption:
@@ -492,15 +496,13 @@ class DocxRenderer:
                     "table_body",
                     profile=profile,
                     table_block=block,
-                    usable_width_mm=(usable_width_mm if full_width else column_width_mm),
+                    usable_width_mm=table_layout.usable_width_mm,
                 ):
                     self._append_table(
                         document,
                         block,
                         profile=profile,
-                        usable_width_mm=(
-                            usable_width_mm if full_width else column_width_mm
-                        ),
+                        usable_width_mm=table_layout.usable_width_mm,
                         number=table_index,
                         render_caption=not bool(block.caption),
                     )
@@ -893,6 +895,7 @@ class DocxRenderer:
             "key words": "keywords",
             "ключевые слова": "keywords",
             "for citation": "citation",
+            "forcitation": "citation",
             "для цитирования": "citation",
             "type of the paper": "editorial_metadata",
             "article type": "editorial_metadata",
@@ -908,7 +911,7 @@ class DocxRenderer:
             return "abstract"
         if normalized.startswith(("keywords", "key words", "ключевые слова")):
             return "keywords"
-        if normalized.startswith(("for citation", "для цитирования")):
+        if normalized.startswith(("for citation", "forcitation", "для цитирования")):
             return "citation"
         if "рубрика журнала" in normalized:
             return "editorial_metadata"
@@ -1134,72 +1137,11 @@ class DocxRenderer:
         block: TableBlock,
         usable_width_mm: float,
     ) -> None:
-        columns = max((len(row) for row in block.rows), default=0)
-        if columns <= 0:
-            grid = table.find(qn("w:tblGrid"))
-            columns = len(grid.findall(qn("w:gridCol"))) if grid is not None else 1
-        widths_mm = self._column_widths_mm(block, columns, usable_width_mm)
-        widths_dxa = [max(240, round(width * 1440 / 25.4)) for width in widths_mm]
-
-        tbl_pr = table.find(qn("w:tblPr"))
-        if tbl_pr is None:
-            tbl_pr = OxmlElement("w:tblPr")
-            table.insert(0, tbl_pr)
-        self._set_child_value(tbl_pr, "w:tblW", {"w:type": "dxa", "w:w": str(sum(widths_dxa))})
-        self._set_child_value(tbl_pr, "w:tblLayout", {"w:type": "fixed"})
-        self._set_child_value(tbl_pr, "w:jc", {"w:val": "center"})
-        for removable in ("w:tblInd", "w:tblCellSpacing"):
-            child = tbl_pr.find(qn(removable))
-            if child is not None:
-                tbl_pr.remove(child)
-
-        grid = table.find(qn("w:tblGrid"))
-        if grid is None:
-            grid = OxmlElement("w:tblGrid")
-            insert_at = 1 if table.find(qn("w:tblPr")) is not None else 0
-            table.insert(insert_at, grid)
-        for child in list(grid):
-            grid.remove(child)
-        for width in widths_dxa:
-            column = OxmlElement("w:gridCol")
-            column.set(qn("w:w"), str(width))
-            grid.append(column)
-
-        for row in table.xpath("./*[local-name()='tr']"):
-            tr_pr = row.find(qn("w:trPr"))
-            if tr_pr is not None:
-                for height in list(tr_pr.findall(qn("w:trHeight"))):
-                    tr_pr.remove(height)
-            grid_index = 0
-            for cell in row.xpath("./*[local-name()='tc']"):
-                tc_pr = cell.find(qn("w:tcPr"))
-                if tc_pr is None:
-                    tc_pr = OxmlElement("w:tcPr")
-                    cell.insert(0, tc_pr)
-                span_el = tc_pr.find(qn("w:gridSpan"))
-                span = 1
-                if span_el is not None:
-                    try:
-                        span = max(1, int(span_el.get(qn("w:val")) or "1"))
-                    except ValueError:
-                        span = 1
-                end = min(columns, grid_index + span)
-                width = sum(widths_dxa[grid_index:end]) or widths_dxa[min(grid_index, columns - 1)]
-                self._set_child_value(tc_pr, "w:tcW", {"w:type": "dxa", "w:w": str(width)})
-                for removable in ("w:noWrap", "w:tcFitText"):
-                    child = tc_pr.find(qn(removable))
-                    if child is not None:
-                        tc_pr.remove(child)
-                grid_index += span
-
-    @staticmethod
-    def _set_child_value(parent, tag: str, attrs: dict[str, str]) -> None:
-        child = parent.find(qn(tag))
-        if child is None:
-            child = OxmlElement(tag)
-            parent.append(child)
-        for key, value in attrs.items():
-            child.set(qn(key), value)
+        self._table_adapter.adapt_source_table_geometry_xml(
+            table,
+            block,
+            usable_width_mm,
+        )
 
     def _apply_table_style_xml(self, table) -> None:
         if not self._styles.table_style:
@@ -2036,114 +1978,21 @@ class DocxRenderer:
         columns: int,
         usable_width_mm: float,
     ) -> list[float]:
-        available = max(20.0, usable_width_mm)
-        if block.column_widths_pt and any(
-            width is not None and width > 0 for width in block.column_widths_pt
-        ):
-            raw = [
-                max(1.0, float(width or 24.0) * 25.4 / 72)
-                for width in block.column_widths_pt[:columns]
-            ]
-            raw.extend([24.0] * (columns - len(raw)))
-        else:
-            raw = []
-            for column in range(columns):
-                values = [
-                    row[column].strip()
-                    for row in block.rows
-                    if column < len(row) and row[column].strip()
-                ]
-                body_values = values[block.header_rows :] or values
-                numeric_share = (
-                    sum(DocxRenderer._looks_numeric(value) for value in body_values)
-                    / len(body_values)
-                    if body_values
-                    else 0.0
-                )
-                longest = max((len(value) for value in values), default=6)
-                if numeric_share >= 0.6:
-                    raw.append(max(7.0, min(longest, 14) * 0.65))
-                else:
-                    raw.append(max(8.0, min(longest, 40) * 0.75))
-
-        minimum = min(12.0, available / max(columns, 1))
-        widths = [available * value / sum(raw) for value in raw]
-        fixed: set[int] = set()
-        while True:
-            new_fixed = {
-                index
-                for index, width in enumerate(widths)
-                if width < minimum and index not in fixed
-            }
-            if not new_fixed:
-                break
-            fixed.update(new_fixed)
-            remaining = available - minimum * len(fixed)
-            flexible = [index for index in range(columns) if index not in fixed]
-            flexible_weight = sum(raw[index] for index in flexible)
-            for index in fixed:
-                widths[index] = minimum
-            for index in flexible:
-                widths[index] = (
-                    remaining * raw[index] / flexible_weight
-                    if flexible_weight
-                    else remaining / max(1, len(flexible))
-                )
-        return [round(value, 2) for value in widths]
+        return WideTableAdapter.column_widths_mm(block, columns, usable_width_mm)
 
     @staticmethod
     def _table_needs_full_width(block: TableBlock, column_width_mm: float) -> bool:
-        columns = max((len(row) for row in block.rows), default=0)
-        source_width = DocxRenderer._source_table_width_mm(block)
-        if source_width is not None and source_width > column_width_mm * 1.08:
-            return True
-        if columns >= 4:
-            return True
-        if columns >= 3:
-            longest = max(
-                (
-                    len(cell.strip())
-                    for row in block.rows
-                    for cell in row
-                    if cell.strip()
-                ),
-                default=0,
-            )
-            return longest >= 18
-        return False
+        decision = WideTableAdapter().decide(
+            block,
+            column_width_mm=column_width_mm,
+            full_width_mm=column_width_mm,
+            template_columns=2,
+        )
+        return decision.mode == "wide"
 
     @staticmethod
     def _source_table_width_mm(block: TableBlock) -> float | None:
-        if block.column_widths_pt and any(
-            width is not None and width > 0 for width in block.column_widths_pt
-        ):
-            return sum(float(width or 0.0) for width in block.column_widths_pt) * 25.4 / 72
-        if not block.source_xml:
-            return None
-        try:
-            element = parse_xml(block.source_xml)
-        except Exception:
-            return None
-        values: list[int] = []
-        for column in element.xpath("./*[local-name()='tblGrid']/*[local-name()='gridCol']"):
-            raw = column.get(qn("w:w"))
-            if raw:
-                try:
-                    values.append(int(raw))
-                except ValueError:
-                    pass
-        if values:
-            return sum(values) * 25.4 / 1440
-        tbl_w = element.xpath("./*[local-name()='tblPr']/*[local-name()='tblW']")
-        if tbl_w:
-            raw = tbl_w[0].get(qn("w:w"))
-            kind = tbl_w[0].get(qn("w:type"))
-            if raw and kind == "dxa":
-                try:
-                    return int(raw) * 25.4 / 1440
-                except ValueError:
-                    return None
-        return None
+        return WideTableAdapter.source_table_width_mm(block)
 
     @staticmethod
     def _configure_template_table(table, widths_mm: list[float]) -> None:

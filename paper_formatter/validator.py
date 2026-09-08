@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from lxml import etree
+from docx.oxml.ns import qn
 
 from paper_formatter.models import (
     ArticleIR,
@@ -317,6 +318,8 @@ class ConversionValidator:
         preserved: dict[str, dict[str, int | None]] = {}
         labels = {
             "tables": "таблицы",
+            "table_rows": "строки таблиц",
+            "table_cells": "ячейки таблиц",
             "drawings": "рисунки",
             "formulas": "формулы",
             "media_files": "media-файлы",
@@ -332,6 +335,25 @@ class ConversionValidator:
                     "VALIDATION: итоговый DOCX потерял "
                     f"{label}: {target} < {source}."
                 )
+        source_shapes = source_counts.get("table_shapes")
+        target_shapes = result_counts.get("table_shapes")
+        if isinstance(source_shapes, list) and isinstance(target_shapes, list):
+            for index, source_shape in enumerate(source_shapes):
+                if index >= len(target_shapes):
+                    continue
+                target_shape = target_shapes[index]
+                if not isinstance(source_shape, dict) or not isinstance(target_shape, dict):
+                    continue
+                if (
+                    target_shape.get("rows", 0) < source_shape.get("rows", 0)
+                    or target_shape.get("cells", 0) < source_shape.get("cells", 0)
+                ):
+                    critical_errors.append(
+                        "VALIDATION: итоговый DOCX повредил структуру таблицы "
+                        f"{index + 1}: rows/cells "
+                        f"{target_shape.get('rows', 0)}/{target_shape.get('cells', 0)} "
+                        f"< {source_shape.get('rows', 0)}/{source_shape.get('cells', 0)}."
+                    )
         return {
             "source_counts": source_counts,
             "result_counts": result_counts,
@@ -505,6 +527,9 @@ class ConversionValidator:
         result = {
             "paragraphs": 0,
             "tables": 0,
+            "table_rows": 0,
+            "table_cells": 0,
+            "table_shapes": [],
             "formulas": 0,
             "omml": 0,
             "ole": 0,
@@ -517,6 +542,7 @@ class ConversionValidator:
                 result["paragraphs"] = len(root.xpath(".//*[local-name()='p']"))
                 tables = root.xpath(".//*[local-name()='tbl']")
                 layout_tables = 0
+                table_shapes: list[dict[str, int]] = []
                 for table in tables:
                     rows = table.xpath("./*[local-name()='tr']")
                     cells = table.xpath("./*[local-name()='tr']/*[local-name()='tc']")
@@ -526,7 +552,24 @@ class ConversionValidator:
                         has_math and len(rows) == 1 and len(cells) <= 2
                     ):
                         layout_tables += 1
+                        continue
+                    table_shapes.append(
+                        {
+                            "rows": len(rows),
+                            "cells": len(cells),
+                            "columns": max(
+                                (
+                                    ConversionValidator._docx_row_column_count(row)
+                                    for row in rows
+                                ),
+                                default=0,
+                            ),
+                        }
+                    )
                 result["tables"] = len(tables) - layout_tables
+                result["table_rows"] = sum(item["rows"] for item in table_shapes)
+                result["table_cells"] = sum(item["cells"] for item in table_shapes)
+                result["table_shapes"] = table_shapes
                 math_paragraphs = root.xpath(".//*[local-name()='oMathPara']")
                 inline_math = root.xpath(
                     ".//*[local-name()='oMath' and not(ancestor::*[local-name()='oMathPara'])]"
@@ -545,6 +588,20 @@ class ConversionValidator:
         except Exception:
             pass
         return result
+
+    @staticmethod
+    def _docx_row_column_count(row) -> int:
+        total = 0
+        for cell in row.xpath("./*[local-name()='tc']"):
+            span = 1
+            span_nodes = cell.xpath("./*[local-name()='tcPr']/*[local-name()='gridSpan']")
+            if span_nodes:
+                try:
+                    span = max(1, int(span_nodes[0].get(qn("w:val")) or "1"))
+                except ValueError:
+                    span = 1
+            total += span
+        return total
 
     @staticmethod
     def _article_counts(article: ArticleIR) -> dict[str, int]:

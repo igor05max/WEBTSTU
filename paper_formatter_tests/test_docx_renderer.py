@@ -33,6 +33,7 @@ from paper_formatter.models import (
 )
 from paper_formatter.parsers.docx_parser import DocxParser
 from paper_formatter.renderers.docx_renderer import DocxRenderer
+from paper_formatter.renderers.docx_table_adapter import WideTableAdapter
 from paper_formatter.template_analyzers.docx_analyzer import DocxTemplateAnalyzer
 from paper_formatter.template_analyzers.pdf_analyzer import PdfTemplateAnalyzer
 from paper_formatter.validator import ConversionValidator
@@ -795,6 +796,45 @@ def test_docx_renderer_preserves_source_table_ooxml(tmp_path: Path) -> None:
     assert 'w:type="fixed"' in result.tables[0]._tbl.xml
     assert audit["critical_errors"] == []
     assert audit["preserved"]["tables"] == {"source": 1, "result": 1}
+    assert audit["preserved"]["table_rows"] == {"source": 2, "result": 2}
+    assert audit["preserved"]["table_cells"] == {"source": 3, "result": 3}
+
+
+def test_wide_table_adapter_classifies_table_modes() -> None:
+    adapter = WideTableAdapter()
+    small = TableBlock(id="small", rows=[["A", "B"], ["1", "2"]])
+    medium = TableBlock(
+        id="medium",
+        rows=[["Long property name", "Long observed value"], ["Density", "123"]],
+    )
+    wide = TableBlock(
+        id="wide",
+        rows=[
+            ["Property", "Unit", "Condition", "Value"],
+            ["Tensile strength", "MPa", "Room temperature", "120"],
+        ],
+    )
+
+    assert adapter.decide(
+        small,
+        column_width_mm=80.0,
+        full_width_mm=170.0,
+        template_columns=2,
+    ).mode == "small"
+    assert adapter.decide(
+        medium,
+        column_width_mm=35.0,
+        full_width_mm=170.0,
+        template_columns=1,
+    ).mode == "medium"
+    wide_decision = adapter.decide(
+        wide,
+        column_width_mm=80.0,
+        full_width_mm=170.0,
+        template_columns=2,
+    )
+    assert wide_decision.mode == "wide"
+    assert sum(wide_decision.widths_mm) == pytest.approx(170.0, abs=0.2)
 
 
 def test_validator_marks_missing_docx_authors_as_critical(tmp_path: Path) -> None:
@@ -815,3 +855,33 @@ def test_validator_marks_missing_docx_authors_as_critical(tmp_path: Path) -> Non
     assert audit["affiliations"]["result"] == 0
     assert any("потерял авторов" in error for error in audit["critical_errors"])
     assert any("потерял организации" in error for error in audit["critical_errors"])
+
+
+def test_validator_marks_lost_table_rows_and_cells_as_critical(tmp_path: Path) -> None:
+    source = tmp_path / "source.docx"
+    source_doc = Document()
+    source_table = source_doc.add_table(rows=3, cols=2)
+    source_table.cell(0, 0).text = "A"
+    source_table.cell(0, 1).text = "B"
+    source_table.cell(1, 0).text = "1"
+    source_table.cell(1, 1).text = "2"
+    source_table.cell(2, 0).text = "3"
+    source_table.cell(2, 1).text = "4"
+    source_doc.save(source)
+
+    result = tmp_path / "result.docx"
+    result_doc = Document()
+    result_table = result_doc.add_table(rows=1, cols=2)
+    result_table.cell(0, 0).text = "A"
+    result_table.cell(0, 1).text = "B"
+    result_doc.save(result)
+
+    audit = ConversionValidator._docx_object_audit(
+        ConversionValidator._docx_counts(source),
+        result,
+    )
+
+    assert audit["preserved"]["table_rows"] == {"source": 3, "result": 1}
+    assert audit["preserved"]["table_cells"] == {"source": 6, "result": 2}
+    assert any("строки таблиц" in error for error in audit["critical_errors"])
+    assert any("ячейки таблиц" in error for error in audit["critical_errors"])

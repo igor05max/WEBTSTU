@@ -203,6 +203,11 @@ class DocxParser:
                     article.body.extend(image_blocks)
                     continue
 
+                if role == "editorial_metadata":
+                    article.body.extend(equation_blocks)
+                    article.body.extend(image_blocks)
+                    continue
+
                 if text:
                     udc_match = re.match(
                         r"^\s*(?:\d+\s*[-–—]\s*)?УДК\s*[:.]?\s*(.+)$",
