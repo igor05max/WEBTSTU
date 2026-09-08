@@ -10,6 +10,7 @@ from typing import Iterator, Sequence
 
 from docx import Document
 from docx.document import Document as _Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.table import Table, _Cell
 from docx.text.paragraph import Paragraph
@@ -142,8 +143,8 @@ class DocxParser:
                 if pending_editorial_continuation:
                     pending_editorial_continuation = False
                     if (
-                        role in {"paragraph", "unknown", "subtitle"}
-                        and self._looks_like_editorial_continuation_value(text)
+                        self._looks_like_editorial_continuation_value(text)
+                        and not self._has_explicit_title_format(item, style_lower)
                     ):
                         article.body.extend(equation_blocks)
                         article.body.extend(image_blocks)
@@ -1584,6 +1585,20 @@ class DocxParser:
         ):
             return False
         return not text.endswith((".", "!", "?"))
+
+    def _has_explicit_title_format(
+        self,
+        paragraph: Paragraph,
+        style_lower: str,
+    ) -> bool:
+        if any(token in style_lower for token in ("title", "заглав", "название")):
+            return True
+        if paragraph.alignment == WD_ALIGN_PARAGRAPH.CENTER:
+            bold_ratio, _ = self._format_ratios(paragraph)
+            if bold_ratio >= 0.55:
+                return True
+        font_size = self._paragraph_font_size(paragraph)
+        return bool(font_size is not None and font_size >= 14.0)
 
     def _is_caption(self, style_lower: str, text: str) -> bool:
         if not text:
