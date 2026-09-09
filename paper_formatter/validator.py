@@ -19,6 +19,7 @@ from paper_formatter.models import (
     TableBlock,
     TemplateProfile,
 )
+from paper_formatter.renderers.docx_table_adapter import WideTableAdapter
 from paper_formatter.semantic.models import SemanticAnalysis, SemanticBlock
 
 
@@ -137,6 +138,12 @@ class ConversionValidator:
             docx_path if docx_exists else None,
         )
         warnings.extend(docx_content_audit.get("warnings", []))
+        docx_layout_audit = self._docx_layout_audit(
+            article,
+            docx_path if docx_exists else None,
+            template_profile,
+        )
+        warnings.extend(docx_layout_audit.get("warnings", []))
         critical_errors = list(docx_object_audit.get("critical_errors", []))
         critical_errors.extend(docx_content_audit.get("critical_errors", []))
         errors.extend(critical_errors)
@@ -170,6 +177,7 @@ class ConversionValidator:
                 "docx_styles": docx_style_audit,
                 "docx_objects": docx_object_audit,
                 "docx_content": docx_content_audit,
+                "docx_layout": docx_layout_audit,
             },
             "outputs": {
                 "main_tex_exists": tex_exists,
@@ -189,6 +197,138 @@ class ConversionValidator:
             "warnings": warnings,
             "errors": errors,
         }
+
+    @staticmethod
+    def _docx_layout_audit(
+        article: ArticleIR,
+        docx_path: Path | None,
+        template_profile: TemplateProfile | None,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "enabled": False,
+            "issues": [],
+            "warnings": [],
+        }
+        if docx_path is None:
+            return result
+        article_tables = [block for block in article.body if isinstance(block, TableBlock)]
+        if not article_tables:
+            return result
+        result["enabled"] = True
+        try:
+            with zipfile.ZipFile(docx_path) as archive:
+                root = etree.fromstring(archive.read("word/document.xml"))
+        except Exception as exc:
+            result["warnings"].append(
+                f"VALIDATION: не удалось проверить layout таблиц DOCX ({exc})."
+            )
+            return result
+
+        tables = [
+            table
+            for table in root.xpath(".//*[local-name()='tbl']")
+            if not table.xpath(".//*[local-name()='drawing']")
+        ]
+        base_font_size = (
+            template_profile.typography.caption_size_pt
+            if template_profile and template_profile.typography.caption_size_pt
+            else (
+                max(8.0, template_profile.typography.main_size_pt - 1.0)
+                if template_profile
+                else 8.0
+            )
+        )
+        page_width = template_profile.page.width_mm if template_profile else None
+        if template_profile and page_width:
+            full_width = (
+                page_width
+                - template_profile.page.margin_left_mm
+                - template_profile.page.margin_right_mm
+            )
+        else:
+            full_width = None
+        for index, block in enumerate(article_tables):
+            if index >= len(tables):
+                break
+            table = tables[index]
+            assigned = ConversionValidator._docx_table_grid_widths_mm(table)
+            if not assigned:
+                continue
+            font_size = (
+                ConversionValidator._docx_table_font_size_pt(table)
+                or base_font_size
+            )
+            measures = WideTableAdapter.measure_columns(
+                block,
+                len(assigned),
+                font_size,
+            )
+            score = WideTableAdapter.layout_score(
+                block,
+                assigned,
+                measures,
+                font_size,
+            )
+            for column, measure in enumerate(measures):
+                if column >= len(assigned):
+                    continue
+                if assigned[column] + 0.2 < measure.min_width_mm:
+                    result["issues"].append(
+                        {
+                            "object": f"Table {index + 1}",
+                            "rule": "table.column.min_width",
+                            "status": "warning",
+                            "column": column + 1,
+                            "assigned_mm": round(assigned[column], 2),
+                            "required_mm": round(measure.min_width_mm, 2),
+                        }
+                    )
+                numeric_required = (
+                    measure.longest_numeric_chars
+                    * WideTableAdapter._char_width_mm(font_size)
+                    * 1.05
+                )
+                if measure.longest_numeric_chars and assigned[column] + 0.2 < numeric_required:
+                    result["issues"].append(
+                        {
+                            "object": f"Table {index + 1}",
+                            "rule": "table.column.numeric_break",
+                            "status": "warning",
+                            "column": column + 1,
+                            "assigned_mm": round(assigned[column], 2),
+                            "required_mm": round(numeric_required, 2),
+                        }
+                    )
+            if score > 0:
+                result["issues"].append(
+                    {
+                        "object": f"Table {index + 1}",
+                        "rule": "table.layout.score",
+                        "status": "warning",
+                        "score": round(score, 2),
+                    }
+                )
+            if full_width and len(assigned) >= 4 and sum(assigned) < full_width * 0.92:
+                result["issues"].append(
+                    {
+                        "object": f"Table {index + 1}",
+                        "rule": "table.wide.full_width",
+                        "status": "warning",
+                        "assigned_mm": round(sum(assigned), 2),
+                        "required_mm": round(full_width, 2),
+                    }
+                )
+        if result["issues"]:
+            result["warnings"].append(
+                "VALIDATION: DOCX table layout warnings: "
+                + ", ".join(
+                    str(issue.get("rule"))
+                    for issue in result["issues"][:8]
+                    if isinstance(issue, dict)
+                )
+                + "."
+            )
+        return result
 
     @staticmethod
     def _docx_content_audit(article: ArticleIR, docx_path: Path | None) -> dict[str, Any]:
@@ -261,6 +401,31 @@ class ConversionValidator:
                 + "."
             )
         return result
+
+    @staticmethod
+    def _docx_table_grid_widths_mm(table) -> list[float]:
+        values: list[float] = []
+        for column in table.xpath("./*[local-name()='tblGrid']/*[local-name()='gridCol']"):
+            raw = column.get(qn("w:w"))
+            if not raw:
+                continue
+            try:
+                values.append(int(raw) * 25.4 / 1440)
+            except ValueError:
+                continue
+        return values
+
+    @staticmethod
+    def _docx_table_font_size_pt(table) -> float | None:
+        for size in table.xpath(".//*[local-name()='rPr']/*[local-name()='sz']"):
+            raw = size.get(qn("w:val"))
+            if not raw:
+                continue
+            try:
+                return int(raw) / 2
+            except ValueError:
+                continue
+        return None
 
     @staticmethod
     def _docx_plain_text(docx_path: Path) -> str:

@@ -1097,6 +1097,7 @@ class DocxRenderer:
                         font_size_pt=table_font_size_pt
                         or self._table_font_size(profile),
                     )
+                    self._repeat_source_table_header_xml(element, table_block)
                 if role == "figure":
                     self._set_table_keep_with_next_xml(element)
                 self._prevent_table_row_splits_xml(element)
@@ -1260,6 +1261,37 @@ class DocxRenderer:
                 row.insert(0, tr_pr)
             if tr_pr.find(qn("w:cantSplit")) is None:
                 tr_pr.append(OxmlElement("w:cantSplit"))
+
+    @staticmethod
+    def _repeat_source_table_header_xml(table, block: TableBlock) -> None:
+        header_rows = max(0, block.header_rows)
+        rows = table.xpath("./*[local-name()='tr']")
+        for row in rows:
+            tr_pr = row.find(qn("w:trPr"))
+            if tr_pr is None:
+                continue
+            for header in list(tr_pr.findall(qn("w:tblHeader"))):
+                tr_pr.remove(header)
+        if header_rows <= 0:
+            return
+        header_slice = rows[:header_rows]
+        complex_header = header_rows > 1 and any(
+            row.xpath(".//*[local-name()='gridSpan' or local-name()='vMerge']")
+            for row in header_slice
+        )
+        if complex_header:
+            return
+        header_rows = min(header_rows, 1)
+        for row in rows[:header_rows]:
+            tr_pr = row.find(qn("w:trPr"))
+            if tr_pr is None:
+                tr_pr = OxmlElement("w:trPr")
+                row.insert(0, tr_pr)
+            header = tr_pr.find(qn("w:tblHeader"))
+            if header is None:
+                header = OxmlElement("w:tblHeader")
+                tr_pr.append(header)
+            header.set(qn("w:val"), "true")
 
     @staticmethod
     def _set_table_keep_with_next_xml(table) -> None:

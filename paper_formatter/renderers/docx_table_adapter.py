@@ -10,12 +10,34 @@ from paper_formatter.models import TableBlock
 
 
 @dataclass(frozen=True)
+class TableColumnMeasure:
+    min_width_mm: float
+    preferred_width_mm: float
+    source_width_mm: float | None
+    header_text: str
+    longest_word_chars: int
+    longest_numeric_chars: int
+    numeric_share: float
+
+
+@dataclass(frozen=True)
+class _LayoutCandidate:
+    strategy: str
+    widths_mm: list[float]
+    score: float
+
+
+@dataclass(frozen=True)
 class TableLayoutDecision:
     mode: str
     widths_mm: list[float]
     usable_width_mm: float
     required_width_mm: float | None
     font_size_pt: float
+    column_min_widths_mm: list[float]
+    column_preferred_widths_mm: list[float]
+    layout_score: float
+    layout_strategy: str
     warnings: list[str]
 
 
@@ -51,40 +73,41 @@ class WideTableAdapter:
         else:
             mode = "small"
             usable_width = min(column_width_mm, full_width_mm)
-        font_size = self._mode_font_size(
-            mode,
-            table_font_size_pt,
-            min_font_size_pt,
-        )
-        widths = self.column_widths_mm(
+        font_size = self._mode_font_size(mode, table_font_size_pt, min_font_size_pt)
+        warnings: list[str] = []
+        candidate, measures = self._best_candidate(
             block,
             columns,
             usable_width,
-            font_size_pt=font_size,
+            font_size,
+            base_font_size_pt=table_font_size_pt,
         )
-        warnings: list[str] = []
-        while (
-            not self._long_words_fit(block, widths, font_size)
-            and font_size - 0.5 >= min_font_size_pt
-        ):
+        while candidate.score > 0 and font_size - 0.5 >= min_font_size_pt:
             font_size = round(font_size - 0.5, 1)
-            widths = self.column_widths_mm(
+            candidate, measures = self._best_candidate(
                 block,
                 columns,
                 usable_width,
-                font_size_pt=font_size,
+                font_size,
+                base_font_size_pt=table_font_size_pt,
             )
-        if not self._long_words_fit(block, widths, font_size):
+        if candidate.score > 0:
             warnings.append(
-                "DOCX: wide table may still wrap long header words after "
-                f"layout adaptation ({columns} columns, {font_size:g} pt)."
+                "DOCX: table layout cannot fit safely after adaptation "
+                f"({columns} columns, {font_size:g} pt, score {candidate.score:.1f})."
             )
         return TableLayoutDecision(
             mode=mode,
-            widths_mm=widths,
+            widths_mm=candidate.widths_mm,
             usable_width_mm=usable_width,
             required_width_mm=round(required_width, 2) if required_width else None,
             font_size_pt=font_size,
+            column_min_widths_mm=[round(item.min_width_mm, 2) for item in measures],
+            column_preferred_widths_mm=[
+                round(item.preferred_width_mm, 2) for item in measures
+            ],
+            layout_score=round(candidate.score, 2),
+            layout_strategy=candidate.strategy,
             warnings=warnings,
         )
 
@@ -158,54 +181,115 @@ class WideTableAdapter:
     ) -> list[float]:
         columns = max(1, columns)
         available = max(20.0, usable_width_mm)
-        source = WideTableAdapter._source_width_hints_mm(block, columns)
-        content = WideTableAdapter._content_width_weights(
-            block,
-            columns,
-            font_size_pt,
-        )
-        if block.column_widths_pt and any(
-            width is not None and width > 0 for width in block.column_widths_pt
-        ):
-            raw = [
-                content[index] * 0.95 + source[index] * 0.05
-                for index in range(columns)
-            ]
-        else:
-            raw = content
+        measures = WideTableAdapter.measure_columns(block, columns, font_size_pt)
+        return WideTableAdapter._distribute_min_preferred(measures, available)
 
-        minimums = WideTableAdapter._minimum_widths_mm(block, columns, font_size_pt)
-        raw_sum = sum(raw) or columns
-        widths = [available * value / sum(raw) for value in raw]
-        fixed: set[int] = set()
-        while True:
-            new_fixed = {
-                index
-                for index, width in enumerate(widths)
-                if width < minimums[index] and index not in fixed
-            }
-            if not new_fixed:
-                break
-            fixed.update(new_fixed)
-            fixed_width = sum(minimums[index] for index in fixed)
-            remaining = available - fixed_width
-            flexible = [index for index in range(columns) if index not in fixed]
-            flexible_weight = sum(raw[index] for index in flexible)
-            if remaining <= 0 or not flexible:
-                scale = available / max(fixed_width, 1.0)
-                return [round(minimums[index] * scale, 2) for index in range(columns)]
-            for index in fixed:
-                widths[index] = minimums[index]
-            for index in flexible:
-                widths[index] = (
-                    remaining * raw[index] / flexible_weight
-                    if flexible_weight
-                    else remaining / max(1, len(flexible))
+    @staticmethod
+    def measure_columns(
+        block: TableBlock,
+        columns: int,
+        font_size_pt: float,
+    ) -> list[TableColumnMeasure]:
+        columns = max(1, columns)
+        source = WideTableAdapter._source_width_hints_mm(block, columns)
+        char_mm = WideTableAdapter._char_width_mm(font_size_pt)
+        header_rows = max(1, block.header_rows or 1)
+        measures: list[TableColumnMeasure] = []
+        for column in range(columns):
+            values = WideTableAdapter._column_values(block, column)
+            header_values = [
+                row[column].strip()
+                for row in block.rows[:header_rows]
+                if column < len(row) and row[column].strip()
+            ]
+            body_values = values[len(header_values) :] or values
+            numeric_share = (
+                sum(WideTableAdapter._looks_numeric(value) for value in body_values)
+                / len(body_values)
+                if body_values
+                else 0.0
+            )
+            header_text = " ".join(header_values)
+            header_len = max((len(value) for value in header_values), default=0)
+            longest_word = max(
+                (WideTableAdapter._longest_word_len(value) for value in values),
+                default=0,
+            )
+            longest_numeric = max(
+                (
+                    WideTableAdapter._longest_numeric_len(value)
+                    for value in values
+                    if WideTableAdapter._looks_numeric(value)
+                ),
+                default=0,
+            )
+            longest_cell = max((len(value) for value in values), default=6)
+            short_numeric = WideTableAdapter._is_short_numeric_column(
+                values,
+                header_values,
+                numeric_share,
+            )
+            header_key = re.sub(
+                r"[^a-z0-9]+", "", header_text.casefold().replace("№", "no")
+            )
+            is_index_column = header_key in {"no", "n", "number"}
+            is_value_column = header_key in {"value", "values", "result", "results"}
+            if is_value_column:
+                # A measurement value needs room for decimals and an uncertainty;
+                # it cannot be treated like a compact ordinal-number column.
+                min_width = max(
+                    10.5,
+                    min(max(longest_word, longest_numeric), 12) * char_mm * 1.25,
                 )
-        total = sum(widths)
-        if total and abs(total - available) > 0.01:
-            widths = [width * available / total for width in widths]
-        return [round(value, 2) for value in widths]
+                preferred = max(
+                    14.0,
+                    min_width + 3.0,
+                    min(max(longest_word, longest_numeric), 16) * char_mm * 1.65,
+                )
+            elif short_numeric:
+                if is_index_column:
+                    min_width = 7.2
+                    preferred = max(8.4, min(header_len, 6) * char_mm * 0.85)
+                else:
+                    min_width = max(
+                        8.5,
+                        min(max(longest_word, longest_numeric), 10) * char_mm * 1.05,
+                    )
+                    preferred = max(
+                        12.0,
+                        min_width + 3.0,
+                        min(header_len, 8) * char_mm,
+                    )
+            elif numeric_share >= 0.6:
+                min_width = max(
+                    9.0,
+                    min(max(longest_word, longest_numeric), 18) * char_mm * 1.05,
+                )
+                preferred = max(
+                    min_width + 2.0,
+                    min(header_len, 28) * char_mm * 0.82,
+                    min(max(longest_word, longest_numeric), 22) * char_mm * 1.35,
+                )
+            else:
+                min_width = max(8.0, min(longest_word, 26) * char_mm * 0.82)
+                preferred = max(
+                    min_width + 2.0,
+                    min(header_len, 48) * char_mm * 0.72,
+                    min(longest_word, 34) * char_mm * 1.05,
+                    min(longest_cell, 70) * char_mm * 0.62,
+                )
+            measures.append(
+                TableColumnMeasure(
+                    min_width_mm=round(min_width, 2),
+                    preferred_width_mm=round(max(min_width, preferred), 2),
+                    source_width_mm=source[column],
+                    header_text=header_text,
+                    longest_word_chars=longest_word,
+                    longest_numeric_chars=longest_numeric,
+                    numeric_share=round(numeric_share, 3),
+                )
+            )
+        return measures
 
     @staticmethod
     def source_table_width_mm(block: TableBlock) -> float | None:
@@ -243,12 +327,165 @@ class WideTableAdapter:
     @staticmethod
     def estimated_width_mm(block: TableBlock) -> float:
         columns = WideTableAdapter._column_count(block)
-        widths = WideTableAdapter.column_widths_mm(
-            block,
-            columns,
-            max(20.0, columns * 18.0),
+        measures = WideTableAdapter.measure_columns(block, columns, font_size_pt=8.0)
+        return sum(item.preferred_width_mm for item in measures)
+
+    @staticmethod
+    def _best_candidate(
+        block: TableBlock,
+        columns: int,
+        usable_width_mm: float,
+        font_size_pt: float,
+        *,
+        base_font_size_pt: float,
+    ) -> tuple[_LayoutCandidate, list[TableColumnMeasure]]:
+        available = max(20.0, usable_width_mm)
+        measures = WideTableAdapter.measure_columns(block, columns, font_size_pt)
+        candidates: list[_LayoutCandidate] = []
+        source = WideTableAdapter._scaled_source_candidate(measures, available)
+        if source is not None:
+            candidates.append(
+                _LayoutCandidate(
+                    strategy="scaled_source",
+                    widths_mm=source,
+                    score=WideTableAdapter.layout_score(
+                        block,
+                        source,
+                        measures,
+                        font_size_pt,
+                        base_font_size_pt=base_font_size_pt,
+                    ),
+                )
+            )
+        distributed = WideTableAdapter._distribute_min_preferred(measures, available)
+        candidates.append(
+            _LayoutCandidate(
+                strategy="min_preferred",
+                widths_mm=distributed,
+                score=WideTableAdapter.layout_score(
+                    block,
+                    distributed,
+                    measures,
+                    font_size_pt,
+                    base_font_size_pt=base_font_size_pt,
+                ),
+            )
         )
-        return sum(widths)
+        return min(
+            candidates,
+            key=lambda item: (
+                item.score,
+                0 if item.strategy == "scaled_source" else 1,
+            ),
+        ), measures
+
+    @staticmethod
+    def _scaled_source_candidate(
+        measures: list[TableColumnMeasure],
+        available_width_mm: float,
+    ) -> list[float] | None:
+        source = [item.source_width_mm or 0.0 for item in measures]
+        if not source or any(width <= 0 for width in source):
+            return None
+        source_sum = sum(source)
+        if source_sum <= 0:
+            return None
+        average = source_sum / len(source)
+        if min(source) > 0 and max(source) / min(source) < 1.15:
+            return None
+        if any(width > average * 6.0 for width in source):
+            return None
+        widths = [width * available_width_mm / source_sum for width in source]
+        return WideTableAdapter._normalize_to_available(widths, available_width_mm)
+
+    @staticmethod
+    def _distribute_min_preferred(
+        measures: list[TableColumnMeasure],
+        available_width_mm: float,
+    ) -> list[float]:
+        available = max(20.0, available_width_mm)
+        minimums = [item.min_width_mm for item in measures]
+        preferred = [item.preferred_width_mm for item in measures]
+        min_sum = sum(minimums)
+        preferred_sum = sum(preferred)
+        if preferred_sum <= available:
+            widths = preferred[:]
+            extra = available - preferred_sum
+            weights = [
+                (
+                    0.5
+                    if re.sub(
+                        r"[^a-z0-9]+",
+                        "",
+                        item.header_text.casefold().replace("№", "no"),
+                    )
+                    in {"no", "n", "number"}
+                    else max(1.0, item.preferred_width_mm)
+                )
+                for item in measures
+            ]
+        elif min_sum <= available:
+            widths = minimums[:]
+            extra = available - min_sum
+            weights = [
+                max(0.0, item.preferred_width_mm - item.min_width_mm)
+                for item in measures
+            ]
+        else:
+            scale = available / max(min_sum, 1.0)
+            return [round(width * scale, 2) for width in minimums]
+        weight_sum = sum(weights)
+        if extra > 0:
+            if weight_sum > 0:
+                widths = [
+                    width + extra * weights[index] / weight_sum
+                    for index, width in enumerate(widths)
+                ]
+            else:
+                widths = [width + extra / len(widths) for width in widths]
+        return WideTableAdapter._normalize_to_available(widths, available)
+
+    @staticmethod
+    def _normalize_to_available(
+        widths_mm: list[float],
+        available_width_mm: float,
+    ) -> list[float]:
+        total = sum(widths_mm)
+        if total > 0 and abs(total - available_width_mm) > 0.01:
+            widths_mm = [width * available_width_mm / total for width in widths_mm]
+        return [round(max(1.0, width), 2) for width in widths_mm]
+
+    @staticmethod
+    def layout_score(
+        block: TableBlock,
+        widths_mm: list[float],
+        measures: list[TableColumnMeasure] | None = None,
+        font_size_pt: float = 8.0,
+        *,
+        base_font_size_pt: float | None = None,
+    ) -> float:
+        measures = measures or WideTableAdapter.measure_columns(
+            block,
+            len(widths_mm),
+            font_size_pt,
+        )
+        char_mm = WideTableAdapter._char_width_mm(font_size_pt)
+        score = 0.0
+        for index, measure in enumerate(measures):
+            assigned = widths_mm[index] if index < len(widths_mm) else 0.0
+            if assigned < measure.min_width_mm:
+                score += (measure.min_width_mm - assigned) * 12.0
+            numeric_required = measure.longest_numeric_chars * char_mm * 1.05
+            if measure.longest_numeric_chars and assigned < numeric_required:
+                score += (numeric_required - assigned) * 16.0
+            word_required = measure.longest_word_chars * char_mm * 0.72
+            if measure.longest_word_chars and assigned < word_required:
+                score += (word_required - assigned) * 10.0
+            if measure.header_text:
+                header_required = min(len(measure.header_text), 42) * char_mm * 0.32
+                if assigned < header_required:
+                    score += (header_required - assigned) * 3.0
+        return round(max(0.0, score), 3)
 
     @staticmethod
     def _source_width_hints_mm(block: TableBlock, columns: int) -> list[float]:
@@ -312,33 +549,10 @@ class WideTableAdapter:
         columns: int,
         font_size_pt: float,
     ) -> list[float]:
-        minimums: list[float] = []
-        char_mm = WideTableAdapter._char_width_mm(font_size_pt)
-        for column in range(columns):
-            values = WideTableAdapter._column_values(block, column)
-            header_values = [
-                row[column].strip()
-                for row in block.rows[: max(1, block.header_rows or 1)]
-                if column < len(row) and row[column].strip()
-            ]
-            longest_word = max(
-                (WideTableAdapter._longest_word_len(value) for value in values),
-                default=4,
-            )
-            numeric_share = (
-                sum(WideTableAdapter._looks_numeric(value) for value in values)
-                / len(values)
-                if values
-                else 0.0
-            )
-            if WideTableAdapter._is_short_numeric_column(values, header_values, numeric_share):
-                minimum = 5.5
-            elif numeric_share >= 0.6:
-                minimum = max(7.0, min(longest_word, 10) * char_mm * 0.72)
-            else:
-                minimum = max(8.0, min(longest_word, 18) * char_mm * 0.82)
-            minimums.append(minimum)
-        return minimums
+        return [
+            item.min_width_mm
+            for item in WideTableAdapter.measure_columns(block, columns, font_size_pt)
+        ]
 
     @staticmethod
     def _long_words_fit(
@@ -346,18 +560,8 @@ class WideTableAdapter:
         widths_mm: list[float],
         font_size_pt: float,
     ) -> bool:
-        char_mm = WideTableAdapter._char_width_mm(font_size_pt)
-        for column, width in enumerate(widths_mm):
-            values = WideTableAdapter._column_values(block, column)
-            longest_word = max(
-                (WideTableAdapter._longest_word_len(value) for value in values),
-                default=0,
-            )
-            if longest_word <= 0:
-                continue
-            if longest_word * char_mm * 0.82 > width:
-                return False
-        return True
+        measures = WideTableAdapter.measure_columns(block, len(widths_mm), font_size_pt)
+        return WideTableAdapter.layout_score(block, widths_mm, measures, font_size_pt) == 0
 
     @staticmethod
     def _mode_font_size(
@@ -388,6 +592,11 @@ class WideTableAdapter:
     def _longest_word_len(value: str) -> int:
         words = re.findall(r"[^\s/\\,;:()]+", value)
         return max((len(word) for word in words), default=0)
+
+    @staticmethod
+    def _longest_numeric_len(value: str) -> int:
+        values = re.findall(r"[\d]+(?:[.,]\d+)?(?:\s*[±+\-/−–]\s*\d+(?:[.,]\d+)?)*", value)
+        return max((len(re.sub(r"\s+", "", item)) for item in values), default=0)
 
     @staticmethod
     def _is_short_numeric_column(
@@ -438,4 +647,4 @@ class WideTableAdapter:
 
     @staticmethod
     def _looks_numeric(value: str) -> bool:
-        return bool(value) and bool(re.fullmatch(r"[\d\s.,:+\-/%()]+", value))
+        return bool(value) and bool(re.fullmatch(r"[\d\s.,:+\-/%()±−–]+", value))

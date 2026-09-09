@@ -837,6 +837,128 @@ def test_wide_table_adapter_classifies_table_modes() -> None:
     assert sum(wide_decision.widths_mm) == pytest.approx(170.0, abs=0.2)
 
 
+def test_scaled_source_widths_candidate_is_used_when_safe() -> None:
+    adapter = WideTableAdapter()
+    block = TableBlock(
+        id="scaled-source",
+        header_rows=1,
+        rows=[
+            ["No.", "Long descriptive property", "Value"],
+            ["1", "Density", "100.50+/-13.54"],
+            ["2", "Strength", "23.07+/-1.45"],
+        ],
+        column_widths_pt=[36, 180, 72],
+    )
+
+    decision = adapter.decide(
+        block,
+        column_width_mm=80.0,
+        full_width_mm=160.0,
+        template_columns=2,
+        table_font_size_pt=8.0,
+    )
+
+    assert decision.layout_strategy == "scaled_source"
+    assert decision.widths_mm[1] > decision.widths_mm[2] > decision.widths_mm[0]
+    assert sum(decision.widths_mm) == pytest.approx(160.0, abs=0.2)
+
+
+def test_min_content_width_accounts_for_long_word_and_numeric_value() -> None:
+    block = TableBlock(
+        id="min-content",
+        header_rows=1,
+        rows=[
+            ["No.", "Melt flow rate (200 C, 5 kg)", "Result"],
+            ["1", "ultrahighmolecularweightpolyethylene", "100.50+/-13.54"],
+        ],
+    )
+
+    measures = WideTableAdapter.measure_columns(block, 3, font_size_pt=8.0)
+
+    assert measures[1].min_width_mm > measures[0].min_width_mm
+    assert measures[2].min_width_mm > measures[0].min_width_mm
+    assert measures[1].preferred_width_mm > measures[1].min_width_mm
+
+
+def test_width_distribution_between_min_and_preferred() -> None:
+    block = TableBlock(
+        id="distribution",
+        header_rows=1,
+        rows=[
+            ["No.", "Maximum tensile strength, MPa", "Elongation at break, %"],
+            ["1", "43.8", "100.50+/-13.54"],
+            ["2", "41.2", "23.07+/-1.45"],
+        ],
+    )
+    measures = WideTableAdapter.measure_columns(block, 3, font_size_pt=8.0)
+    available = (sum(item.min_width_mm for item in measures) + sum(
+        item.preferred_width_mm for item in measures
+    )) / 2
+
+    widths = WideTableAdapter.column_widths_mm(
+        block,
+        3,
+        available,
+        font_size_pt=8.0,
+    )
+
+    assert sum(widths) == pytest.approx(available, abs=0.2)
+    assert widths[1] > widths[0]
+    assert widths[2] > widths[0]
+    assert sum(widths) < sum(item.preferred_width_mm for item in measures)
+
+
+def test_measurement_value_column_is_not_treated_as_an_index() -> None:
+    block = TableBlock(
+        id="measurement-values",
+        header_rows=1,
+        rows=[
+            ["Property", "Unit of measurement", "Value"],
+            ["Melt flow rate", "g/10 min", "4.4 +/- 0.6"],
+            ["Vicat softening temperature", "C", "99"],
+            ["Density", "g/cm3", "0.95"],
+        ],
+    )
+
+    measures = WideTableAdapter.measure_columns(block, 3, font_size_pt=8.0)
+    widths = WideTableAdapter.column_widths_mm(
+        block,
+        3,
+        170.0,
+        font_size_pt=8.0,
+    )
+
+    assert measures[2].min_width_mm >= 10.5
+    assert measures[2].preferred_width_mm >= 14.0
+    assert widths[2] >= 25.0
+    assert widths[0] > widths[2]
+
+
+def test_table_font_shrink_and_numeric_break_warning() -> None:
+    adapter = WideTableAdapter()
+    block = TableBlock(
+        id="numeric-break",
+        header_rows=1,
+        rows=[
+            ["Sample", "100.50+/-13.54 100.50+/-13.54", "100.50+/-13.54"],
+            ["1", "100.50+/-13.54", "23.07+/-1.45"],
+        ],
+    )
+
+    decision = adapter.decide(
+        block,
+        column_width_mm=18.0,
+        full_width_mm=38.0,
+        template_columns=1,
+        table_font_size_pt=8.0,
+        min_font_size_pt=6.5,
+    )
+
+    assert decision.font_size_pt < 8.0
+    assert decision.layout_score > 0
+    assert any("table layout cannot fit safely" in item for item in decision.warnings)
+
+
 def test_wide_table_with_long_headers_uses_content_widths() -> None:
     adapter = WideTableAdapter()
     block = TableBlock(
@@ -929,6 +1051,8 @@ def test_wide_source_table_layout_and_typography_are_adapted(tmp_path: Path) -> 
 
     parser = DocxParser(source_path, tmp_path / "assets")
     article = parser.parse()
+    table_block = next(block for block in article.body if isinstance(block, TableBlock))
+    table_block.header_rows = 1
     profile = DocxTemplateAnalyzer().analyze(template_path)
     output = DocxRenderer().render(
         article,
@@ -963,6 +1087,8 @@ def test_wide_source_table_layout_and_typography_are_adapted(tmp_path: Path) -> 
     assert "Arial" not in table_xml
     assert '<w:sz w:val="24"' not in table_xml
     assert 'w:before="240"' not in table_xml
+    assert "w:tblHeader" in table_xml
+    assert table_xml.count("w:tblHeader") == 1
     assert "w:gridSpan" in table_xml
     assert 'w:fill="D9EAD3"' in table_xml
 
@@ -1042,3 +1168,55 @@ def test_validator_marks_lost_table_rows_and_cells_as_critical(tmp_path: Path) -
     assert audit["preserved"]["table_cells"] == {"source": 6, "result": 2}
     assert any("строки таблиц" in error for error in audit["critical_errors"])
     assert any("ячейки таблиц" in error for error in audit["critical_errors"])
+
+
+def test_validator_reports_table_layout_width_warning(tmp_path: Path) -> None:
+    source = tmp_path / "source.docx"
+    source_doc = Document()
+    source_doc.add_paragraph("Table 1. Source")
+    source_table = source_doc.add_table(rows=2, cols=2)
+    source_table.cell(0, 0).text = "Long metric"
+    source_table.cell(0, 1).text = "Result"
+    source_table.cell(1, 0).text = "Maximum tensile strength, MPa"
+    source_table.cell(1, 1).text = "100.50+/-13.54"
+    source_doc.save(source)
+
+    result = tmp_path / "result.docx"
+    result_doc = Document()
+    result_table = result_doc.add_table(rows=2, cols=2)
+    result_table.cell(0, 0).text = "Long metric"
+    result_table.cell(0, 1).text = "Result"
+    result_table.cell(1, 0).text = "Maximum tensile strength, MPa"
+    result_table.cell(1, 1).text = "100.50+/-13.54"
+    for column in result_table._tbl.tblGrid.gridCol_lst:
+        column.set(qn("w:w"), "500")
+    result_doc.save(result)
+
+    main_tex = tmp_path / "main.tex"
+    main_tex.write_text("\\begin{document}\\end{document}", encoding="utf-8")
+    article = ArticleIR(
+        body=[
+            TableBlock(
+                id="t1",
+                header_rows=1,
+                rows=[
+                    ["Long metric", "Result"],
+                    ["Maximum tensile strength, MPa", "100.50+/-13.54"],
+                ],
+            )
+        ]
+    )
+
+    report = ConversionValidator().validate(
+        source_path=source,
+        article=article,
+        main_tex=main_tex,
+        pdf_path=None,
+        docx_path=result,
+        template_profile=TemplateProfile(),
+    )
+
+    layout = report["integrity"]["docx_layout"]
+    assert layout["issues"][0]["rule"] == "table.column.min_width"
+    assert layout["issues"][0]["column"] == 1
+    assert any("table.column.min_width" in warning for warning in report["warnings"])
