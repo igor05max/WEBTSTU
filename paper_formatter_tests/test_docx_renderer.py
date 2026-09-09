@@ -1120,6 +1120,62 @@ def test_duplicate_email_rendered_once(tmp_path: Path) -> None:
     assert "Email" not in texts
 
 
+def test_email_placeholder_slots_render_once(tmp_path: Path) -> None:
+    template_path = tmp_path / "email-placeholder-template.docx"
+    template = Document()
+    template.add_paragraph("Title")
+    template.add_paragraph("author@mail.ru")
+    template.add_paragraph("@mail.ru")
+    template.add_paragraph("Abstract")
+    template.add_paragraph("Keywords")
+    template.save(template_path)
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    article = ArticleIR(
+        metadata=ArticleMetadata(
+            titles=[LocalizedText(language="en", text="Email singleton")],
+            authors=[Author(id="a1", name="E.A. Author", email="author@example.test")],
+            abstracts=[LocalizedText(language="en", text="Abstract text.")],
+            keywords=["email"],
+        )
+    )
+
+    output = DocxRenderer().render(article, tmp_path / "email-placeholder.docx", profile=profile)
+    texts = [paragraph.text for paragraph in Document(output).paragraphs]
+    text = "\n".join(texts)
+
+    assert text.count("author@example.test") == 1
+    assert "author@mail.ru" not in text
+    assert "@mail.ru" not in text
+
+
+def test_duplicate_body_email_is_rendered_once(tmp_path: Path) -> None:
+    template_path = tmp_path / "body-email-template.docx"
+    template = Document()
+    template.add_paragraph("Title")
+    template.add_paragraph("Abstract")
+    template.add_paragraph("Keywords")
+    template.save(template_path)
+    profile = DocxTemplateAnalyzer().analyze(template_path)
+    email = "author@example.test"
+    article = ArticleIR(
+        metadata=ArticleMetadata(
+            titles=[LocalizedText(language="en", text="Email singleton")],
+            abstracts=[LocalizedText(language="en", text="Abstract text.")],
+            keywords=["email"],
+        ),
+        body=[
+            ParagraphBlock(id="email-1", runs=[TextRun(text=f"*{email}")]),
+            ParagraphBlock(id="email-2", runs=[TextRun(text=f"*{email}")]),
+            SectionBlock(id="section-1", level=1, title="Introduction"),
+        ],
+    )
+
+    output = DocxRenderer().render(article, tmp_path / "body-email.docx", profile=profile)
+    text = "\n".join(paragraph.text for paragraph in Document(output).paragraphs)
+
+    assert text.count(email) == 1
+
+
 def test_validator_marks_missing_docx_authors_as_critical(tmp_path: Path) -> None:
     article = ArticleIR(
         metadata=ArticleMetadata(

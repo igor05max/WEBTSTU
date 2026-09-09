@@ -294,6 +294,7 @@ class DocxRenderer:
             if isinstance(candidate, FigureBlock) and candidate.group_id:
                 figure_groups.setdefault(candidate.group_id, []).append(candidate)
         rendered_figure_groups: set[str] = set()
+        rendered_body_emails: set[str] = set()
         figure_index = 0
         current_figure_group: str | None = None
         table_index = 0
@@ -322,6 +323,11 @@ class DocxRenderer:
                     heading_text = f"{block.number}. {heading_text}"
                 paragraph.add_run(heading_text)
             elif isinstance(block, ParagraphBlock):
+                body_email = self._body_email(block.text)
+                if body_email:
+                    if body_email in rendered_body_emails:
+                        continue
+                    rendered_body_emails.add(body_email)
                 if not (
                     self._source_xml_has_complex_content(block.source_xml)
                     and self._append_source_xml_block(
@@ -923,10 +929,19 @@ class DocxRenderer:
             return "keywords"
         if normalized.startswith(("for citation", "forcitation", "для цитирования")):
             return "citation"
+        if index < 36 and re.fullmatch(r"[^\s@]*@[^\s@]+", normalized):
+            return "email"
         if "рубрика журнала" in normalized:
             return "editorial_metadata"
         if index < 12 and normalized in {"заглавие статьи", "название статьи"}:
             return "title"
+        return None
+
+    @staticmethod
+    def _body_email(text: str) -> str | None:
+        normalized = re.sub(r"^[*†‡\s]+", "", text).strip().casefold()
+        if re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
+            return normalized
         return None
 
     @staticmethod
