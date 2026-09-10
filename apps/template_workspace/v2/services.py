@@ -87,7 +87,7 @@ def run_v2_job(job_id: str) -> None:
         if not is_ai_configured():
             warnings.append("Qwen/VPN: AI_BASE_URL не задан в окружении, V2 выполнил только локальную классификацию ролей.")
         else:
-            warnings.append(f"Qwen/VPN: endpoint настроен ({get_api_base_url()}); роли классифицированы через доступный провайдер или fallback.")
+            warnings.append(f"Qwen/VPN: endpoint настроен ({get_api_base_url()}); если API недоступен, V2 использует локальный fallback и пишет отдельное предупреждение.")
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
             status="completed",
             message="V2 Word-forensics отчёты готовы. Документы не изменялись.",

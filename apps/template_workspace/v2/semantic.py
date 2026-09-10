@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,7 @@ def classify_semantic_roles(paragraphs: list[ParagraphInfo], *, document_name: s
         enabled=ai_enabled,
         provider="qwen" if ai_enabled else "rules",
         model=get_configured_model(getattr(settings, "AI_MODEL", "")) if ai_enabled else "",
-        timeout_seconds=getattr(settings, "AI_REQUEST_TIMEOUT", 120),
+        timeout_seconds=_v2_ai_timeout_seconds(),
     )
     provider = QwenSemanticProvider(semantic_settings, cache_dir=cache_dir / "qwen" if cache_dir else None) if ai_enabled else None
     analysis = HybridSemanticClassifier(
@@ -82,6 +83,14 @@ def _semantic_blocks(paragraphs: list[ParagraphInfo]) -> list[SemanticBlock]:
             )
         )
     return result
+
+
+def _v2_ai_timeout_seconds() -> int:
+    fallback = min(int(getattr(settings, "AI_REQUEST_TIMEOUT", 120) or 120), 15)
+    try:
+        return max(3, int(os.getenv("TEMPLATE_V2_AI_TIMEOUT_SECONDS", fallback)))
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _numbered_prefix(text: str) -> str | None:
