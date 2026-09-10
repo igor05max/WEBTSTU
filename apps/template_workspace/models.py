@@ -9,8 +9,11 @@ def job_upload(instance, filename):
 
 
 class TemplateJob(models.Model):
+    KIND_CHOICES = [("v1", "Legacy template workspace"), ("v2", "Word-first forensics")]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default="v1")
     article = models.FileField(upload_to=job_upload, max_length=500)
     template = models.FileField(upload_to=job_upload, max_length=500)
     article_name = models.CharField(max_length=255)

@@ -1,0 +1,16 @@
+{% extends "template_workspace/base.html" %}
+{% block workspace_content %}
+<a href="{% url 'template_workspace:v2_workspace' %}">← Все V2 отчёты</a>
+<h1 style="margin-top:22px">{{ job.article_name }}</h1><p class="tw-muted">TEMPLATE: {{ job.template_name }}</p>
+<p class="tw-muted">AI-слой: {% if ai_status.configured %}{{ ai_status.provider_label }} через {{ ai_status.endpoint }}{% else %}локальные правила, <code>AI_BASE_URL</code> не задан{% endif %}</p>
+<section class="tw-card" aria-live="polite">
+{% if job.pending %}<div class="tw-state"><span class="tw-pulse"></span>Анализируем DOCX</div><p>Читаем OOXML package, document flow, стили, секции, таблицы, рисунки, формулы, ссылки и headers/footers. Исходные файлы не изменяются.</p><p id="tw-connection" class="tw-muted"></p>
+{% else %}<div class="tw-state">{% if job.status == 'completed' %}V2 отчёты готовы{% else %}Анализ не завершён{% endif %}</div><p>{{ job.message }}</p>{% endif %}
+<div class="tw-actions">{% if 'article' in files %}<a class="tw-btn" href="{% url 'template_workspace:v2_download' job.pk 'article' %}">ARTICLE JSON</a>{% endif %}{% if 'template' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:v2_download' job.pk 'template' %}">TEMPLATE JSON</a>{% endif %}{% if 'diff' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:v2_download' job.pk 'diff' %}">DIFF JSON</a>{% endif %}</div>
+{% if job.warnings %}<details class="tw-warnings"><summary>Диагностика: {{ job.warnings|length }}</summary><ul>{% for warning in job.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+</section>
+{% if job.plan %}<section class="tw-card"><h2>Сводка</h2><ol class="tw-plan">{% for item in job.plan %}<li><strong>{{ item.kind }}:</strong> {{ item.text }}</li>{% endfor %}</ol></section>{% endif %}
+{% endblock %}
+{% block extra_scripts %}{% if job.pending %}<script>
+(function poll(){setTimeout(async()=>{try{const r=await fetch('{% url "template_workspace:v2_progress" job.pk %}',{headers:{'Accept':'application/json'}});if(!r.ok||r.redirected)throw Error();const data=await r.json();if(!data.pending){location.reload();return;}document.getElementById('tw-connection').textContent='';}catch(e){document.getElementById('tw-connection').textContent='Не удалось обновить статус. Повторяем подключение…';}poll();},4000);})();
+</script>{% endif %}{% endblock %}

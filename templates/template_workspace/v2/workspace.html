@@ -1,0 +1,17 @@
+{% extends "template_workspace/base.html" %}
+{% block workspace_content %}
+<a href="{% url 'template_workspace:workspace' %}">← Старая версия</a>
+<h1 style="margin-top:22px">Word-forensics V2</h1>
+<p class="tw-muted">Загрузите ARTICLE.docx и TEMPLATE.docx. V2 пока только анализирует нативную структуру Word и строит JSON-отчёты без редактирования документов.</p>
+<section class="tw-card">
+<h2>Шаблон два</h2>
+<p>Система читает DOCX как OOXML, строит fingerprint и structural diff. Семантические роли идут отдельным слоем: {% if ai_status.configured %}{{ ai_status.provider_label }} подключена через {{ ai_status.endpoint }}.{% else %}Qwen сейчас не подключён, потому что <code>AI_BASE_URL</code> не задан на этом запуске; анализ Word всё равно работает локально.{% endif %}</p>
+</section>
+<form method="post" enctype="multipart/form-data" class="tw-card" id="tw-form">
+{% csrf_token %}{{ form.non_field_errors }}
+<div class="tw-grid">{% for field in form %}<div class="tw-upload">{{ field.label_tag }}{{ field }}<small>{{ field.help_text }}</small>{{ field.errors }}</div>{% endfor %}</div>
+<button type="submit" class="tw-btn" id="tw-submit">Запустить V2-анализ</button>
+</form>
+<section class="tw-card"><h2>V2 отчёты</h2><ul class="tw-history">{% for job in jobs %}<li><div><a href="{% url 'template_workspace:v2_detail' job.pk %}">{{ job.article_name }}</a><small>Шаблон: {{ job.template_name }} · {{ job.created_at|date:"d.m.Y H:i" }}</small></div><span>{% if job.pending %}В работе{% elif job.status == 'completed' %}Готово{% else %}Не завершено{% endif %}</span></li>{% empty %}<li class="tw-muted">Здесь появятся отчёты Word-forensics.</li>{% endfor %}</ul></section>
+{% endblock %}
+{% block extra_scripts %}<script>document.getElementById('tw-form').addEventListener('submit',function(){const b=document.getElementById('tw-submit');b.disabled=true;b.textContent='Загружаем DOCX…';});</script>{% endblock %}

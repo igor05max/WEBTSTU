@@ -35,11 +35,11 @@ def workspace(request):
                 transaction.on_commit(lambda: launch_job(job))
                 return redirect("template_workspace:detail", job_id=job.pk)
     return render(request, "template_workspace/workspace.html", {
-        "form": form, "jobs": TemplateJob.objects.filter(owner=request.user)[:20]})
+        "form": form, "jobs": TemplateJob.objects.filter(owner=request.user, kind="v1")[:20]})
 
 
 def owned_job(request, job_id):
-    return get_object_or_404(TemplateJob, pk=job_id, owner=request.user)
+    return get_object_or_404(TemplateJob, pk=job_id, owner=request.user, kind="v1")
 
 
 def available_files(job):
