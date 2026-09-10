@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from hashlib import sha256
 from pathlib import Path
+from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from django.contrib.auth import get_user_model
@@ -104,6 +105,13 @@ class TemplateV2InspectorTests(TestCase):
         first = DocumentInspector(self.path).inspect().fingerprint
         second = DocumentInspector(self.path).inspect().fingerprint
         self.assertEqual(first, second)
+
+    @override_settings(AI_BASE_URL="http://192.0.2.10:8088/v1")
+    def test_unreachable_ai_endpoint_uses_local_roles_without_model_request(self):
+        with patch("apps.template_workspace.v2.semantic.socket.create_connection", side_effect=OSError):
+            report = DocumentInspector(self.path).inspect()
+        self.assertEqual(report.semantic_roles.provider, "rules-only")
+        self.assertTrue(any("недоступен по TCP" in warning for warning in report.semantic_roles.warnings))
 
 
 @skipUnlessDBFeature("supports_transactions")

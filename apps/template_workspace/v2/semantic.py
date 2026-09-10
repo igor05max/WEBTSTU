@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import re
 import os
+import socket
 from collections import Counter
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from django.conf import settings
 
-from apps.checks.ai_client import get_configured_model, is_ai_configured
+from apps.checks.ai_client import get_api_base_url, get_configured_model, is_ai_configured
 from apps.submissions.paper_formatter_ai import QwenSemanticProvider
 from apps.template_workspace.v2.models.document_info import ParagraphInfo, SemanticRoleLayer
 from paper_formatter.config import SemanticSettings
@@ -21,7 +23,14 @@ def classify_semantic_roles(paragraphs: list[ParagraphInfo], *, document_name: s
     if not blocks:
         return SemanticRoleLayer(provider="empty", warnings=[], role_counts={}, block_roles=[])
 
-    ai_enabled = is_ai_configured()
+    ai_configured = is_ai_configured()
+    reachability_warning = ""
+    ai_enabled = ai_configured and _configured_endpoint_reachable()
+    if ai_configured and not ai_enabled:
+        reachability_warning = (
+            f"Qwen endpoint {get_api_base_url()} сейчас недоступен по TCP; "
+            "V2 выполнил классификацию локальными правилами без ожидания AI."
+        )
     semantic_settings = SemanticSettings(
         enabled=ai_enabled,
         provider="qwen" if ai_enabled else "rules",
@@ -35,10 +44,13 @@ def classify_semantic_roles(paragraphs: list[ParagraphInfo], *, document_name: s
         provider=provider,
     ).analyze_document(blocks, document_name=document_name)
     decisions = analysis.decisions
+    warnings = list(analysis.warnings)
+    if reachability_warning:
+        warnings.insert(0, reachability_warning)
     counts = Counter(decision.role for decision in decisions)
     return SemanticRoleLayer(
         provider=analysis.provider,
-        warnings=list(analysis.warnings),
+        warnings=warnings,
         role_counts=dict(sorted(counts.items())),
         block_roles=[
             {
@@ -91,6 +103,22 @@ def _v2_ai_timeout_seconds() -> int:
         return max(3, int(os.getenv("TEMPLATE_V2_AI_TIMEOUT_SECONDS", fallback)))
     except (TypeError, ValueError):
         return fallback
+
+
+def _configured_endpoint_reachable() -> bool:
+    parsed = urlparse(get_api_base_url())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        timeout = max(0.2, float(os.getenv("TEMPLATE_V2_AI_CONNECT_TIMEOUT_SECONDS", "1.5")))
+    except (TypeError, ValueError):
+        timeout = 1.5
+    try:
+        with socket.create_connection((parsed.hostname, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 def _numbered_prefix(text: str) -> str | None:
