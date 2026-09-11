@@ -5,8 +5,11 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
+from apps.template_workspace.v2.classification.roles import RoleClassifierV2
 from apps.template_workspace.v2.comparison.document_diff import DocumentDiffBuilder
 from apps.template_workspace.v2.inspector.document import DocumentInspector
+from apps.template_workspace.v2.mapping.preview import RoleMatcher
+from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 
 
 class Command(BaseCommand):
@@ -17,26 +20,42 @@ class Command(BaseCommand):
         parser.add_argument("--template", help="Formatted/template DOCX to compare with source")
         parser.add_argument("--control", help="Optional additional formatted/control DOCX")
         parser.add_argument("--output", default="var/template_v2_analysis", help="Directory for JSON reports")
+        parser.add_argument(
+            "--reference-pair",
+            action="store_true",
+            help="Also write document_diff.json for source + formatted version of the same article.",
+        )
 
     def handle(self, *args, **options):
         output = Path(options["output"])
         output.mkdir(parents=True, exist_ok=True)
         source = DocumentInspector(options["source"]).inspect()
-        self._write(output / "source.json", source.to_dict())
-        self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'source.json'}"))
+        self._write(output / "article_report.json", source.to_dict())
+        self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'article_report.json'}"))
 
         if options.get("template"):
             template = DocumentInspector(options["template"]).inspect()
-            diff = DocumentDiffBuilder().compare(source, template)
-            self._write(output / "template.json", template.to_dict())
-            self._write(output / "diff.json", diff.to_dict())
-            self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'template.json'}"))
-            self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'diff.json'}"))
+            classifier = RoleClassifierV2()
+            article_structure = classifier.article_structure(source)
+            template_profile = TemplateProfileBuilder(classifier=classifier).build(template)
+            mapping_preview = RoleMatcher().build_preview(article_structure, template_profile)
+            self._write(output / "template_report.json", template.to_dict())
+            self._write(output / "article_structure.json", article_structure.to_dict())
+            self._write(output / "template_profile.json", template_profile.to_dict())
+            self._write(output / "mapping_preview.json", mapping_preview.to_dict())
+            self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'template_report.json'}"))
+            self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'article_structure.json'}"))
+            self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'template_profile.json'}"))
+            self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'mapping_preview.json'}"))
+            if options["reference_pair"]:
+                diff = DocumentDiffBuilder().compare(source, template)
+                self._write(output / "document_diff.json", diff.to_dict())
+                self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'document_diff.json'}"))
 
         if options.get("control"):
             control = DocumentInspector(options["control"]).inspect()
             self._write(output / "control.json", control.to_dict())
-            if options.get("template"):
+            if options.get("template") and options["reference_pair"]:
                 formatted_diff = DocumentDiffBuilder().compare(template, control)
                 self._write(output / "formatted_control_diff.json", formatted_diff.to_dict())
             self.stdout.write(self.style.SUCCESS(f"Wrote {output / 'control.json'}"))

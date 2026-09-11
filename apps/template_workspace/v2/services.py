@@ -15,8 +15,10 @@ from django.utils import timezone
 from apps.checks.ai_client import get_api_base_url, is_ai_configured
 from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.services import output_directory
-from apps.template_workspace.v2.comparison.document_diff import DocumentDiffBuilder
+from apps.template_workspace.v2.classification.roles import RoleClassifierV2
 from apps.template_workspace.v2.inspector.document import DocumentInspector
+from apps.template_workspace.v2.mapping.preview import RoleMatcher
+from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -62,35 +64,38 @@ def run_v2_job(job_id: str) -> None:
     job = TemplateJob.objects.get(pk=job_id, kind="v2")
     try:
         output = analysis_directory(job)
-        source_report = DocumentInspector(job.article.path, semantic_cache_dir=output / "semantic" / "article").inspect()
-        template_report = DocumentInspector(job.template.path, semantic_cache_dir=output / "semantic" / "template").inspect()
-        diff = DocumentDiffBuilder().compare(source_report, template_report)
+        source_report = DocumentInspector(job.article.path).inspect()
+        template_report = DocumentInspector(job.template.path).inspect()
+        classifier = RoleClassifierV2()
+        article_structure = classifier.article_structure(source_report)
+        template_profile = TemplateProfileBuilder(classifier=classifier).build(template_report)
+        mapping_preview = RoleMatcher().build_preview(article_structure, template_profile)
 
         write_json(output / "article_report.json", source_report.to_dict())
         write_json(output / "template_report.json", template_report.to_dict())
-        write_json(output / "document_diff.json", diff.to_dict())
+        write_json(output / "article_structure.json", article_structure.to_dict())
+        write_json(output / "template_profile.json", template_profile.to_dict())
+        write_json(output / "mapping_preview.json", mapping_preview.to_dict())
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
-            {"kind": "AI роли", "text": f"ARTICLE: {source_report.semantic_roles.provider}; TEMPLATE: {template_report.semantic_roles.provider}"},
+            {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
+            {"kind": "Mapping preview", "text": f"{mapping_preview.summary['total_mappings']} действий; review: {mapping_preview.summary['needs_review']}"},
             {"kind": "Секции", "text": f"ARTICLE: {len(source_report.sections)}; TEMPLATE: {len(template_report.sections)}"},
             {"kind": "Таблицы", "text": f"ARTICLE: {len(source_report.tables)}; TEMPLATE: {len(template_report.tables)}"},
             {"kind": "Рисунки", "text": f"ARTICLE: {len(source_report.drawings)}; TEMPLATE: {len(template_report.drawings)}"},
             {"kind": "Формулы", "text": f"ARTICLE: {len(source_report.formulas)}; TEMPLATE: {len(template_report.formulas)}"},
         ]
         warnings = []
-        if diff.summary.get("text_hash_changed"):
-            warnings.append("CONTENT: нормализованный текст ARTICLE и TEMPLATE различается; V2 пока только анализирует это, не редактирует DOCX.")
-        if diff.summary.get("table_structure_changed"):
-            warnings.append("TABLES: структура таблиц отличается или имеет другие merges/widths.")
-        warnings.extend(source_report.semantic_roles.warnings)
-        warnings.extend(template_report.semantic_roles.warnings)
+        warnings.extend(article_structure.warnings)
+        warnings.extend(template_profile.warnings)
+        warnings.extend(mapping_preview.warnings)
         if not is_ai_configured():
             warnings.append("Qwen/VPN: AI_BASE_URL не задан в окружении, V2 выполнил только локальную классификацию ролей.")
         else:
             warnings.append(f"Qwen/VPN: endpoint настроен ({get_api_base_url()}); если API недоступен, V2 использует локальный fallback и пишет отдельное предупреждение.")
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
             status="completed",
-            message="V2 Word-forensics отчёты готовы. Документы не изменялись.",
+            message="V2 отчёты, TemplateProfile и MappingPreview готовы. Документы не изменялись.",
             plan=plan,
             warnings=warnings,
             updated_at=timezone.now(),

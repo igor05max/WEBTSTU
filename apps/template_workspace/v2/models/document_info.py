@@ -31,12 +31,14 @@ class RunInfo:
     font: dict[str, Any]
     direct_formatting: dict[str, Any]
     inherited_formatting: dict[str, Any]
+    effective_formatting: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class DrawingInfo:
     id: str
     block_id: str
+    kind: str
     inline: bool
     anchor: bool
     relationship_id: str | None
@@ -54,6 +56,7 @@ class FormulaInfo:
     kind: str
     xml_hash: str
     display: bool
+    embedded_target: str | None = None
 
 
 @dataclass
@@ -78,6 +81,7 @@ class ParagraphInfo:
     properties: dict[str, Any]
     direct_formatting: dict[str, Any]
     numbering: dict[str, Any] | None
+    effective_formatting: dict[str, Any] = field(default_factory=dict)
     runs: list[RunInfo] = field(default_factory=list)
     drawings: list[DrawingInfo] = field(default_factory=list)
     formulas: list[FormulaInfo] = field(default_factory=list)
@@ -111,7 +115,10 @@ class TableInfo:
     nested_table_count: int
     has_drawings: bool
     has_formulas: bool
+    classification: str
     structure_hash: str
+    content_hash: str
+    merge_topology_hash: str
     caption_nearby: str | None
 
 
@@ -137,6 +144,10 @@ class SectionInfo:
     header_refs: list[dict[str, Any]]
     footer_refs: list[dict[str, Any]]
     page_numbering: dict[str, Any]
+    start_block: str | None = None
+    end_block: str | None = None
+    previous_block: str | None = None
+    next_block: str | None = None
 
 
 @dataclass
@@ -190,6 +201,14 @@ class SemanticRoleLayer:
 
 
 @dataclass
+class EmbeddedObjectSummary:
+    omml_formula_count: int
+    ole_equation_count: int
+    unknown_ole_count: int
+    embedding_parts: list[str]
+
+
+@dataclass
 class DocumentReport:
     source_path: str
     package: PackageSummary
@@ -204,8 +223,9 @@ class DocumentReport:
     footers: list[HeaderFooterInfo]
     styles: list[StyleInfo]
     numbering: NumberingInfo
-    semantic_roles: SemanticRoleLayer
     fingerprint: dict[str, Any]
+    embedded_objects: EmbeddedObjectSummary = field(default_factory=lambda: EmbeddedObjectSummary(0, 0, 0, []))
+    semantic_roles: SemanticRoleLayer | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain(self)

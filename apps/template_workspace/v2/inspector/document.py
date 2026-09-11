@@ -9,9 +9,11 @@ from typing import Any
 
 from lxml import etree
 
+from apps.template_workspace.v2.formatting.effective import EffectiveFormattingResolver
 from apps.template_workspace.v2.models.document_info import (
     DocumentReport,
     DrawingInfo,
+    EmbeddedObjectSummary,
     FlowBlock,
     FormulaInfo,
     HeaderFooterInfo,
@@ -30,7 +32,6 @@ from apps.template_workspace.v2.models.document_info import (
 from apps.template_workspace.v2.models.fingerprint import DocumentFingerprint
 from apps.template_workspace.v2.ooxml.namespaces import NS, local_name, qn, xml_string
 from apps.template_workspace.v2.ooxml.package import WordPackage
-from apps.template_workspace.v2.semantic import classify_semantic_roles
 
 
 def normalize_text(value: str) -> str:
@@ -91,6 +92,7 @@ class DocumentInspector:
         self.package = WordPackage(path)
         self.path = Path(path)
         self.semantic_cache_dir = semantic_cache_dir
+        self._formatting: EffectiveFormattingResolver | None = None
         self._style_names: dict[str, str] = {}
         self._style_props: dict[str, dict[str, Any]] = {}
         self._paragraphs: list[ParagraphInfo] = []
@@ -110,17 +112,14 @@ class DocumentInspector:
             }
             for style in styles
         }
+        self._formatting = EffectiveFormattingResolver(self.package.styles, styles)
         flow = self._inspect_flow()
-        sections = self._inspect_sections()
+        sections = self._inspect_sections(flow)
         headers = self._inspect_story_parts(self.package.header_parts, "header")
         footers = self._inspect_story_parts(self.package.footer_parts, "footer")
         numbering = self._inspect_numbering()
-        semantic_roles = classify_semantic_roles(
-            self._paragraphs,
-            document_name=self.path.name,
-            cache_dir=self.semantic_cache_dir,
-        )
         fingerprint = self._fingerprint(sections, headers, footers, numbering)
+        embedded_objects = self._embedded_objects_summary()
         relationships = self.package.relationships
         package_summary = PackageSummary(
             path=str(self.path),
@@ -143,8 +142,8 @@ class DocumentInspector:
             footers=footers,
             styles=styles,
             numbering=numbering,
-            semantic_roles=semantic_roles,
             fingerprint=asdict(fingerprint),
+            embedded_objects=embedded_objects,
         )
 
     def _inspect_flow(self) -> list[FlowBlock]:
@@ -199,6 +198,7 @@ class DocumentInspector:
         self._drawings.extend(drawings)
         self._formulas.extend(formulas)
         self._hyperlinks.extend(hyperlinks)
+        effective = self._formatting.paragraph(style_id, self._paragraph_properties(p_pr)) if self._formatting else {}
         return ParagraphInfo(
             id=block_id,
             index=index,
@@ -210,6 +210,7 @@ class DocumentInspector:
             properties=self._paragraph_properties(p_pr),
             direct_formatting=selected_attrs(p_pr, ["w:jc", "w:spacing", "w:ind", "w:keepNext", "w:keepLines", "w:pageBreakBefore"]),
             numbering=self._numbering_properties(p_pr),
+            effective_formatting=effective,
             runs=self._inspect_runs(paragraph, style_id),
             drawings=drawings,
             formulas=formulas,
@@ -221,14 +222,16 @@ class DocumentInspector:
         for index, run in enumerate(paragraph.xpath(".//w:r[not(ancestor::m:oMath) and not(ancestor::m:oMathPara)]", namespaces=NS), start=1):
             r_pr = first_child(run, "w:rPr")
             font = self._run_properties(r_pr)
+            run_style_id = child_attr(r_pr, "w:rStyle")
             runs.append(
                 RunInfo(
                     index=index,
                     text=element_text(run),
-                    style_id=child_attr(r_pr, "w:rStyle"),
+                    style_id=run_style_id,
                     font=font,
                     direct_formatting={key: value for key, value in font.items() if value not in (None, {}, [])},
                     inherited_formatting=self._style_props.get(style_id or "", {}).get("run", {}),
+                    effective_formatting=self._formatting.run(style_id, run_style_id, font) if self._formatting else font,
                 )
             )
         return runs
@@ -290,6 +293,8 @@ class DocumentInspector:
                 for row in rows
             ],
         }
+        content_payload = [[cell.text for cell in row] for row in rows]
+        merge_payload = [[(cell.grid_column, cell.grid_span, cell.v_merge) for cell in row if cell.grid_span > 1 or cell.v_merge] for row in rows]
         return TableInfo(
             id=block_id,
             index=index,
@@ -303,7 +308,10 @@ class DocumentInspector:
             nested_table_count=nested_table_count,
             has_drawings=bool(table.xpath(".//w:drawing|.//w:pict", namespaces=NS)),
             has_formulas=bool(table.xpath(".//m:oMath|.//m:oMathPara", namespaces=NS)),
+            classification=self._classify_table(rows, table_drawings, nested_table_count),
             structure_hash=sha_text(repr(structure_payload)),
+            content_hash=sha_text(repr(content_payload)),
+            merge_topology_hash=sha_text(repr(merge_payload)),
             caption_nearby=caption,
         )
 
@@ -326,6 +334,7 @@ class DocumentInspector:
                 DrawingInfo(
                     id=f"{block_id}_drawing_{index:03d}",
                     block_id=block_id,
+                    kind=self._drawing_kind(drawing, target),
                     inline=inline,
                     anchor=anchor,
                     relationship_id=rel_id,
@@ -354,6 +363,22 @@ class DocumentInspector:
                     display=local_name(formula) == "oMathPara",
                 )
             )
+        offset = len(result)
+        for index, formula in enumerate(root.xpath(".//w:object|.//o:OLEObject", namespaces=NS), start=1):
+            target = None
+            rel_id = formula.get(qn("r:id")) or formula.get(qn("r:embed"))
+            if rel_id:
+                target = rel_target(self.package, rel_id)
+            result.append(
+                FormulaInfo(
+                    id=f"{block_id}_formula_{offset + index:03d}",
+                    block_id=block_id,
+                    kind=local_name(formula),
+                    xml_hash=sha_text(xml_string(formula)),
+                    display=False,
+                    embedded_target=target,
+                )
+            )
         return result
 
     def _inspect_hyperlinks(self, paragraph: etree._Element, block_id: str) -> list[HyperlinkInfo]:
@@ -372,16 +397,33 @@ class DocumentInspector:
             )
         return result
 
-    def _inspect_sections(self) -> list[SectionInfo]:
+    def _inspect_sections(self, flow: list[FlowBlock]) -> list[SectionInfo]:
         result: list[SectionInfo] = []
+        section_break_blocks = [
+            block for block in flow if block.kind == "paragraph" and block.object_id in {
+                paragraph.id
+                for paragraph in self._paragraphs
+                if paragraph.properties.get("section_break")
+            }
+        ]
         for index, sect_pr in enumerate(self.package.main_document.xpath("//w:sectPr", namespaces=NS), start=1):
-            result.append(self._section_info(sect_pr, index))
+            result.append(self._section_info(sect_pr, index, flow, section_break_blocks))
         return result
 
-    def _section_info(self, sect_pr: etree._Element, index: int) -> SectionInfo:
+    def _section_info(self, sect_pr: etree._Element, index: int, flow: list[FlowBlock], section_break_blocks: list[FlowBlock]) -> SectionInfo:
         page_size = first_child(sect_pr, "w:pgSz")
         margins = first_child(sect_pr, "w:pgMar")
         cols = first_child(sect_pr, "w:cols")
+        start_index = 1
+        end_index = flow[-1].index if flow else 0
+        if index > 1 and index - 2 < len(section_break_blocks):
+            start_index = section_break_blocks[index - 2].index + 1
+        if index - 1 < len(section_break_blocks):
+            end_index = section_break_blocks[index - 1].index
+        start_block = next((block.id for block in flow if block.index >= start_index and block.kind != "section_properties"), None)
+        end_block = next((block.id for block in reversed(flow) if block.index <= end_index and block.kind != "section_properties"), None)
+        previous_block = next((block.id for block in reversed(flow) if block.index < start_index and block.kind != "section_properties"), None)
+        next_block = next((block.id for block in flow if block.index > end_index and block.kind != "section_properties"), None)
         return SectionInfo(
             id=f"section_{index:03d}",
             index=index,
@@ -393,6 +435,10 @@ class DocumentInspector:
             header_refs=[self._ref_dict(item) for item in sect_pr.xpath("./w:headerReference", namespaces=NS)],
             footer_refs=[self._ref_dict(item) for item in sect_pr.xpath("./w:footerReference", namespaces=NS)],
             page_numbering=dict(first_child(sect_pr, "w:pgNumType").attrib) if first_child(sect_pr, "w:pgNumType") is not None else {},
+            start_block=start_block,
+            end_block=end_block,
+            previous_block=previous_block,
+            next_block=next_block,
         )
 
     def _inspect_story_parts(self, parts: list[str], kind: str) -> list[HeaderFooterInfo]:
@@ -479,6 +525,7 @@ class DocumentInspector:
             "pageBreakBefore": bool_prop(p_pr, "w:pageBreakBefore"),
             "outline_level": child_attr(p_pr, "w:outlineLvl"),
             "borders": bool(first_child(p_pr, "w:pBdr") is not None),
+            "section_break": first_child(p_pr, "w:sectPr") is not None,
         }
 
     def _run_properties(self, r_pr: etree._Element | None) -> dict[str, Any]:
@@ -498,6 +545,7 @@ class DocumentInspector:
             "vertical_align": child_attr(r_pr, "w:vertAlign"),
             "color": color.get(qn("w:val")) if color is not None else None,
             "language": dict(first_child(r_pr, "w:lang").attrib) if first_child(r_pr, "w:lang") is not None else {},
+            "character_style_id": child_attr(r_pr, "w:rStyle"),
         }
 
     def _numbering_properties(self, p_pr: etree._Element | None) -> dict[str, Any] | None:
@@ -585,6 +633,49 @@ class DocumentInspector:
         if "@" in text and len(text) < 160:
             return "email"
         return "body"
+
+    @staticmethod
+    def _classify_table(rows: list[list[TableCellInfo]], drawings: list[DrawingInfo], nested_table_count: int) -> str:
+        cell_count = sum(len(row) for row in rows)
+        drawing_cells = sum(1 for row in rows for cell in row if cell.has_drawing)
+        text_cells = sum(1 for row in rows for cell in row if cell.text)
+        if cell_count and drawing_cells / cell_count >= 0.5:
+            return "FIGURE_CONTAINER"
+        if nested_table_count or (cell_count <= 4 and drawing_cells and text_cells <= drawing_cells):
+            return "LAYOUT_TABLE"
+        if text_cells >= 2 and len(rows) >= 2:
+            return "DATA_TABLE"
+        if drawings:
+            return "FIGURE_CONTAINER"
+        return "UNKNOWN"
+
+    @staticmethod
+    def _drawing_kind(drawing: etree._Element, media_target: str | None) -> str:
+        if drawing.xpath(".//c:chart", namespaces={**NS, "c": "http://schemas.openxmlformats.org/drawingml/2006/chart"}):
+            return "CHART"
+        if drawing.xpath(".//o:OLEObject", namespaces=NS):
+            return "OLE_PREVIEW"
+        if drawing.xpath(".//v:shape", namespaces=NS) and not media_target:
+            return "SHAPE"
+        if media_target:
+            return "PICTURE"
+        return "UNKNOWN"
+
+    def _embedded_objects_summary(self) -> EmbeddedObjectSummary:
+        ole_objects = self.package.main_document.xpath("//w:object|//o:OLEObject", namespaces=NS)
+        embedding_parts = sorted(name for name in self.package.names if name.startswith("word/embeddings/"))
+        equation_markers = ("equation", "mathtype", "oleobject")
+        ole_equations = [
+            item
+            for item in ole_objects
+            if any(marker in xml_string(item).lower() for marker in equation_markers)
+        ]
+        return EmbeddedObjectSummary(
+            omml_formula_count=sum(1 for formula in self._formulas if formula.kind in {"oMath", "oMathPara"}),
+            ole_equation_count=len(ole_equations),
+            unknown_ole_count=max(0, len(ole_objects) - len(ole_equations)),
+            embedding_parts=embedding_parts,
+        )
 
     def _fingerprint(
         self,

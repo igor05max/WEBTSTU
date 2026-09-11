@@ -53,8 +53,8 @@ class DocumentDiffBuilder:
             "table_structure_changed": before_fp.get("table_structure_hash") != after_fp.get("table_structure_hash"),
             "media_changed": before_fp.get("media_hashes") != after_fp.get("media_hashes"),
             "formula_hashes_changed": before_fp.get("formula_xml_hashes") != after_fp.get("formula_xml_hashes"),
-            "role_counts_before": before.semantic_roles.role_counts,
-            "role_counts_after": after.semantic_roles.role_counts,
+            "role_counts_before": before.semantic_roles.role_counts if before.semantic_roles else {},
+            "role_counts_after": after.semantic_roles.role_counts if after.semantic_roles else {},
         }
 
     def _compare_fingerprints(self, before: DocumentReport, after: DocumentReport, diff: DocumentDiff) -> None:

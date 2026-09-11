@@ -16,7 +16,9 @@ from apps.template_workspace.v2.services import analysis_directory, expire_v2_jo
 FILES = {
     "article": ("article_report.json", "application/json", "article_report.json"),
     "template": ("template_report.json", "application/json", "template_report.json"),
-    "diff": ("document_diff.json", "application/json", "document_diff.json"),
+    "structure": ("article_structure.json", "application/json", "article_structure.json"),
+    "profile": ("template_profile.json", "application/json", "template_profile.json"),
+    "mapping": ("mapping_preview.json", "application/json", "mapping_preview.json"),
 }
 
 

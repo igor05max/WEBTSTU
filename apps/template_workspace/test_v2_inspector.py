@@ -16,15 +16,32 @@ from docx import Document
 from docx.enum.section import WD_SECTION
 
 from apps.template_workspace.models import TemplateJob
+from apps.template_workspace.v2.classification.roles import RoleClassifierV2
 from apps.template_workspace.v2.comparison.document_diff import DocumentDiffBuilder
 from apps.template_workspace.v2.inspector.document import DocumentInspector
+from apps.template_workspace.v2.mapping.preview import RoleMatcher
+from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.services import analysis_directory, run_v2_job
 
 
+def first_existing(*paths: str) -> Path:
+    for path in paths:
+        candidate = Path(path)
+        if candidate.exists():
+            return candidate
+    return Path(paths[0])
+
+
 FIXTURES = {
-    "balabanov_source": Path(r"C:\Users\Igoryok\Downloads\Statya_Balabanov_trans (1).docx"),
-    "balabanov_formatted": Path(r"C:\Users\Igoryok\Downloads\03_Balabanov_Dyachkova_Gutnik_Chapaksov_Burakova_118-128 (1).docx"),
-    "tyutyunnik_formatted": Path(r"C:\Users\Igoryok\Downloads\01_Tyutyunnik_98-103.docx"),
+    "balabanov_source": first_existing(
+        r"C:\Users\Igoryok\Downloads\Statya_Balabanov_trans (1).docx",
+        r"C:\Users\Igoryok\Downloads\Statya_Balabanov_trans.docx",
+    ),
+    "balabanov_formatted": first_existing(
+        r"C:\Users\Igoryok\Downloads\03_Balabanov_Dyachkova_Gutnik_Chapaksov_Burakova_118-128 (1).docx",
+        r"C:\Users\Igoryok\Downloads\03_Balabanov_Dyachkova_Gutnik_Chapaksov_Burakova_118-128.docx",
+    ),
+    "tyutyunnik_formatted": first_existing(r"C:\Users\Igoryok\Downloads\01_Tyutyunnik_98-103.docx"),
 }
 REAL_FIXTURES_AVAILABLE = all(path.exists() for path in FIXTURES.values())
 
@@ -79,8 +96,11 @@ class TemplateV2InspectorTests(TestCase):
 
     def test_inspector_does_not_modify_docx(self):
         before = file_hash(self.path)
-        DocumentInspector(self.path).inspect()
+        with patch("apps.template_workspace.v2.classification.roles.generate_content") as ai_call:
+            report = DocumentInspector(self.path).inspect()
         self.assertEqual(file_hash(self.path), before)
+        self.assertIsNone(report.semantic_roles)
+        ai_call.assert_not_called()
 
     def test_document_flow_preserves_paragraph_table_order(self):
         report = DocumentInspector(self.path).inspect()
@@ -106,12 +126,50 @@ class TemplateV2InspectorTests(TestCase):
         second = DocumentInspector(self.path).inspect().fingerprint
         self.assertEqual(first, second)
 
+    def test_role_classifier_is_separate_from_raw_inspector(self):
+        report = DocumentInspector(self.path).inspect()
+        roles = RoleClassifierV2(use_ai=False).classify(report)
+        self.assertEqual(roles.provider, "v2-rules")
+        self.assertGreater(roles.role_counts["body"], 0)
+
     @override_settings(AI_BASE_URL="http://192.0.2.10:8088/v1")
-    def test_unreachable_ai_endpoint_uses_local_roles_without_model_request(self):
-        with patch("apps.template_workspace.v2.semantic.socket.create_connection", side_effect=OSError):
-            report = DocumentInspector(self.path).inspect()
-        self.assertEqual(report.semantic_roles.provider, "rules-only")
-        self.assertTrue(any("недоступен по TCP" in warning for warning in report.semantic_roles.warnings))
+    def test_unreachable_ai_endpoint_uses_local_v2_roles_without_model_request(self):
+        report = DocumentInspector(self.path).inspect()
+        with patch("apps.template_workspace.v2.classification.roles.socket.create_connection", side_effect=OSError), patch(
+            "apps.template_workspace.v2.classification.roles.generate_content"
+        ) as ai_call:
+            roles = RoleClassifierV2().classify(report)
+        self.assertEqual(roles.provider, "v2-rules")
+        self.assertTrue(any("недоступен по TCP" in warning for warning in roles.warnings))
+        ai_call.assert_not_called()
+
+    def test_role_classifier_does_not_confuse_fig_sentence_with_caption_or_list(self):
+        document = Document()
+        document.add_paragraph("Fig. 4 presents the results of the experiment and should stay body text.")
+        document.add_paragraph("Sample preparation method")
+        document.add_paragraph("Fig. 4. TG curves of the samples")
+        path = Path(self.tmp.name) / "roles.docx"
+        document.save(path)
+        report = DocumentInspector(path).inspect()
+        roles = RoleClassifierV2(use_ai=False).classify(report)
+        by_text = {
+            paragraph.normalized_text: role
+            for paragraph, role in zip([p for p in report.paragraphs if p.normalized_text], roles.block_roles)
+        }
+        self.assertEqual(by_text["Fig. 4 presents the results of the experiment and should stay body text."]["role_hint"], "body")
+        self.assertNotEqual(by_text["Sample preparation method"]["role_hint"], "list_item")
+        self.assertEqual(by_text["Fig. 4. TG curves of the samples"]["role_hint"], "figure_caption")
+
+    def test_template_profile_and_mapping_are_independent_from_content_diff(self):
+        article_report = DocumentInspector(self.path).inspect()
+        template_report = DocumentInspector(self.path).inspect()
+        classifier = RoleClassifierV2(use_ai=False)
+        article_structure = classifier.article_structure(article_report)
+        template_profile = TemplateProfileBuilder(classifier=classifier).build(template_report)
+        mapping = RoleMatcher().build_preview(article_structure, template_profile)
+        self.assertIn("body", template_profile.roles)
+        self.assertGreater(mapping.summary["total_mappings"], 0)
+        self.assertIn("No DOCX edits", " ".join(mapping.warnings))
 
 
 @skipUnlessDBFeature("supports_transactions")
@@ -150,7 +208,10 @@ class TemplateV2ViewTests(TestCase):
         self.assertEqual(job.status, "completed")
         self.assertTrue((analysis_directory(job) / "article_report.json").exists())
         self.assertTrue((analysis_directory(job) / "template_report.json").exists())
-        self.assertTrue((analysis_directory(job) / "document_diff.json").exists())
+        self.assertTrue((analysis_directory(job) / "article_structure.json").exists())
+        self.assertTrue((analysis_directory(job) / "template_profile.json").exists())
+        self.assertTrue((analysis_directory(job) / "mapping_preview.json").exists())
+        self.assertFalse((analysis_directory(job) / "document_diff.json").exists())
 
 
 @skipUnlessDBFeature("supports_transactions")
@@ -175,4 +236,11 @@ class TemplateV2RealDocumentTests(TestCase):
         self.assertGreater(report.fingerprint["section_count"], 1)
         self.assertGreater(report.fingerprint["drawing_count"], 0)
         self.assertGreater(report.fingerprint["header_count"], 0)
-        self.assertIsInstance(report.semantic_roles.role_counts, dict)
+        self.assertIsNone(report.semantic_roles)
+
+    def test_tyutyunnik_template_profile_has_layout_profile(self):
+        report = DocumentInspector(FIXTURES["tyutyunnik_formatted"]).inspect()
+        profile = TemplateProfileBuilder(classifier=RoleClassifierV2(use_ai=False)).build(report)
+        self.assertGreaterEqual(profile.layout.default_body_column_count, 1)
+        self.assertGreater(len(profile.layout.section_ranges), 0)
+        self.assertIsInstance(profile.roles, dict)

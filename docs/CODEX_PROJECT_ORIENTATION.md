@@ -143,9 +143,9 @@ Main rule:
 ```text
 ARTICLE.docx + TEMPLATE.docx
 -> inspect native DOCX/OOXML
--> classify structural roles
--> extract template rules
--> build a MappingPlan
+-> classify ARTICLE structural roles separately from inspection
+-> extract TEMPLATE formatting/layout rules without copying content
+-> build a MappingPreview
 -> later edit a copy of ARTICLE.docx
 ```
 
@@ -155,9 +155,20 @@ Current V2 stage:
 - reads DOCX as an OOXML package;
 - inspects document flow, styles, sections, tables, drawings, formulas,
   hyperlinks, headers and footers;
-- builds fingerprints and structural diffs;
-- writes JSON reports;
+- keeps `DocumentInspector` deterministic/offline with no Qwen calls;
+- classifies roles through `RoleClassifierV2`, using Qwen only for ambiguous
+  blocks after local rules;
+- builds `TemplateProfile` and `LayoutProfile` from TEMPLATE formatting,
+  sections, tables, drawings, formulas, OLE objects, headers and footers;
+- builds `MappingPreview` from ARTICLE structure to TEMPLATE rules;
+- writes `article_report.json`, `template_report.json`,
+  `article_structure.json`, `template_profile.json`, and
+  `mapping_preview.json`;
 - does not yet produce edited `RESULT.docx`.
+
+`DocumentDiffBuilder` is not the normal ARTICLE+TEMPLATE path. Use it only for
+reference pairs where the source and formatted file are the same article, e.g.
+with `inspect_template_v2 --reference-pair`.
 
 V2 may reuse shared infrastructure:
 
@@ -180,6 +191,10 @@ Key files:
 ```text
 apps/template_workspace/v2/ooxml/
 apps/template_workspace/v2/inspector/document.py
+apps/template_workspace/v2/classification/roles.py
+apps/template_workspace/v2/formatting/effective.py
+apps/template_workspace/v2/profile/template.py
+apps/template_workspace/v2/mapping/preview.py
 apps/template_workspace/v2/comparison/document_diff.py
 apps/template_workspace/v2/semantic.py
 apps/template_workspace/v2/services.py
@@ -192,6 +207,7 @@ Management commands:
 
 ```bash
 python manage.py inspect_template_v2 --source ARTICLE.docx --template TEMPLATE.docx --output var/template_v2_analysis
+python manage.py inspect_template_v2 --source SOURCE.docx --template FORMATTED_SAME_ARTICLE.docx --reference-pair --output var/template_v2_reference_pair
 python manage.py run_template_v2_job JOB_UUID
 ```
 
@@ -205,10 +221,11 @@ sudo -u webtstu /opt/webtstu/venv/bin/python manage.py inspect_template_v2 \
   --output /tmp/template-v2-smoke/out-live-qwen
 ```
 
-When Qwen is reachable, reports should show providers like:
+When Qwen is reachable and there are ambiguous role blocks, role reports may
+show providers like:
 
 ```text
-hybrid(qwen:qwen3.5-9b)
+v2-rules+qwen
 ```
 
 ## Real Document Context
@@ -256,5 +273,5 @@ As of 2026-09-11:
 - Production route `/template/v2/` is alive and redirects guests to login.
 - Production services `webtstu`, `nginx`, and `openvpn-client@vrlab` are active.
 - Qwen works through `http://192.168.92.20:1234/v1` with model `qwen3.5-9b`.
-- The latest V2 smoke showed `hybrid(qwen:qwen3.5-9b)` with no warnings.
-
+- V2 role classification now reports `v2-rules` or `v2-rules+qwen`; the old
+  `hybrid(...)` provider belongs to the legacy paper formatter path, not V2.
