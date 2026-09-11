@@ -13,9 +13,11 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.checks.ai_client import get_api_base_url, is_ai_configured
+from apps.submissions.document_conversion import LegacyDocConversionError, convert_legacy_doc_to_docx
 from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.services import output_directory
 from apps.template_workspace.v2.classification.roles import RoleClassifierV2
+from apps.template_workspace.v2.editor.safe_word_editor import SafeWordEditor
 from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
@@ -30,6 +32,24 @@ def analysis_directory(job: TemplateJob) -> Path:
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def result_docx_path(job: TemplateJob) -> Path:
+    return analysis_directory(job) / "result.docx"
+
+
+def _working_docx_path(job: TemplateJob, field, label: str) -> tuple[Path, list[str]]:
+    source = Path(field.path)
+    suffix = source.suffix.casefold()
+    if suffix == ".docx":
+        return source, []
+    if suffix != ".doc":
+        raise ValueError(f"{label} должен быть DOCX или DOC.")
+    converted_directory = analysis_directory(job) / "converted"
+    converted_directory.mkdir(parents=True, exist_ok=True)
+    converted_path = converted_directory / f"{label.lower()}.docx"
+    converted_path.write_bytes(convert_legacy_doc_to_docx(source.read_bytes()))
+    return converted_path, [f"{label}: исходный DOC сконвертирован в рабочую DOCX-копию для V2."]
 
 
 def expire_v2_jobs(owner) -> None:
@@ -64,40 +84,66 @@ def run_v2_job(job_id: str) -> None:
     job = TemplateJob.objects.get(pk=job_id, kind="v2")
     try:
         output = analysis_directory(job)
-        source_report = DocumentInspector(job.article.path).inspect()
-        template_report = DocumentInspector(job.template.path).inspect()
+        conversion_warnings: list[str] = []
+        source_path, warnings = _working_docx_path(job, job.article, "ARTICLE")
+        conversion_warnings.extend(warnings)
+        template_path, warnings = _working_docx_path(job, job.template, "TEMPLATE")
+        conversion_warnings.extend(warnings)
+        source_report = DocumentInspector(source_path).inspect()
+        template_report = DocumentInspector(template_path).inspect()
         classifier = RoleClassifierV2()
         article_structure = classifier.article_structure(source_report)
         template_profile = TemplateProfileBuilder(classifier=classifier).build(template_report)
         mapping_preview = RoleMatcher().build_preview(article_structure, template_profile)
+        editor_result = SafeWordEditor(classifier=classifier).render(
+            article_path=source_path,
+            template_path=template_path,
+            output_path=result_docx_path(job),
+            article_report=source_report,
+            template_report=template_report,
+            article_structure=article_structure,
+            template_profile=template_profile,
+            mapping_preview=mapping_preview,
+        )
 
         write_json(output / "article_report.json", source_report.to_dict())
         write_json(output / "template_report.json", template_report.to_dict())
         write_json(output / "article_structure.json", article_structure.to_dict())
         write_json(output / "template_profile.json", template_profile.to_dict())
         write_json(output / "mapping_preview.json", mapping_preview.to_dict())
+        write_json(output / "editor_report.json", editor_result.to_dict())
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
             {"kind": "Mapping preview", "text": f"{mapping_preview.summary['total_mappings']} действий; review: {mapping_preview.summary['needs_review']}"},
+            {"kind": "RESULT.docx", "text": "; ".join(editor_result.changes)},
             {"kind": "Секции", "text": f"ARTICLE: {len(source_report.sections)}; TEMPLATE: {len(template_report.sections)}"},
             {"kind": "Таблицы", "text": f"ARTICLE: {len(source_report.tables)}; TEMPLATE: {len(template_report.tables)}"},
             {"kind": "Рисунки", "text": f"ARTICLE: {len(source_report.drawings)}; TEMPLATE: {len(template_report.drawings)}"},
             {"kind": "Формулы", "text": f"ARTICLE: {len(source_report.formulas)}; TEMPLATE: {len(template_report.formulas)}"},
         ]
         warnings = []
+        warnings.extend(conversion_warnings)
         warnings.extend(article_structure.warnings)
         warnings.extend(template_profile.warnings)
         warnings.extend(mapping_preview.warnings)
+        warnings.extend(editor_result.warnings)
         if not is_ai_configured():
             warnings.append("Qwen/VPN: AI_BASE_URL не задан в окружении, V2 выполнил только локальную классификацию ролей.")
         else:
             warnings.append(f"Qwen/VPN: endpoint настроен ({get_api_base_url()}); если API недоступен, V2 использует локальный fallback и пишет отдельное предупреждение.")
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
             status="completed",
-            message="V2 отчёты, TemplateProfile и MappingPreview готовы. Документы не изменялись.",
+            message="V2 RESULT.docx, отчёты, TemplateProfile и MappingPreview готовы.",
             plan=plan,
             warnings=warnings,
+            updated_at=timezone.now(),
+        )
+    except LegacyDocConversionError as exc:
+        logger.exception("Template V2 DOC conversion failed: %s", job_id)
+        TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
+            status="failed",
+            message=f"Не удалось сконвертировать DOC в DOCX для V2. {exc}",
             updated_at=timezone.now(),
         )
     except Exception:

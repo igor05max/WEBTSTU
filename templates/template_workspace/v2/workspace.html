@@ -2,7 +2,7 @@
 {% block workspace_content %}
 <a href="{% url 'template_workspace:workspace' %}">← Старая версия</a>
 <h1 style="margin-top:22px">Word-forensics V2</h1>
-<p class="tw-muted">Загрузите ARTICLE.docx и TEMPLATE.docx. V2 анализирует документы независимо, строит TemplateProfile и MappingPreview без редактирования DOCX.</p>
+<p class="tw-muted">Загрузите ARTICLE и TEMPLATE в Word-формате. V2 анализирует документы независимо, строит TemplateProfile, MappingPreview и RESULT.docx.</p>
 <section class="tw-card">
 <h2>Шаблон два</h2>
 <p>Система читает DOCX как OOXML, выделяет структуру статьи, профиль оформления шаблона и предварительный план сопоставления ролей. Семантические роли идут отдельным слоем: {% if ai_status.configured %}endpoint {{ ai_status.provider_label }} настроен через {{ ai_status.endpoint }}; если API недоступен, V2 продолжит локальными правилами и покажет предупреждение.{% else %}Qwen сейчас не подключён, потому что <code>AI_BASE_URL</code> не задан на этом запуске; анализ Word всё равно работает локально.{% endif %}</p>

@@ -96,7 +96,11 @@ class TemplateProfileBuilder:
 
     def _layout_profile(self, report: DocumentReport) -> LayoutProfile:
         first = report.sections[0] if report.sections else None
-        column_counts = [column_count(section.columns) for section in report.sections] or [1]
+        weighted_column_counts: Counter[int] = Counter()
+        for section in report.sections:
+            weighted_column_counts[column_count(section.columns)] += _section_weight(report, section.start_block, section.end_block)
+        if not weighted_column_counts:
+            weighted_column_counts[1] = 1
         section_ranges = [
             SectionRangeProfile(
                 section_id=section.id,
@@ -112,7 +116,7 @@ class TemplateProfileBuilder:
         return LayoutProfile(
             page_geometry=first.page_size if first else {},
             margins=first.margins if first else {},
-            default_body_column_count=Counter(column_counts).most_common(1)[0][0],
+            default_body_column_count=weighted_column_counts.most_common(1)[0][0],
             column_spacing=_column_space(first.columns) if first else None,
             header_footer_pattern={
                 "header_count": len(report.headers),
@@ -192,6 +196,17 @@ def _column_space(columns: dict[str, Any]) -> str | None:
         if key.endswith("space"):
             return str(value)
     return None
+
+
+def _section_weight(report: DocumentReport, start_block: str | None, end_block: str | None) -> int:
+    if not start_block or not end_block:
+        return 1
+    by_id = {block.id: block.index for block in report.flow}
+    start = by_id.get(start_block)
+    end = by_id.get(end_block)
+    if start is None or end is None:
+        return 1
+    return max(1, end - start + 1)
 
 
 def jsonable(value: Any) -> Any:

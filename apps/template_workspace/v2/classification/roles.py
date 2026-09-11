@@ -80,7 +80,8 @@ class RoleClassifierV2:
 
     def classify(self, report: DocumentReport) -> SemanticRoleLayer:
         paragraphs = [paragraph for paragraph in report.paragraphs if paragraph.normalized_text]
-        decisions = [self._classify_one(paragraph, index, paragraphs) for index, paragraph in enumerate(paragraphs)]
+        front_limit = _front_matter_limit(paragraphs)
+        decisions = [self._classify_one(paragraph, index, paragraphs, front_limit) for index, paragraph in enumerate(paragraphs)]
         warnings: list[str] = []
         if self.use_ai and is_ai_configured() and _configured_endpoint_reachable():
             self._apply_ai_for_ambiguous(decisions, paragraphs, report.source_path, warnings)
@@ -120,10 +121,10 @@ class RoleClassifierV2:
             blocks=blocks,
         )
 
-    def _classify_one(self, paragraph: ParagraphInfo, index: int, paragraphs: list[ParagraphInfo]) -> RoleDecision:
+    def _classify_one(self, paragraph: ParagraphInfo, index: int, paragraphs: list[ParagraphInfo], front_limit: int) -> RoleDecision:
         text = paragraph.normalized_text
         lowered = text.casefold()
-        front = index < 40
+        front = index < front_limit
         font_size = _dominant_size(paragraph)
         bold_ratio = _bold_ratio(paragraph)
         alignment = _effective_alignment(paragraph)
@@ -131,6 +132,8 @@ class RoleClassifierV2:
         style_name = (paragraph.style_name or paragraph.style_id or "").casefold()
         previous = paragraphs[index - 1].normalized_text if index else ""
 
+        if _is_citation(text):
+            return RoleDecision(paragraph.id, "citation", 0.88, "rules", "citation marker")
         if _is_editorial_metadata(text, front):
             return RoleDecision(paragraph.id, "editorial_metadata", 0.95, "rules", "front matter marker, UDC/DOI/category/citation metadata")
         if "@" in text and len(text) <= 180:
@@ -153,15 +156,15 @@ class RoleClassifierV2:
             return RoleDecision(paragraph.id, "table_caption", 0.9, "rules", "table caption marker")
         if _looks_like_reference_item(text, previous):
             return RoleDecision(paragraph.id, "reference_item", 0.84, "rules", "reference-like numbered/list paragraph")
-        heading_level = _heading_level(text, paragraph, style_name, numbered, font_size, bold_ratio)
+        if front and _looks_like_author(text):
+            return RoleDecision(paragraph.id, "author", 0.74, "rules", "front matter name-like paragraph", needs_review=True)
+        if front and _looks_like_affiliation(text):
+            return RoleDecision(paragraph.id, "affiliation", 0.76, "rules", "front matter organization/address marker")
+        if front and _looks_like_title(text, alignment, font_size, bold_ratio):
+            return RoleDecision(paragraph.id, "title", 0.72, "rules", "front matter title-like formatting", needs_review=True)
+        heading_level = _heading_level(text, paragraph, style_name, numbered, font_size, bold_ratio, front=front)
         if heading_level:
             return RoleDecision(paragraph.id, f"heading_{heading_level}", 0.86, "rules", "heading formatting/numbering pattern", heading_level=heading_level)
-        if front and _looks_like_author(text):
-            return RoleDecision(paragraph.id, "author", 0.78, "rules", "front matter name-like paragraph")
-        if front and _looks_like_affiliation(text):
-            return RoleDecision(paragraph.id, "affiliation", 0.78, "rules", "front matter organization/address marker")
-        if front and _looks_like_title(text, alignment, font_size, bold_ratio):
-            return RoleDecision(paragraph.id, "title", 0.75, "rules", "front matter title-like formatting")
         if numbered and len(text) < 180 and not text.endswith("."):
             return RoleDecision(paragraph.id, "heading_2", 0.68, "rules", "numbered short paragraph needs heading/list review", needs_review=True, heading_level=2)
         return RoleDecision(paragraph.id, "body", 0.82 if len(text) > 120 else 0.68, "rules", "default body paragraph", needs_review=len(text) <= 80)
@@ -230,6 +233,21 @@ class RoleClassifierV2:
                     by_id[block_id].needs_review = confidence < self.review_threshold
         except (AIProviderError, OSError, ValueError, ValidationError, json.JSONDecodeError) as exc:
             warnings.append(f"Qwen не применён для спорных V2-ролей; оставлены локальные правила. {exc}")
+
+
+def _front_matter_limit(paragraphs: list[ParagraphInfo]) -> int:
+    for index, paragraph in enumerate(paragraphs):
+        text = paragraph.normalized_text.strip()
+        lowered = text.casefold()
+        if index < 6:
+            continue
+        if lowered in {"introduction", "введение"}:
+            return index
+        if re.match(r"^\s*1\.?\s+(introduction|введение)\b", lowered):
+            return index
+        if re.match(r"^\s*1[\).]\s+\S", text) and not _is_editorial_metadata(text, True):
+            return index
+    return min(len(paragraphs), 40)
 
 
 def _v2_ai_timeout_seconds() -> int:
@@ -305,6 +323,10 @@ def _is_keywords(text: str) -> bool:
     return bool(re.match(r"^(keywords|key words|ключевые слова)\b", text.casefold()))
 
 
+def _is_citation(text: str) -> bool:
+    return bool(re.match(r"^(for citation|для цитирования)\b", text.casefold()))
+
+
 def _is_figure_caption(text: str) -> bool:
     return bool(re.match(r"^(fig\.|figure|рис\.?|рисунок)\s*\d+[.\):\-–]\s+\S", text.strip(), flags=re.IGNORECASE))
 
@@ -319,7 +341,7 @@ def _looks_like_reference_item(text: str, previous: str) -> bool:
     return bool(re.match(r"^\s*\[?\d+\]?[\).]\s+.+(doi|https?://|//|изд|journal|vol\.|pp\.)", text, flags=re.IGNORECASE))
 
 
-def _heading_level(text: str, paragraph: ParagraphInfo, style_name: str, numbered: bool, font_size: float | None, bold_ratio: float) -> int | None:
+def _heading_level(text: str, paragraph: ParagraphInfo, style_name: str, numbered: bool, font_size: float | None, bold_ratio: float, *, front: bool = False) -> int | None:
     if _is_editorial_metadata(text, True) or _is_figure_caption(text) or _is_table_caption(text):
         return None
     if "heading 1" in style_name or "заголовок 1" in style_name:
@@ -328,6 +350,8 @@ def _heading_level(text: str, paragraph: ParagraphInfo, style_name: str, numbere
         return 2
     if "heading 3" in style_name or "заголовок 3" in style_name:
         return 3
+    if front and not numbered and paragraph.properties.get("outline_level") is None:
+        return None
     match = re.match(r"^\s*(\d+(?:\.\d+){0,2})\.?\s+\S", text)
     if match and len(text) < 220 and not text.endswith("."):
         return min(3, match.group(1).count(".") + 1)
@@ -341,7 +365,14 @@ def _heading_level(text: str, paragraph: ParagraphInfo, style_name: str, numbere
 def _looks_like_author(text: str) -> bool:
     if len(text) > 180 or any(marker in text.casefold() for marker in ("university", "институт", "doi", "удк")):
         return False
-    return bool(re.search(r"\b[A-ZА-ЯЁ][a-zа-яё]+(?:\s+[A-ZА-ЯЁ]\.){1,2}\b|\b[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ][a-zа-яё]+", text))
+    return bool(
+        re.search(
+            r"\b[A-ZА-ЯЁ][a-zа-яё]+(?:\s+[A-ZА-ЯЁ]\.){1,2}\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё-]+"
+            r"|\b[A-ZА-ЯЁ][a-zа-яё]+(?:\s+[A-ZА-ЯЁ][a-zа-яё]+)*[a-zа-яёA-ZА-ЯЁ]*[,;]\s+"
+            r"|\b[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ][a-zа-яё]+",
+            text,
+        )
+    )
 
 
 def _looks_like_affiliation(text: str) -> bool:
@@ -351,6 +382,8 @@ def _looks_like_affiliation(text: str) -> bool:
 def _looks_like_title(text: str, alignment: str, font_size: float | None, bold_ratio: float) -> bool:
     if len(text) < 25 or len(text) > 260 or text.endswith("."):
         return False
-    if _is_editorial_metadata(text, True):
+    if _is_editorial_metadata(text, True) or _looks_like_author(text) or _looks_like_affiliation(text):
         return False
-    return alignment in {"center", "both"} or bold_ratio >= 0.45 or bool(font_size and font_size >= 12)
+    if ":" in text and len(text) < 90:
+        return False
+    return alignment in {"center", "both"} or bold_ratio >= 0.45 or bool(font_size and font_size >= 12) or len(text) >= 55

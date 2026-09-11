@@ -18,10 +18,11 @@ from docx.enum.section import WD_SECTION
 from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.v2.classification.roles import RoleClassifierV2
 from apps.template_workspace.v2.comparison.document_diff import DocumentDiffBuilder
+from apps.template_workspace.v2.editor.safe_word_editor import SafeWordEditor
 from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
-from apps.template_workspace.v2.services import analysis_directory, run_v2_job
+from apps.template_workspace.v2.services import analysis_directory, result_docx_path, run_v2_job
 
 
 def first_existing(*paths: str) -> Path:
@@ -171,6 +172,53 @@ class TemplateV2InspectorTests(TestCase):
         self.assertGreater(mapping.summary["total_mappings"], 0)
         self.assertIn("No DOCX edits", " ".join(mapping.warnings))
 
+    def test_safe_word_editor_preserves_article_objects(self):
+        output = Path(self.tmp.name) / "result.docx"
+        source = DocumentInspector(self.path).inspect()
+        template = DocumentInspector(self.path).inspect()
+        classifier = RoleClassifierV2(use_ai=False)
+        structure = classifier.article_structure(source)
+        profile = TemplateProfileBuilder(classifier=classifier).build(template)
+        mapping = RoleMatcher().build_preview(structure, profile)
+        result = SafeWordEditor(classifier=classifier).render(
+            article_path=self.path,
+            template_path=self.path,
+            output_path=output,
+            article_report=source,
+            template_report=template,
+            article_structure=structure,
+            template_profile=profile,
+            mapping_preview=mapping,
+        )
+        self.assertTrue(output.exists())
+        self.assertIn("Preserved ARTICLE", " ".join(result.changes))
+        rendered = DocumentInspector(output).inspect()
+        self.assertEqual(rendered.fingerprint["table_count"], source.fingerprint["table_count"])
+        self.assertEqual(rendered.fingerprint["drawing_count"], source.fingerprint["drawing_count"])
+        self.assertEqual(rendered.fingerprint["formula_count"], source.fingerprint["formula_count"])
+
+    def test_safe_word_editor_does_not_copy_template_footer_content_by_default(self):
+        article = Document()
+        article.add_paragraph("Article title")
+        article.sections[0].footer.paragraphs[0].text = "ARTICLE FOOTER"
+        article_path = Path(self.tmp.name) / "article-footer.docx"
+        article.save(article_path)
+        template = Document()
+        template.add_paragraph("Template title")
+        template.sections[0].footer.paragraphs[0].text = "TEMPLATE FOOTER"
+        template_path = Path(self.tmp.name) / "template-footer.docx"
+        template.save(template_path)
+        output = Path(self.tmp.name) / "footer-result.docx"
+        SafeWordEditor(classifier=RoleClassifierV2(use_ai=False)).render(
+            article_path=article_path,
+            template_path=template_path,
+            output_path=output,
+        )
+        rendered = DocumentInspector(output).inspect()
+        footer_text = " ".join(item.text for item in rendered.footers)
+        self.assertIn("ARTICLE FOOTER", footer_text)
+        self.assertNotIn("TEMPLATE FOOTER", footer_text)
+
 
 @skipUnlessDBFeature("supports_transactions")
 class TemplateV2ViewTests(TestCase):
@@ -211,7 +259,29 @@ class TemplateV2ViewTests(TestCase):
         self.assertTrue((analysis_directory(job) / "article_structure.json").exists())
         self.assertTrue((analysis_directory(job) / "template_profile.json").exists())
         self.assertTrue((analysis_directory(job) / "mapping_preview.json").exists())
+        self.assertTrue((analysis_directory(job) / "editor_report.json").exists())
+        self.assertTrue(result_docx_path(job).exists())
         self.assertFalse((analysis_directory(job) / "document_diff.json").exists())
+
+    def test_run_v2_job_converts_legacy_doc_uploads(self):
+        source = Path(self.media.name) / "source.docx"
+        template = Path(self.media.name) / "template.doc"
+        make_docx_with_core_objects(source)
+        template.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1legacy")
+        job = TemplateJob.objects.create(
+            owner=self.user,
+            kind="v2",
+            article=SimpleUploadedFile("source.docx", source.read_bytes()),
+            template=SimpleUploadedFile("template.doc", template.read_bytes()),
+            article_name="source.docx",
+            template_name="template.doc",
+        )
+        with patch("apps.template_workspace.v2.services.convert_legacy_doc_to_docx", return_value=source.read_bytes()):
+            run_v2_job(str(job.pk))
+        job.refresh_from_db()
+        self.assertEqual(job.status, "completed")
+        self.assertTrue((analysis_directory(job) / "converted" / "template.docx").exists())
+        self.assertTrue(result_docx_path(job).exists())
 
 
 @skipUnlessDBFeature("supports_transactions")

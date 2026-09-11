@@ -151,7 +151,7 @@ ARTICLE.docx + TEMPLATE.docx
 
 Current V2 stage:
 
-- accepts DOCX only;
+- accepts DOCX and converts legacy DOC to a working DOCX copy before analysis;
 - reads DOCX as an OOXML package;
 - inspects document flow, styles, sections, tables, drawings, formulas,
   hyperlinks, headers and footers;
@@ -164,7 +164,16 @@ Current V2 stage:
 - writes `article_report.json`, `template_report.json`,
   `article_structure.json`, `template_profile.json`, and
   `mapping_preview.json`;
-- does not yet produce edited `RESULT.docx`.
+- writes a first-pass `result.docx` with `SafeWordEditor`, applying TEMPLATE
+  paragraph/run formatting, styles, numbering, theme and section geometry to a
+  copy of ARTICLE while preserving ARTICLE tables, drawings, formulas, media and
+  relationships;
+- writes `editor_report.json` describing applied edits and limitations.
+
+In normal ARTICLE+TEMPLATE mode, do not copy TEMPLATE header/footer text into
+RESULT, because that leaks content from another article. Reference-pair CLI
+runs may copy TEMPLATE headers/footers only when comparing the same article
+before/after formatting.
 
 `DocumentDiffBuilder` is not the normal ARTICLE+TEMPLATE path. Use it only for
 reference pairs where the source and formatted file are the same article, e.g.
@@ -195,6 +204,7 @@ apps/template_workspace/v2/classification/roles.py
 apps/template_workspace/v2/formatting/effective.py
 apps/template_workspace/v2/profile/template.py
 apps/template_workspace/v2/mapping/preview.py
+apps/template_workspace/v2/editor/safe_word_editor.py
 apps/template_workspace/v2/comparison/document_diff.py
 apps/template_workspace/v2/semantic.py
 apps/template_workspace/v2/services.py
