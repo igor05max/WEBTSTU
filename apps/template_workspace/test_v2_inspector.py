@@ -310,11 +310,18 @@ class TemplateV2InspectorTests(TestCase):
                 "front_language_order": ["ru", "en"], "roles": {}, "layout": {},
             },
         })
+        local.flow["large_figure_block_ids"] = ["block_0042"]
+        local.flow["float_lead_after_figure_block_ids"] = ["block_0042"]
         patch_payload = {
-            "front": {"citation_expected_lines": 99, "language_order": ["en", "xx"]},
+            "front": {
+                "citation_expected_lines": 99,
+                "reserve_placeholder_citation_slot": False,
+                "language_order": ["en", "xx"],
+            },
             "flow": {
                 "large_figure_block_ids": ["block_0042", "invented"],
-                "float_lead_after_figure_block_ids": ["block_0042"],
+                "float_lead_after_figure_block_ids": [],
+                "allow_safe_prose_relocation": False,
                 "max_float_body_blocks": 50,
                 "arbitrary_xml": "<w:del/>",
             },
@@ -325,7 +332,8 @@ class TemplateV2InspectorTests(TestCase):
         self.assertEqual(result.front["language_order"], ["ru", "en"])
         self.assertEqual(result.flow["large_figure_block_ids"], ["block_0042"])
         self.assertEqual(result.flow["float_lead_after_figure_block_ids"], ["block_0042"])
-        self.assertEqual(result.flow["max_float_body_blocks"], 3)
+        self.assertTrue(result.flow["allow_safe_prose_relocation"])
+        self.assertEqual(result.flow["max_float_body_blocks"], 2)
         self.assertNotIn("arbitrary_xml", result.flow)
         self.assertTrue(result.warnings)
 

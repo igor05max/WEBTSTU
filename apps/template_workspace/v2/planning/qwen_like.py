@@ -195,11 +195,6 @@ class QwenLikePlanningEngine:
         front = dict(local.front)
         flow = dict(local.flow)
         warnings = list(local.warnings)
-        table_ids = {
-            str(item.get("id"))
-            for item in snapshot.get("article", {}).get("tables", [])
-            if item.get("id")
-        }
         role_values = {
             str(item)
             for item in snapshot.get("template", {}).get("front_sequence", [])
@@ -213,11 +208,14 @@ class QwenLikePlanningEngine:
         if isinstance(front_patch, dict):
             for key in ("metadata_row", "reserve_placeholder_citation_slot"):
                 value = front_patch.get(key)
-                if isinstance(value, bool):
-                    front[key] = value
+                if value is True:
+                    front[key] = True
             value = front_patch.get("citation_expected_lines")
             if isinstance(value, int) and not isinstance(value, bool):
-                front["citation_expected_lines"] = max(0, min(4, value))
+                front["citation_expected_lines"] = max(
+                    int(front.get("citation_expected_lines") or 0),
+                    max(0, min(4, value)),
+                )
             value = front_patch.get("role_sequence")
             if isinstance(value, list) and all(isinstance(item, str) and item in role_values for item in value):
                 front["role_sequence"] = list(dict.fromkeys(value))
@@ -234,11 +232,14 @@ class QwenLikePlanningEngine:
                 "float_compact_tables_forward",
             ):
                 value = flow_patch.get(key)
-                if isinstance(value, bool):
-                    flow[key] = value
+                # Deterministic safety/quality decisions are a floor.  A provider
+                # may enable a conservative operation but cannot disable one that
+                # local evidence already requires.
+                if value is True:
+                    flow[key] = True
             id_fields = {
-                "large_figure_block_ids": table_ids,
-                "float_lead_after_figure_block_ids": table_ids,
+                "large_figure_block_ids": set(flow.get("large_figure_block_ids") or []),
+                "float_lead_after_figure_block_ids": set(flow.get("float_lead_after_figure_block_ids") or []),
             }
             for key, allowed_ids in id_fields.items():
                 value = flow_patch.get(key)
@@ -248,17 +249,17 @@ class QwenLikePlanningEngine:
                     item for item in value
                     if isinstance(item, str) and item in allowed_ids
                 ]
-                flow[key] = list(dict.fromkeys(accepted))
+                flow[key] = list(dict.fromkeys([*(flow.get(key) or []), *accepted]))
                 rejected = len(value) - len(accepted)
                 if rejected:
                     warnings.append(
                         f"Qwen planner: ignored {rejected} unknown or invalid ID(s) in {key}."
                     )
             ranges = {
-                "max_float_body_blocks": (0, 3),
-                "max_float_chars": (200, 3000),
-                "max_relocation_chars": (100, 1600),
-                "min_relocation_chars": (0, 600),
+                "max_float_body_blocks": (1, int(flow.get("max_float_body_blocks") or 2)),
+                "max_float_chars": (200, int(flow.get("max_float_chars") or 1800)),
+                "max_relocation_chars": (100, int(flow.get("max_relocation_chars") or 900)),
+                "min_relocation_chars": (int(flow.get("min_relocation_chars") or 120), 600),
             }
             for key, (minimum, maximum) in ranges.items():
                 value = flow_patch.get(key)
