@@ -251,8 +251,9 @@ Current V2 stage:
 - uses `QwenLikePlanningEngine` for deterministic front/layout/flow defaults;
 - optionally calls real Qwen through `QwenPlanningProvider` when
   `TEMPLATE_V2_QWEN_ENABLED=1` and `AI_BASE_URL` is configured;
-- validates the Qwen JSON patch against a fixed whitelist, existing ARTICLE
-  table IDs and bounded numeric ranges, then falls back locally on any failure;
+- validates the Qwen JSON patch against a fixed whitelist, deterministic
+  ARTICLE candidate IDs and bounded numeric ranges; the local plan is a quality
+  floor that Qwen cannot disable or broaden, and any failure falls back locally;
 - builds `TemplateProfile` and `LayoutProfile` from TEMPLATE formatting,
   sections, tables, drawings, formulas, OLE objects, headers and footers;
 - builds `MappingPreview` from ARTICLE structure to TEMPLATE rules;
