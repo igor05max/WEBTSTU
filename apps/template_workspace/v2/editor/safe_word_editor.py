@@ -43,6 +43,107 @@ BACK_ROLES = {
     "received_metadata", "copyright_metadata",
 }
 
+# WordprocessingML complex types are sequences, not unordered property bags.
+# Lxml happily appends a new ``w:b`` after ``w:sz`` or ``w:spacing`` before
+# ``w:keepNext``; desktop Word then repairs (or rejects) the otherwise readable
+# package.  Keep the canonical ECMA-376 order for property containers touched by
+# this editor.  Unknown extension children retain their relative order at the end.
+_PROPERTY_CHILD_ORDER: dict[str, tuple[str, ...]] = {
+    "pPr": (
+        "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr",
+        "widowControl", "numPr", "suppressLineNumbers", "pBdr", "shd",
+        "tabs", "suppressAutoHyphens", "kinsoku", "wordWrap",
+        "overflowPunct", "topLinePunct", "autoSpaceDE", "autoSpaceDN",
+        "bidi", "adjustRightInd", "snapToGrid", "spacing", "ind",
+        "contextualSpacing", "mirrorIndents", "suppressOverlap", "jc",
+        "textDirection", "textAlignment", "textboxTightWrap", "outlineLvl",
+        "divId", "cnfStyle", "rPr", "sectPr", "pPrChange",
+    ),
+    "rPr": (
+        "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps",
+        "smallCaps", "strike", "dstrike", "outline", "shadow", "emboss",
+        "imprint", "noProof", "snapToGrid", "vanish", "webHidden",
+        "color", "spacing", "w", "kern", "position", "sz", "szCs",
+        "highlight", "u", "effect", "bdr", "shd", "fitText",
+        "vertAlign", "rtl", "cs", "em", "lang", "eastAsianLayout",
+        "specVanish", "oMath", "rPrChange",
+    ),
+    "sectPr": (
+        "headerReference", "footerReference", "footnotePr", "endnotePr",
+        "type", "pgSz", "pgMar", "paperSrc", "pgBorders", "lnNumType",
+        "pgNumType", "cols", "formProt", "vAlign", "noEndnote",
+        "titlePg", "textDirection", "bidi", "rtlGutter", "docGrid",
+        "printerSettings", "sectPrChange",
+    ),
+    "tblPr": (
+        "tblStyle", "tblpPr", "tblOverlap", "bidiVisual",
+        "tblStyleRowBandSize", "tblStyleColBandSize", "tblW", "jc",
+        "tblCellSpacing", "tblInd", "tblBorders", "shd", "tblLayout",
+        "tblCellMar", "tblLook", "tblCaption", "tblDescription",
+        "tblPrChange",
+    ),
+    "trPr": (
+        "cnfStyle", "divId", "gridBefore", "gridAfter", "wBefore",
+        "wAfter", "cantSplit", "trHeight", "tblHeader", "tblCellSpacing",
+        "jc", "hidden", "ins", "del", "trPrChange",
+    ),
+    "tcPr": (
+        "cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders",
+        "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign",
+        "hideMark", "headers", "cellIns", "cellDel", "cellMerge",
+        "tcPrChange",
+    ),
+    "tblBorders": (
+        "top", "left", "bottom", "right", "insideH", "insideV",
+        "tl2br", "tr2bl",
+    ),
+    "tcBorders": (
+        "top", "left", "bottom", "right", "insideH", "insideV",
+        "tl2br", "tr2bl", "start", "end",
+    ),
+    "pBdr": ("top", "left", "bottom", "right", "between", "bar"),
+    "tblCellMar": ("top", "left", "bottom", "right", "start", "end"),
+    "settings": (
+        "writeProtection", "view", "zoom", "removePersonalInformation",
+        "removeDateAndTime", "doNotDisplayPageBoundaries",
+        "displayBackgroundShape", "printPostScriptOverText",
+        "printFractionalCharacterWidth", "printFormsData",
+        "embedTrueTypeFonts", "embedSystemFonts", "saveSubsetFonts",
+        "saveFormsData", "mirrorMargins", "alignBordersAndEdges",
+        "bordersDoNotSurroundHeader", "bordersDoNotSurroundFooter",
+        "gutterAtTop", "hideSpellingErrors", "hideGrammaticalErrors",
+        "activeWritingStyle", "proofState", "formsDesign",
+        "attachedTemplate", "linkStyles", "stylePaneFormatFilter",
+        "stylePaneSortMethod", "documentType", "mailMerge", "revisionView",
+        "trackRevisions", "doNotTrackMoves", "doNotTrackFormatting",
+        "documentProtection", "autoFormatOverride", "styleLockTheme",
+        "styleLockQFSet", "defaultTabStop", "autoHyphenation",
+        "consecutiveHyphenLimit", "hyphenationZone", "doNotHyphenateCaps",
+        "showEnvelope", "summaryLength", "clickAndTypeStyle",
+        "defaultTableStyle", "evenAndOddHeaders", "bookFoldRevPrinting",
+        "bookFoldPrinting", "bookFoldPrintingSheets",
+        "drawingGridHorizontalSpacing", "drawingGridVerticalSpacing",
+        "displayHorizontalDrawingGridEvery", "displayVerticalDrawingGridEvery",
+        "doNotUseMarginsForDrawingGridOrigin", "drawingGridHorizontalOrigin",
+        "drawingGridVerticalOrigin", "doNotShadeFormData",
+        "noPunctuationKerning", "characterSpacingControl", "printTwoOnOne",
+        "strictFirstAndLastChars", "noLineBreaksAfter", "noLineBreaksBefore",
+        "savePreviewPicture", "doNotValidateAgainstSchema", "saveInvalidXml",
+        "ignoreMixedContent", "alwaysShowPlaceholderText",
+        "doNotDemarcateInvalidXml", "saveXmlDataOnly", "useXSLTWhenSaving",
+        "saveThroughXslt", "showXmlTags", "alwaysMergeEmptyNamespace",
+        "updateFields", "hdrShapeDefaults", "footnotePr", "endnotePr",
+        "compat", "docVars", "rsids", "mathPr", "uiCompat97To2003",
+        "attachedSchema", "themeFontLang", "clrSchemeMapping",
+        "doNotIncludeSubdocsInStats", "doNotAutoCompressPictures",
+        "forceUpgrade", "captions", "readModeInkLockDown", "smartTagType",
+        "shapeDefaults", "doNotEmbedSmartTags", "decimalSymbol",
+        "listSeparator", "docId", "discardImageEditingData",
+        "defaultImageDpi", "conflictMode", "chartTrackingRefBased",
+        "persistentDocumentId",
+    ),
+}
+
 
 @dataclass
 class SafeWordEditorResult:
@@ -134,7 +235,7 @@ class SafeWordEditor:
         decisions = {item["id"]: item for item in article_structure.blocks}
         table_info = {table.id: table for table in article_report.tables}
 
-        warnings: list[str] = []
+        warnings: list[str] = list(planning.warnings)
         metrics: dict[str, Any] = {
             "formatted_paragraphs": 0,
             "front_blocks_reordered": 0,
@@ -146,8 +247,10 @@ class SafeWordEditor:
             "journal_symbols_installed": 0,
             "captions_normalized": 0,
             "subfigure_labels_normalized": 0,
+            "figure_container_metadata_normalized": 0,
             "flow_paragraphs_relocated": 0,
             "compact_tables_floated": 0,
+            "compact_tables_kept_together": 0,
             "section_markers_inserted": 0,
             "terminal_columns_balanced": False,
             "table_rows_guarded": 0,
@@ -161,6 +264,7 @@ class SafeWordEditor:
             "placeholder_slots_reserved": 0,
             "large_figure_page_breaks": 0,
             "atomic_figure_rows_guarded": 0,
+            "inline_figure_captions_guarded": 0,
         }
 
         with ZipFile(article_path) as article_zip, ZipFile(template_path) as template_zip:
@@ -252,6 +356,9 @@ class SafeWordEditor:
             # Figure-container labels such as ``a`` / ``b`` are layout metadata.
             # The journal convention is ``(a)`` / ``(b)`` in italics.
             metrics["subfigure_labels_normalized"] += _normalise_subfigure_labels(body, table_info, meta_by_node)
+            metrics["figure_container_metadata_normalized"] += _normalise_figure_container_metadata(
+                body, table_info, meta_by_node
+            )
 
             # Large multi-panel figures in the journal are frequently placed after
             # one short look-ahead prose paragraph so the preceding two-column area
@@ -284,6 +391,10 @@ class SafeWordEditor:
             metrics["atomic_figure_rows_guarded"] += _guard_planned_figure_containers(
                 body=body, meta_by_node=meta_by_node, table_info=table_info, planning=planning
             )
+            metrics["inline_figure_captions_guarded"] += _guard_inline_figure_captions(
+                body=body,
+                meta_by_node=meta_by_node,
+            )
             metrics["wide_object_spans"] = len(wide_spans)
             metrics["terminal_columns_balanced"] = _balance_terminal_two_column_section(
                 body=body,
@@ -303,6 +414,8 @@ class SafeWordEditor:
                         metrics["tables_resized"] += 1
                         if info is not None and info.classification != "FIGURE_CONTAINER":
                             metrics["table_rows_guarded"] += _guard_table_rows(child)
+                            if _keep_compact_table_together(child, info):
+                                metrics["compact_tables_kept_together"] += 1
                 elif local_name(child) == "p":
                     target = layout.printable_width_twips if child in full_width_nodes else layout.column_width_twips
                     metrics["drawings_resized"] += _resize_top_level_drawings(child, target)
@@ -332,9 +445,11 @@ class SafeWordEditor:
             f"Applied deterministic role formatting to {metrics['formatted_paragraphs']} ARTICLE paragraphs.",
             f"Reordered {metrics['front_blocks_reordered']} front-matter blocks and merged {metrics['front_paragraphs_merged']} compatible front paragraphs.",
             f"Installed {metrics['front_shells_installed']} native TEMPLATE front-matter layout shell(s), {metrics['journal_symbols_installed']} journal glyph decoration(s), and {metrics['title_breaks_inserted']} balanced title line-break set(s).",
-            f"Materialized numbering on {metrics['heading_numbers_materialized']} semantic headings and normalized {metrics['captions_normalized']} caption/metadata conventions plus {metrics['subfigure_labels_normalized']} subfigure labels.",
+            f"Materialized numbering on {metrics['heading_numbers_materialized']} semantic headings and normalized {metrics['captions_normalized']} caption/metadata conventions plus {metrics['subfigure_labels_normalized']} subfigure labels and {metrics['figure_container_metadata_normalized']} figure-container metadata runs.",
             f"Relocated {metrics['flow_paragraphs_relocated']} intact prose paragraph(s) around large multi-panel figures to improve two-column balance.",
             f"Qwen-like planner: {planning.provider}; reserved {metrics['placeholder_slots_reserved']} placeholder front slots, floated {metrics['compact_tables_floated']} compact table(s), and forced {metrics['large_figure_page_breaks']} large-figure page starts.",
+            f"Kept {metrics['inline_figure_captions_guarded']} inline figure/caption group(s) together across columns and pages.",
+            f"Kept {metrics['compact_tables_kept_together']} compact data table(s) together instead of splitting them across columns/pages.",
             f"Created {metrics['wide_object_spans']} temporary full-width spans for wide ARTICLE objects.",
             f"Resized {metrics['tables_resized']} native tables and {metrics['drawings_resized']} native drawings without recreating them.",
             "Preserved ARTICLE tables, formulas, media, hyperlinks, numbering and document relationships by default.",
@@ -955,7 +1070,13 @@ def _role_run_defaults(role: str, profile: dict[str, Any]) -> dict[str, Any]:
         size = max(size, 28)
     elif role in {"abstract", "keywords", "citation"}:
         size = 20
-    elif role in {"body", "reference_item", "heading_1", "heading_2", "heading_3", "table_caption", "figure_caption", "funding_heading", "funding_text", "acknowledgements_heading", "acknowledgements_text", "conflict_heading", "conflict_text"}:
+    elif role in {"reference_item", "table_caption", "figure_caption"}:
+        # The supplied journal uses 10 pt for captions and references even when
+        # only a 11/12 pt complex-script size is visible in the source profile.
+        # Using that ``szCs`` value for Latin text made captions oversized and
+        # stretched the bibliography by almost a full page.
+        size = 20
+    elif role in {"body", "heading_1", "heading_2", "heading_3", "funding_heading", "funding_text", "acknowledgements_heading", "acknowledgements_text", "conflict_heading", "conflict_text"}:
         size = 22
 
     bold: bool | None = None
@@ -1346,6 +1467,56 @@ def _normalise_subfigure_labels(
     return changed
 
 
+def _normalise_figure_container_metadata(
+    body: etree._Element,
+    table_info: dict[str, TableInfo],
+    meta_by_node: dict[etree._Element, _NodeMeta],
+) -> int:
+    """Remove non-content layout placeholders and compact figure-table labels."""
+
+    changed = 0
+    for table in body.findall("w:tbl", namespaces=NS):
+        meta = meta_by_node.get(table)
+        info = table_info.get(meta.block_id) if meta and meta.block_id else None
+        if info is None or info.classification != "FIGURE_CONTAINER":
+            continue
+        for paragraph in table.xpath(".//w:tc/w:p", namespaces=NS):
+            text = normalize_text(element_text(paragraph))
+            has_object = bool(paragraph.xpath(".//w:drawing|.//w:pict|.//w:object|.//m:oMath", namespaces=NS))
+            if text in {"/", "\\", "|"} and not has_object:
+                _set_plain_text(paragraph, "")
+                changed += 1
+                continue
+            if not text:
+                continue
+            ppr = paragraph.find("w:pPr", namespaces=NS)
+            if ppr is None:
+                ppr = etree.Element(qn("w:pPr")); paragraph.insert(0, ppr)
+            spacing = ppr.find("w:spacing", namespaces=NS)
+            if spacing is None:
+                spacing = etree.SubElement(ppr, qn("w:spacing"))
+            spacing.set(qn("w:before"), "0"); spacing.set(qn("w:after"), "0")
+            spacing.set(qn("w:line"), "220"); spacing.set(qn("w:lineRule"), "auto")
+            for run in paragraph.xpath(".//w:r[not(.//w:drawing) and not(.//w:pict) and not(ancestor::m:oMath)]", namespaces=NS):
+                if not element_text(run):
+                    continue
+                rpr = run.find("w:rPr", namespaces=NS)
+                if rpr is None:
+                    rpr = etree.Element(qn("w:rPr")); run.insert(0, rpr)
+                fonts = rpr.find("w:rFonts", namespaces=NS)
+                if fonts is None:
+                    fonts = etree.SubElement(rpr, qn("w:rFonts"))
+                for key in ("ascii", "hAnsi", "cs", "eastAsia"):
+                    fonts.set(qn(f"w:{key}"), "Times New Roman")
+                for tag in ("sz", "szCs"):
+                    size = rpr.find(f"w:{tag}", namespaces=NS)
+                    if size is None:
+                        size = etree.SubElement(rpr, qn(f"w:{tag}"))
+                    size.set(qn("w:val"), "20")
+                changed += 1
+    return changed
+
+
 
 def _optimise_large_figure_flow_v2(
     *,
@@ -1354,14 +1525,14 @@ def _optimise_large_figure_flow_v2(
     table_info: dict[str, TableInfo],
     planning: PlanningResult,
 ) -> int:
-    """Qwen-like floating for very large 3+ panel figures.
+    """Safely float selected figure lead-ins without rewriting prose.
 
     For a large figure Word often has insufficient vertical space because several
-    prose paragraphs immediately precede it.  A journal editor is allowed to float
-    the figure slightly earlier while keeping the explicit ``Fig. N presents...``
-    lead-in in place.  We move at most two *existing* body paragraphs from just
-    before that lead-in to immediately after the figure caption.  No text is split
-    or rewritten.
+    prose paragraphs immediately precede it.  For planned two-panel figures the
+    explicit ``Fig. N presents...`` lead-in itself follows the figure, matching the
+    reference journal's float convention.  For 3+ panel figures we retain the
+    earlier conservative relocation of up to two preceding prose paragraphs.  All
+    operations move intact native ``w:p`` nodes; text is never split or rewritten.
     """
 
     if not planning.flow.get("allow_safe_prose_relocation"):
@@ -1375,7 +1546,9 @@ def _optimise_large_figure_flow_v2(
         if info is None or info.classification != "FIGURE_CONTAINER":
             continue
         drawing_count = len(table.xpath(".//w:drawing|.//w:pict", namespaces=NS))
-        if drawing_count < 3:
+        float_lead_ids = set(planning.flow.get("float_lead_after_figure_block_ids") or [])
+        float_lead = bool(meta and meta.block_id in float_lead_ids)
+        if drawing_count < 3 and not float_lead:
             continue
         children = list(body)
         try:
@@ -1424,6 +1597,13 @@ def _optimise_large_figure_flow_v2(
                 lead = n
                 break
         if lead is None:
+            continue
+
+        if float_lead:
+            if lead.getparent() is body:
+                body.remove(lead)
+            caption_end.addnext(lead)
+            moved += 1
             continue
 
         # Up to two ordinary prose paragraphs immediately before the lead-in.
@@ -1781,6 +1961,82 @@ def _guard_planned_figure_containers(
                         etree.SubElement(ppr, qn("w:keepNext")); changed += 1
     return changed
 
+
+def _guard_inline_figure_captions(
+    *,
+    body: etree._Element,
+    meta_by_node: dict[etree._Element, _NodeMeta],
+) -> int:
+    """Keep an inline drawing with the caption that immediately follows it.
+
+    Word otherwise treats the drawing paragraph and caption as unrelated blocks.
+    In a two-column section this can leave the figure at the bottom of one column
+    and move its caption to the top of the next column.  We change only pagination
+    properties; drawing content, size and relationships stay untouched.
+    """
+
+    changed = 0
+    children = list(body)
+    for index, paragraph in enumerate(children):
+        if local_name(paragraph) != "p":
+            continue
+        if not paragraph.xpath(".//w:drawing|.//w:pict", namespaces=NS):
+            continue
+
+        caption_index = index + 1
+        while caption_index < len(children):
+            candidate = children[caption_index]
+            if local_name(candidate) == "p" and not normalize_text(element_text(candidate)):
+                caption_index += 1
+                continue
+            break
+        if caption_index >= len(children):
+            continue
+        caption = children[caption_index]
+        caption_meta = meta_by_node.get(caption)
+        if local_name(caption) != "p" or not caption_meta or caption_meta.role != "figure_caption":
+            continue
+
+        drawing_ppr = paragraph.find("w:pPr", namespaces=NS)
+        if drawing_ppr is None:
+            drawing_ppr = etree.Element(qn("w:pPr")); paragraph.insert(0, drawing_ppr)
+        if drawing_ppr.find("w:keepNext", namespaces=NS) is None:
+            etree.SubElement(drawing_ppr, qn("w:keepNext"))
+            changed += 1
+
+        group_id = caption_meta.group_id
+        group_index = caption_index
+        while group_index < len(children):
+            item = children[group_index]
+            item_meta = meta_by_node.get(item)
+            if local_name(item) != "p" or not item_meta or item_meta.role != "figure_caption":
+                break
+            if group_id and item_meta.group_id != group_id:
+                break
+            ppr = item.find("w:pPr", namespaces=NS)
+            if ppr is None:
+                ppr = etree.Element(qn("w:pPr")); item.insert(0, ppr)
+            if ppr.find("w:keepLines", namespaces=NS) is None:
+                etree.SubElement(ppr, qn("w:keepLines"))
+                changed += 1
+            next_index = group_index + 1
+            if next_index < len(children):
+                next_meta = meta_by_node.get(children[next_index])
+                same_group = (
+                    local_name(children[next_index]) == "p"
+                    and next_meta is not None
+                    and next_meta.role == "figure_caption"
+                    and bool(group_id)
+                    and next_meta.group_id == group_id
+                )
+                if same_group and ppr.find("w:keepNext", namespaces=NS) is None:
+                    etree.SubElement(ppr, qn("w:keepNext"))
+                    changed += 1
+            group_index += 1
+            if not group_id:
+                break
+    return changed
+
 # ---------------------------------------------------------------------------
 # Sections and object sizing
 # ---------------------------------------------------------------------------
@@ -2096,8 +2352,8 @@ def _apply_journal_data_table_style(table: etree._Element, info: TableInfo) -> N
     # The house-style reference uses approximately 12 pt table text.  The previous
     # V2 pass compressed tables to 10–10.5 pt, making them visually unlike the
     # reference and causing wide data tables to occupy too little vertical space.
-    font_size = 24 if info.logical_column_count >= 5 else 22
-    line_height = 240 if info.logical_column_count >= 5 else 225
+    font_size = 20
+    line_height = 220
     for p in table.xpath(".//w:tc/w:p", namespaces=NS):
         ppr = p.find("w:pPr", namespaces=NS)
         if ppr is None:
@@ -2159,6 +2415,30 @@ def _guard_table_rows(table: etree._Element) -> int:
     return changed
 
 
+def _keep_compact_table_together(table: etree._Element, info: TableInfo) -> bool:
+    """Prevent a short table from being split at a page or column boundary."""
+
+    rows = table.findall("w:tr", namespaces=NS)
+    if not 1 < len(rows) <= 6:
+        return False
+    if len(normalize_text(element_text(table))) > 1800:
+        return False
+    changed = False
+    for row_index, row in enumerate(rows):
+        paragraphs = row.xpath("./w:tc/w:p", namespaces=NS)
+        for paragraph in paragraphs:
+            ppr = paragraph.find("w:pPr", namespaces=NS)
+            if ppr is None:
+                ppr = etree.Element(qn("w:pPr")); paragraph.insert(0, ppr)
+            if ppr.find("w:keepLines", namespaces=NS) is None:
+                etree.SubElement(ppr, qn("w:keepLines"))
+                changed = True
+            if row_index < len(rows) - 1 and ppr.find("w:keepNext", namespaces=NS) is None:
+                etree.SubElement(ppr, qn("w:keepNext"))
+                changed = True
+    return changed
+
+
 def _resize_top_level_drawings(paragraph: etree._Element, target_twips: int) -> int:
     count = 0
     max_emu = int(target_twips * EMU_PER_TWIP * 0.98)
@@ -2216,16 +2496,28 @@ def _merge_template_header_footer(
     document_root: etree._Element,
     author_shortline: str,
 ) -> dict[str, bytes]:
+    # Without an ARTICLE author line the template footer cannot be sanitised
+    # safely.  Keep the ARTICLE stories rather than leaking another paper's name.
+    if not author_shortline:
+        return {}
     template_sections = _section_properties_from_zip(template_zip)
     if not template_sections:
         return {}
     first_template_section = template_sections[0]
-    refs = [
-        _clone(node)
-        for node in first_template_section
-        if local_name(node) in {"headerReference", "footerReference"}
-    ]
-    if not refs:
+    template_rels = _read_relationships(template_zip, "word/_rels/document.xml.rels")
+    valid_refs: list[tuple[etree._Element, dict[str, str], str]] = []
+    for node in first_template_section:
+        if local_name(node) not in {"headerReference", "footerReference"}:
+            continue
+        template_id = node.get(qn("r:id"))
+        rel = template_rels.get(template_id or "")
+        if not rel or rel.get("Type") not in {HEADER_REL_TYPE, FOOTER_REL_TYPE}:
+            continue
+        story_part = _relationship_target_part("word/document.xml", rel.get("Target", ""))
+        if story_part not in template_zip.namelist():
+            continue
+        valid_refs.append((_clone(node), rel, story_part))
+    if not valid_refs:
         return {}
 
     # Attach TEMPLATE refs to the first section in the result.  Other sections have
@@ -2234,46 +2526,51 @@ def _merge_template_header_footer(
     if not result_sections:
         return {}
     first_result = result_sections[0]
-    for child in list(first_result):
-        if local_name(child) in {"headerReference", "footerReference"}:
-            first_result.remove(child)
-    for i, ref in enumerate(refs):
-        first_result.insert(i, ref)
 
-    template_rels = _read_relationships(template_zip, "word/_rels/document.xml.rels")
-    needed_ids = {ref.get(qn("r:id")) for ref in refs if ref.get(qn("r:id"))}
     article_rels_root = _relationships_root(article_zip)
+    # All ARTICLE section story references were removed when the journal section
+    # system was installed.  Remove their now-orphaned package relationships before
+    # adding the TEMPLATE shell.  Keeping an old footer relationship and adding a
+    # second relationship to the same ``footer1.xml`` makes desktop Word repair the
+    # otherwise well-formed package on open.
+    for item in list(article_rels_root):
+        if item.get("Type") in {HEADER_REL_TYPE, FOOTER_REL_TYPE}:
+            article_rels_root.remove(item)
+
     replacements: dict[str, bytes] = {}
-    id_map: dict[str, str] = {}
+    copied_relationships: dict[tuple[str, str], str] = {}
+    mapped_refs: list[etree._Element] = []
     next_id = _next_relationship_id(article_rels_root)
 
-    for template_id in needed_ids:
-        rel = template_rels.get(template_id)
-        if not rel or rel.get("Type") not in {HEADER_REL_TYPE, FOOTER_REL_TYPE}:
-            continue
-        new_id = f"rId{next_id}"; next_id += 1
-        id_map[template_id] = new_id
-        relationship = etree.Element(f"{{{PACKAGE_REL_NS}}}Relationship")
-        relationship.set("Id", new_id)
-        relationship.set("Type", rel["Type"])
-        relationship.set("Target", rel["Target"])
-        article_rels_root.append(relationship)
-        story_part = _relationship_target_part("word/document.xml", rel["Target"])
-        if story_part in template_zip.namelist():
-            payload = template_zip.read(story_part)
-            if story_part.startswith("word/footer"):
-                payload = _sanitise_footer_author(payload, author_shortline)
-            replacements[story_part] = payload
+    for ref, rel, story_part in valid_refs:
+        relationship_key = (rel["Type"], rel["Target"])
+        new_id = copied_relationships.get(relationship_key)
+        if new_id is None:
+            new_id = f"rId{next_id}"; next_id += 1
+            copied_relationships[relationship_key] = new_id
+            relationship = etree.Element(f"{{{PACKAGE_REL_NS}}}Relationship")
+            relationship.set("Id", new_id)
+            relationship.set("Type", rel["Type"])
+            relationship.set("Target", rel["Target"])
+            article_rels_root.append(relationship)
+        ref.set(qn("r:id"), new_id)
+        mapped_refs.append(ref)
+
+        payload = template_zip.read(story_part)
+        if story_part.startswith("word/header"):
+            payload = _materialise_header_format(payload)
+        elif story_part.startswith("word/footer"):
+            payload = _sanitise_footer_author(payload, author_shortline)
+        replacements[story_part] = payload
         story_rels = _rels_part_name(story_part)
         if story_rels in template_zip.namelist():
             replacements[story_rels] = template_zip.read(story_rels)
 
-    for ref in first_result:
-        if local_name(ref) not in {"headerReference", "footerReference"}:
-            continue
-        old = ref.get(qn("r:id"))
-        if old in id_map:
-            ref.set(qn("r:id"), id_map[old])
+    for child in list(first_result):
+        if local_name(child) in {"headerReference", "footerReference"}:
+            first_result.remove(child)
+    for index, ref in enumerate(mapped_refs):
+        first_result.insert(index, ref)
 
     replacements["word/_rels/document.xml.rels"] = _serialize_xml(article_rels_root)
     content_types = _merge_content_types(article_zip, template_zip, replacements)
@@ -2311,6 +2608,49 @@ def _merge_template_document_settings(article_zip: ZipFile, template_zip: ZipFil
     return (_serialize_xml(article_root) if changed else article_zip.read(part), enabled)
 
 
+def _materialise_header_format(payload: bytes) -> bytes:
+    """Make a copied journal header independent from TEMPLATE style IDs."""
+
+    root = etree.fromstring(payload)
+    for paragraph in root.xpath(".//w:p", namespaces=NS):
+        if not normalize_text(element_text(paragraph)):
+            continue
+        ppr = paragraph.find("w:pPr", namespaces=NS)
+        if ppr is None:
+            ppr = etree.Element(qn("w:pPr")); paragraph.insert(0, ppr)
+        style = ppr.find("w:pStyle", namespaces=NS)
+        if style is not None:
+            ppr.remove(style)
+        # Keep TEMPLATE's explicit left/right parity.  It is part of the journal
+        # geometry and remains safe after the style dependency is removed.
+        spacing = ppr.find("w:spacing", namespaces=NS)
+        if spacing is None:
+            spacing = etree.SubElement(ppr, qn("w:spacing"))
+        spacing.set(qn("w:before"), "0"); spacing.set(qn("w:after"), "0")
+        for run in paragraph.xpath(".//w:r", namespaces=NS):
+            if not element_text(run):
+                continue
+            rpr = run.find("w:rPr", namespaces=NS)
+            if rpr is None:
+                rpr = etree.Element(qn("w:rPr")); run.insert(0, rpr)
+            rstyle = rpr.find("w:rStyle", namespaces=NS)
+            if rstyle is not None:
+                rpr.remove(rstyle)
+            fonts = rpr.find("w:rFonts", namespaces=NS)
+            if fonts is None:
+                fonts = etree.SubElement(rpr, qn("w:rFonts"))
+            for key in ("ascii", "hAnsi", "cs", "eastAsia"):
+                fonts.set(qn(f"w:{key}"), "Times New Roman")
+            for tag in ("sz", "szCs"):
+                size = rpr.find(f"w:{tag}", namespaces=NS)
+                if size is None:
+                    size = etree.SubElement(rpr, qn(f"w:{tag}"))
+                size.set(qn("w:val"), "20")
+            _set_run_bool(run, "b", True)
+            _set_run_bool(run, "i", True)
+    return _serialize_xml(root)
+
+
 def _sanitise_footer_author(payload: bytes, author_shortline: str) -> bytes:
     root = etree.fromstring(payload)
     if not author_shortline:
@@ -2328,12 +2668,28 @@ def _sanitise_footer_author(payload: bytes, author_shortline: str) -> bytes:
 
 
 def _article_author_shortline(structure: ArticleStructure, report: DocumentReport) -> str:
-    text_by_id = {p.id: p.normalized_text for p in report.paragraphs}
+    paragraph_by_id = {p.id: p for p in report.paragraphs}
     candidates: list[tuple[int, str]] = []
     for b in structure.blocks:
         if b.get("detected_role") != "author":
             continue
-        text = text_by_id.get(b["id"], b.get("text_preview", ""))
+        paragraph = paragraph_by_id.get(b["id"])
+        if paragraph is None:
+            text = b.get("text_preview", "")
+        else:
+            # Affiliation markers and the corresponding-author asterisk are
+            # normally separate superscript runs.  Removing those runs is both
+            # more accurate and safer than trimming the final letter of every
+            # surname (which turned ``Author`` into ``Autho``).
+            text = "".join(
+                run.text
+                for run in paragraph.runs
+                if (
+                    run.effective_formatting.get("vertical_align")
+                    or run.font.get("vertical_align")
+                ) != "superscript"
+            )
+            text = normalize_text(text)
         # Prefer the genuinely Latin author line.  Cyrillic source lines often
         # contain Latin affiliation markers (a/b), so a boolean test is not enough.
         latin_count = len(re.findall(r"[A-Za-z]", text))
@@ -2344,7 +2700,7 @@ def _article_author_shortline(structure: ArticleStructure, report: DocumentRepor
         return ""
     raw = max(candidates, key=lambda x: x[0])[1]
     raw = raw.replace("©", "").replace("*", "").strip()
-    parts = [re.sub(r"[a-zа-я]$", "", p.strip(), flags=re.IGNORECASE) for p in raw.split(",") if p.strip()]
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
     result: list[str] = []
     for part in parts:
         tokens = re.findall(r"[A-Za-zА-Яа-яЁё-]+|[A-ZА-Я]\.", part)
@@ -2538,8 +2894,35 @@ def _clone(element: etree._Element | None) -> etree._Element | None:
 
 
 def _serialize_xml(root: etree._Element) -> bytes:
-    etree.cleanup_namespaces(root)
+    _normalise_property_order(root)
     return etree.tostring(root, encoding="UTF-8", xml_declaration=True, standalone=True)
+
+
+def _normalise_property_order(root: etree._Element) -> None:
+    """Restore schema order after conservative in-place OOXML mutations.
+
+    Do not call ``cleanup_namespaces`` here.  Word documents commonly declare
+    compatibility prefixes only through ``mc:Ignorable``.  Lxml regards those
+    declarations as unused and removes them, leaving an invalid Ignorable value
+    that makes desktop Word report the generated DOCX as corrupt.
+    """
+
+    for parent in root.iter():
+        order = _PROPERTY_CHILD_ORDER.get(local_name(parent))
+        if not order or len(parent) < 2:
+            continue
+        ranks = {name: index for index, name in enumerate(order)}
+        children = list(parent)
+        sorted_children = sorted(
+            enumerate(children),
+            key=lambda item: (ranks.get(local_name(item[1]), len(order)), item[0]),
+        )
+        if [child for _, child in sorted_children] == children:
+            continue
+        for child in children:
+            parent.remove(child)
+        for _, child in sorted_children:
+            parent.append(child)
 
 
 def _dedupe_overlapping_spans(spans: list[list[etree._Element]]) -> list[list[etree._Element]]:

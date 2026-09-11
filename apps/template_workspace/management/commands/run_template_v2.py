@@ -10,6 +10,7 @@ from apps.template_workspace.v2.classification.roles import RoleClassifierV2
 from apps.template_workspace.v2.editor.safe_word_editor import SafeWordEditor
 from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.mapping.preview import RoleMatcher
+from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 
 
@@ -40,7 +41,8 @@ class Command(BaseCommand):
         article_structure = classifier.article_structure(article_report)
         template_profile = TemplateProfileBuilder(classifier=classifier).build(template_report)
         mapping_preview = RoleMatcher().build_preview(article_structure, template_profile)
-        editor_result = SafeWordEditor(classifier=classifier).render(
+        planner = build_planning_engine()
+        editor_result = SafeWordEditor(classifier=classifier, planner=planner).render(
             article_path=article_path,
             template_path=template_path,
             output_path=result_path,
@@ -56,6 +58,10 @@ class Command(BaseCommand):
         self._write(output / "article_structure.json", article_structure.to_dict())
         self._write(output / "template_profile.json", template_profile.to_dict())
         self._write(output / "mapping_preview.json", mapping_preview.to_dict())
+        self._write(
+            output / "planning_report.json",
+            planner.last_result.to_dict() if planner.last_result else {},
+        )
         self._write(output / "editor_report.json", editor_result.to_dict())
 
         self.stdout.write(self.style.SUCCESS(f"Wrote {result_path}"))

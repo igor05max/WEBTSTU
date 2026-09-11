@@ -247,6 +247,11 @@ AI_MODEL = os.getenv("AI_MODEL", "").strip()
 AI_DISABLE_THINKING = os.getenv("AI_DISABLE_THINKING", "0") == "1"
 AI_MODELS_TIMEOUT = max(1, int(os.getenv("AI_MODELS_TIMEOUT", "30")))
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "120"))
+TEMPLATE_V2_QWEN_ENABLED = os.getenv("TEMPLATE_V2_QWEN_ENABLED", "0") == "1"
+TEMPLATE_V2_QWEN_MODEL = os.getenv("TEMPLATE_V2_QWEN_MODEL", AI_MODEL).strip()
+TEMPLATE_V2_QWEN_TIMEOUT = int(
+    os.getenv("TEMPLATE_V2_QWEN_TIMEOUT", str(AI_REQUEST_TIMEOUT))
+)
 CITATION_CORPUS_ROOT = Path(
     os.getenv("CITATION_CORPUS_ROOT", str(BASE_DIR / "downloads_elibrary"))
 )

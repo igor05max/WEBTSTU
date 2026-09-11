@@ -14,6 +14,7 @@ from django.test import TestCase, override_settings, skipUnlessDBFeature
 from django.urls import reverse
 from docx import Document
 from docx.enum.section import WD_SECTION
+from lxml import etree
 
 from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.v2.classification.roles import RoleClassifierV2
@@ -21,6 +22,8 @@ from apps.template_workspace.v2.comparison.document_diff import DocumentDiffBuil
 from apps.template_workspace.v2.editor.safe_word_editor import SafeWordEditor
 from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.mapping.preview import RoleMatcher
+from apps.template_workspace.v2.planning.qwen_like import QwenLikePlanningEngine
+from apps.template_workspace.v2.planning.qwen_provider import QwenPlanningProvider, build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.services import analysis_directory, result_docx_path, run_v2_job
 
@@ -35,6 +38,7 @@ def first_existing(*paths: str) -> Path:
 
 FIXTURES = {
     "balabanov_source": first_existing(
+        r"C:\Users\Igoryok\Downloads\Statya_Balabanov_trans (2).docx",
         r"C:\Users\Igoryok\Downloads\Statya_Balabanov_trans (1).docx",
         r"C:\Users\Igoryok\Downloads\Statya_Balabanov_trans.docx",
     ),
@@ -42,7 +46,10 @@ FIXTURES = {
         r"C:\Users\Igoryok\Downloads\03_Balabanov_Dyachkova_Gutnik_Chapaksov_Burakova_118-128 (1).docx",
         r"C:\Users\Igoryok\Downloads\03_Balabanov_Dyachkova_Gutnik_Chapaksov_Burakova_118-128.docx",
     ),
-    "tyutyunnik_formatted": first_existing(r"C:\Users\Igoryok\Downloads\01_Tyutyunnik_98-103.docx"),
+    "tyutyunnik_formatted": first_existing(
+        r"C:\Users\Igoryok\Downloads\01_Tyutyunnik_98-103 (1).docx",
+        r"C:\Users\Igoryok\Downloads\01_Tyutyunnik_98-103.docx",
+    ),
 }
 REAL_FIXTURES_AVAILABLE = all(path.exists() for path in FIXTURES.values())
 
@@ -219,6 +226,160 @@ class TemplateV2InspectorTests(TestCase):
         self.assertIn("ARTICLE FOOTER", footer_text)
         self.assertNotIn("TEMPLATE FOOTER", footer_text)
 
+    def test_safe_word_editor_replaces_story_relationships_without_duplicate_targets(self):
+        article = Document()
+        article.add_paragraph("A practical article title")
+        article.add_paragraph("© Ivan I. Author")
+        article.add_paragraph("Abstract. This paper contains enough text for deterministic role classification.")
+        article.sections[0].footer.paragraphs[0].text = "ARTICLE FOOTER"
+        article_path = Path(self.tmp.name) / "article-story.docx"
+        article.save(article_path)
+
+        template = Document()
+        template.add_paragraph("A formatted article title")
+        template.sections[0].header.paragraphs[0].text = "JOURNAL HEADER"
+        template.sections[0].footer.paragraphs[0].text = "1"
+        template.sections[0].footer.add_paragraph("TEMPLATE AUTHOR")
+        template_path = Path(self.tmp.name) / "template-story.docx"
+        template.save(template_path)
+
+        output = Path(self.tmp.name) / "story-result.docx"
+        SafeWordEditor(classifier=RoleClassifierV2(use_ai=False)).render(
+            article_path=article_path,
+            template_path=template_path,
+            output_path=output,
+            copy_template_headers=True,
+        )
+
+        rendered = DocumentInspector(output).inspect()
+        self.assertIn("JOURNAL HEADER", " ".join(item.text for item in rendered.headers))
+        footer_text = " ".join(item.text for item in rendered.footers)
+        self.assertIn("Author", footer_text)
+        self.assertNotIn("TEMPLATE AUTHOR", footer_text)
+
+        with ZipFile(output) as archive:
+            rels = etree.fromstring(archive.read("word/_rels/document.xml.rels"))
+        story_relationships = [
+            (item.get("Type"), item.get("Target"))
+            for item in rels
+            if item.get("Type", "").endswith(("/header", "/footer"))
+        ]
+        self.assertEqual(len(story_relationships), len(set(story_relationships)))
+
+    def test_qwen_like_planner_starts_large_full_width_figures_on_fresh_pages(self):
+        snapshot = {
+            "article": {
+                "blocks": [],
+                "tables": [
+                    {
+                        "id": "block_0042",
+                        "classification": "FIGURE_CONTAINER",
+                        "rows": 4,
+                        "cols": 2,
+                        "grid": ["4932", "4932"],
+                    }
+                ],
+            },
+            "template": {
+                "paragraphs": [],
+                "front_sequence": [],
+                "front_language_order": [],
+                "roles": {},
+                "layout": {},
+            },
+        }
+        plan = QwenLikePlanningEngine()._local_plan(snapshot)
+        self.assertTrue(plan.flow["page_break_before_large_full_width_figures"])
+        self.assertEqual(plan.flow["large_figure_block_ids"], ["block_0042"])
+
+    def test_qwen_planner_accepts_only_whitelisted_values_and_existing_ids(self):
+        snapshot = {
+            "article": {
+                "blocks": [{"id": "block_0001"}],
+                "tables": [{"id": "block_0042"}],
+            },
+            "template": {
+                "front_sequence": ["title", "author"],
+                "front_language_order": ["ru", "en"],
+            },
+        }
+        local = QwenLikePlanningEngine()._local_plan({
+            "article": {"blocks": [], "tables": []},
+            "template": {
+                "paragraphs": [], "front_sequence": ["title", "author"],
+                "front_language_order": ["ru", "en"], "roles": {}, "layout": {},
+            },
+        })
+        patch_payload = {
+            "front": {"citation_expected_lines": 99, "language_order": ["en", "xx"]},
+            "flow": {
+                "large_figure_block_ids": ["block_0042", "invented"],
+                "float_lead_after_figure_block_ids": ["block_0042"],
+                "max_float_body_blocks": 50,
+                "arbitrary_xml": "<w:del/>",
+            },
+            "replacement_text": "must be ignored",
+        }
+        result = QwenLikePlanningEngine()._merge_provider(local, patch_payload, snapshot)
+        self.assertEqual(result.front["citation_expected_lines"], 4)
+        self.assertEqual(result.front["language_order"], ["ru", "en"])
+        self.assertEqual(result.flow["large_figure_block_ids"], ["block_0042"])
+        self.assertEqual(result.flow["float_lead_after_figure_block_ids"], ["block_0042"])
+        self.assertEqual(result.flow["max_float_body_blocks"], 3)
+        self.assertNotIn("arbitrary_xml", result.flow)
+        self.assertTrue(result.warnings)
+
+    @override_settings(
+        AI_BASE_URL="http://192.0.2.10:1234/v1",
+        TEMPLATE_V2_QWEN_ENABLED=False,
+        TEMPLATE_V2_QWEN_MODEL="qwen-test",
+    )
+    def test_qwen_planner_is_feature_gated_even_when_ai_endpoint_exists(self):
+        planner = build_planning_engine()
+        self.assertIsNone(planner.provider)
+
+    def test_qwen_planner_provider_failure_keeps_local_plan(self):
+        report = DocumentInspector(self.path).inspect()
+        classifier = RoleClassifierV2(use_ai=False)
+        structure = classifier.article_structure(report)
+        profile = TemplateProfileBuilder(classifier=classifier).build(report)
+
+        def unavailable(_snapshot):
+            raise RuntimeError("vpn unavailable")
+
+        result = QwenLikePlanningEngine(provider=unavailable).plan(
+            article_report=report,
+            template_report=report,
+            article_structure=structure,
+            template_profile=profile,
+        )
+        self.assertEqual(result.provider, "qwen-like-local-simulator")
+        self.assertIn("vpn unavailable", " ".join(result.warnings))
+
+    def test_qwen_provider_uses_one_model_and_compacts_ordinary_body_text(self):
+        provider = QwenPlanningProvider(model="qwen-only", timeout=17)
+        snapshot = {
+            "article": {
+                "blocks": [
+                    {"id": "block_1", "kind": "paragraph", "role": "body", "zone": "body", "text": "ordinary prose"},
+                    {"id": "block_2", "kind": "paragraph", "role": "body", "zone": "body", "text": "Fig. 2 presents results"},
+                ],
+                "tables": [],
+            },
+            "template": {"paragraphs": [], "roles": {}, "layout": {}},
+        }
+        response = {"candidates": [{"content": {"parts": [{"text": '{"flow": {}}'}]}}]}
+        with patch(
+            "apps.template_workspace.v2.planning.qwen_provider.generate_content",
+            return_value=(response, "qwen-only"),
+        ) as generate:
+            self.assertEqual(provider(snapshot), {"flow": {}})
+        kwargs = generate.call_args.kwargs
+        self.assertEqual(kwargs["models"], [{"id": "qwen-only"}])
+        sent = generate.call_args.args[0]["contents"][0]["parts"][0]["text"]
+        self.assertNotIn("ordinary prose", sent)
+        self.assertIn("Fig. 2 presents results", sent)
+
 
 @skipUnlessDBFeature("supports_transactions")
 class TemplateV2ViewTests(TestCase):
@@ -259,6 +420,7 @@ class TemplateV2ViewTests(TestCase):
         self.assertTrue((analysis_directory(job) / "article_structure.json").exists())
         self.assertTrue((analysis_directory(job) / "template_profile.json").exists())
         self.assertTrue((analysis_directory(job) / "mapping_preview.json").exists())
+        self.assertTrue((analysis_directory(job) / "planning_report.json").exists())
         self.assertTrue((analysis_directory(job) / "editor_report.json").exists())
         self.assertTrue(result_docx_path(job).exists())
         self.assertFalse((analysis_directory(job) / "document_diff.json").exists())

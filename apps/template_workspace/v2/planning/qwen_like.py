@@ -42,6 +42,7 @@ class QwenLikePlanningEngine:
 
     def __init__(self, provider: Callable[[dict[str, Any]], dict[str, Any]] | None = None):
         self.provider = provider
+        self.last_result: PlanningResult | None = None
 
     def plan(
         self,
@@ -54,12 +55,18 @@ class QwenLikePlanningEngine:
         snapshot = self._snapshot(article_report, template_report, article_structure, template_profile)
         local = self._local_plan(snapshot)
         if self.provider is None:
+            self.last_result = local
             return local
         try:
             patch = self.provider(snapshot) or {}
-            return self._merge_provider(local, patch)
+            result = self._merge_provider(local, patch, snapshot)
+            provider_name = str(getattr(self.provider, "provider_name", "qwen-openai-compatible") or "qwen-openai-compatible")
+            result.provider = f"{provider_name}+validated-local"
+            self.last_result = result
+            return result
         except Exception as exc:
             local.warnings.append(f"Qwen planning provider skipped: {exc}")
+            self.last_result = local
             return local
 
     def _snapshot(self, article_report, template_report, article_structure, template_profile) -> dict[str, Any]:
@@ -84,6 +91,12 @@ class QwenLikePlanningEngine:
                         "rows": t.row_count,
                         "cols": t.logical_column_count,
                         "grid": list(t.grid),
+                        "drawing_count": sum(
+                            1
+                            for row in t.rows
+                            for cell in row
+                            if cell.has_drawing
+                        ),
                     }
                     for t in article_report.tables
                 ],
@@ -141,10 +154,13 @@ class QwenLikePlanningEngine:
         # few prose lines.  Data tables are allowed to flow naturally.
         figure_tables = [t for t in snapshot["article"]["tables"] if t["classification"] == "FIGURE_CONTAINER"]
         large_figure_ids = []
+        two_panel_ids = []
         for t in figure_tables:
             width = sum(int(x or 0) for x in t.get("grid") or [])
             if t["cols"] >= 3 or width >= 7000:
                 large_figure_ids.append(t["id"])
+            if int(t.get("drawing_count") or 0) == 2:
+                two_panel_ids.append(t["id"])
 
         return PlanningResult(
             front={
@@ -155,8 +171,9 @@ class QwenLikePlanningEngine:
                 "language_order": list(snapshot["template"]["front_language_order"]),
             },
             flow={
-                "page_break_before_large_full_width_figures": False,
+                "page_break_before_large_full_width_figures": bool(large_figure_ids),
                 "large_figure_block_ids": large_figure_ids,
+                "float_lead_after_figure_block_ids": two_panel_ids,
                 "keep_figure_containers_atomic": True,
                 "allow_safe_prose_relocation": True,
                 "float_compact_tables_forward": True,
@@ -167,20 +184,88 @@ class QwenLikePlanningEngine:
             },
         )
 
-    def _merge_provider(self, local: PlanningResult, patch: dict[str, Any]) -> PlanningResult:
+    def _merge_provider(
+        self,
+        local: PlanningResult,
+        patch: dict[str, Any],
+        snapshot: dict[str, Any],
+    ) -> PlanningResult:
         # Strictly whitelist planner sections.  The provider cannot inject text or
         # arbitrary editor operations.
         front = dict(local.front)
         flow = dict(local.flow)
-        if isinstance(patch.get("front"), dict):
-            for key in front:
-                if key in patch["front"]:
-                    front[key] = patch["front"][key]
-        if isinstance(patch.get("flow"), dict):
-            for key in flow:
-                if key in patch["flow"]:
-                    flow[key] = patch["flow"][key]
-        return PlanningResult(provider="qwen-like-local+provider", front=front, flow=flow, warnings=list(local.warnings))
+        warnings = list(local.warnings)
+        table_ids = {
+            str(item.get("id"))
+            for item in snapshot.get("article", {}).get("tables", [])
+            if item.get("id")
+        }
+        role_values = {
+            str(item)
+            for item in snapshot.get("template", {}).get("front_sequence", [])
+        }
+        language_values = {
+            str(item)
+            for item in snapshot.get("template", {}).get("front_language_order", [])
+        }
+
+        front_patch = patch.get("front")
+        if isinstance(front_patch, dict):
+            for key in ("metadata_row", "reserve_placeholder_citation_slot"):
+                value = front_patch.get(key)
+                if isinstance(value, bool):
+                    front[key] = value
+            value = front_patch.get("citation_expected_lines")
+            if isinstance(value, int) and not isinstance(value, bool):
+                front["citation_expected_lines"] = max(0, min(4, value))
+            value = front_patch.get("role_sequence")
+            if isinstance(value, list) and all(isinstance(item, str) and item in role_values for item in value):
+                front["role_sequence"] = list(dict.fromkeys(value))
+            value = front_patch.get("language_order")
+            if isinstance(value, list) and all(isinstance(item, str) and item in language_values for item in value):
+                front["language_order"] = list(dict.fromkeys(value))
+
+        flow_patch = patch.get("flow")
+        if isinstance(flow_patch, dict):
+            for key in (
+                "page_break_before_large_full_width_figures",
+                "keep_figure_containers_atomic",
+                "allow_safe_prose_relocation",
+                "float_compact_tables_forward",
+            ):
+                value = flow_patch.get(key)
+                if isinstance(value, bool):
+                    flow[key] = value
+            id_fields = {
+                "large_figure_block_ids": table_ids,
+                "float_lead_after_figure_block_ids": table_ids,
+            }
+            for key, allowed_ids in id_fields.items():
+                value = flow_patch.get(key)
+                if not isinstance(value, list):
+                    continue
+                accepted = [
+                    item for item in value
+                    if isinstance(item, str) and item in allowed_ids
+                ]
+                flow[key] = list(dict.fromkeys(accepted))
+                rejected = len(value) - len(accepted)
+                if rejected:
+                    warnings.append(
+                        f"Qwen planner: ignored {rejected} unknown or invalid ID(s) in {key}."
+                    )
+            ranges = {
+                "max_float_body_blocks": (0, 3),
+                "max_float_chars": (200, 3000),
+                "max_relocation_chars": (100, 1600),
+                "min_relocation_chars": (0, 600),
+            }
+            for key, (minimum, maximum) in ranges.items():
+                value = flow_patch.get(key)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    flow[key] = max(minimum, min(maximum, value))
+
+        return PlanningResult(front=front, flow=flow, warnings=warnings)
 
 
 def _is_placeholder_citation(text: str) -> bool:
