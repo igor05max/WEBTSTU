@@ -39,5 +39,4 @@ class TemplateV2ArchitectureTests(TestCase):
         profile = TemplateProfileBuilder(classifier=classifier).build(template)
         mapping = RoleMatcher().build_preview(structure, profile)
         self.assertGreater(mapping.summary["total_mappings"], 0)
-        self.assertIn("Mapping preview does not compare ARTICLE and TEMPLATE", mapping.warnings[0])
-
+        self.assertIn("analysed independently", mapping.warnings[0])

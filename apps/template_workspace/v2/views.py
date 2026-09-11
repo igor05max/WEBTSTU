@@ -21,6 +21,7 @@ FILES = {
     "profile": ("template_profile.json", "application/json", "template_profile.json"),
     "mapping": ("mapping_preview.json", "application/json", "mapping_preview.json"),
     "editor": ("editor_report.json", "application/json", "editor_report.json"),
+    "qwen": ("qwen_report.json", "application/json", "qwen_report.json"),
 }
 
 

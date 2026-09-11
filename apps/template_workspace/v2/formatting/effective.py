@@ -13,27 +13,43 @@ def clean(value: dict[str, Any]) -> dict[str, Any]:
 
 
 class EffectiveFormattingResolver:
-    """Resolves deterministic effective paragraph/run formatting from OOXML styles."""
+    """Resolve Word's visible formatting cascade deterministically.
+
+    Word paragraphs without an explicit ``w:pStyle`` still use the document's
+    default paragraph style (usually Normal).  The previous V2 resolver skipped
+    that style and therefore reported Calibri/docDefaults for paragraphs that Word
+    actually rendered as Times New Roman.  This resolver includes default styles
+    and also honours paragraph-style run properties before character/run overrides.
+    """
 
     def __init__(self, styles_root: etree._Element | None, styles: list[StyleInfo]):
         self.styles_root = styles_root
         self.styles = {style.style_id: style for style in styles}
         self.doc_defaults = self._doc_defaults(styles_root)
+        self.default_paragraph_style = next((s.style_id for s in styles if s.type == "paragraph" and s.default), None)
+        self.default_character_style = next((s.style_id for s in styles if s.type == "character" and s.default), None)
 
     def paragraph(self, style_id: str | None, direct: dict[str, Any] | None) -> dict[str, Any]:
         paragraph: dict[str, Any] = {}
         run: dict[str, Any] = {}
         paragraph.update(self.doc_defaults.get("paragraph", {}))
         run.update(self.doc_defaults.get("run", {}))
-        for style in self._style_chain(style_id):
+
+        resolved_style_id = style_id or self.default_paragraph_style
+        for style in self._style_chain(resolved_style_id):
+            if style.type != "paragraph":
+                continue
             paragraph.update(clean(style.paragraph_properties))
             run.update(clean(style.run_properties))
-        paragraph.update(clean(direct or {}))
+
+        direct = clean(direct or {})
+        paragraph.update(direct)
         return {"paragraph": clean(paragraph), "run": clean(run)}
 
     def run(self, paragraph_style_id: str | None, character_style_id: str | None, direct: dict[str, Any] | None) -> dict[str, Any]:
         resolved = dict(self.paragraph(paragraph_style_id, {}).get("run", {}))
-        for style in self._style_chain(character_style_id):
+        char_style_id = character_style_id or self.default_character_style
+        for style in self._style_chain(char_style_id):
             if style.type == "character":
                 resolved.update(clean(style.run_properties))
         resolved.update(clean(direct or {}))
@@ -95,4 +111,3 @@ def _run_defaults(r_pr: etree._Element | None) -> dict[str, Any]:
             "color": color.get(qn("w:val")) if color is not None else None,
         }
     )
-

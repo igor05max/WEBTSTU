@@ -1,31 +1,18 @@
 from __future__ import annotations
 
-import json
-import os
 import re
-import socket
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
-from typing import Any
-from urllib.parse import urlparse
+from typing import Any, Callable
 
-from django.conf import settings
-from pydantic import ValidationError
-
-from apps.checks.ai_client import (
-    AIProviderError,
-    extract_response_text,
-    generate_content,
-    get_api_base_url,
-    get_configured_model,
-    is_ai_configured,
-)
 from apps.template_workspace.v2.models.document_info import DocumentReport, ParagraphInfo, SemanticRoleLayer
 from apps.template_workspace.v2.models.template_profile import ArticleStructure
 
 
 ROLE_NAMES = (
     "editorial_metadata",
+    "article_type",
+    "rubric",
     "title",
     "author",
     "affiliation",
@@ -42,11 +29,22 @@ ROLE_NAMES = (
     "reference_item",
     "references_heading",
     "funding_heading",
+    "funding_text",
     "acknowledgements_heading",
+    "acknowledgements_text",
     "conflict_heading",
+    "conflict_text",
     "author_information",
+    "received_metadata",
+    "copyright_metadata",
     "unknown",
 )
+
+FRONT_MATTER = "front_matter"
+BODY = "body"
+BACK_MATTER = "back_matter"
+REFERENCES = "references"
+AUTHOR_INFO = "author_info"
 
 
 @dataclass
@@ -58,6 +56,10 @@ class RoleDecision:
     reason: str
     needs_review: bool = False
     heading_level: int | None = None
+    zone: str | None = None
+    language: str | None = None
+    group_id: str | None = None
+    subtype: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -68,37 +70,98 @@ class RoleDecision:
             "source": self.source,
             "reason": self.reason,
             "needs_review": self.needs_review,
+            "zone": self.zone,
+            "language": self.language,
+            "group_id": self.group_id,
+            "subtype": self.subtype,
         }
 
 
 class RoleClassifierV2:
-    """Classifies V2 roles without using the legacy paper_formatter classifier."""
+    """Deterministic structure classifier for scholarly DOCX files.
 
-    def __init__(self, *, use_ai: bool = True, review_threshold: float = 0.72):
+    The classifier intentionally does not call a network model.  A future model can be
+    injected through ``semantic_provider`` for only the blocks that remain ambiguous.
+    The deterministic layer remains the source of truth for zones, references and
+    front-matter sequencing.
+    """
+
+    def __init__(
+        self,
+        *,
+        use_ai: bool = False,
+        review_threshold: float = 0.74,
+        semantic_provider: Callable[[DocumentReport, list[dict[str, Any]]], dict[str, dict[str, Any]]] | None = None,
+    ):
         self.use_ai = use_ai
         self.review_threshold = review_threshold
+        self.semantic_provider = semantic_provider
 
     def classify(self, report: DocumentReport) -> SemanticRoleLayer:
-        paragraphs = [paragraph for paragraph in report.paragraphs if paragraph.normalized_text]
-        front_limit = _front_matter_limit(paragraphs)
-        decisions = [self._classify_one(paragraph, index, paragraphs, front_limit) for index, paragraph in enumerate(paragraphs)]
+        paragraphs = [p for p in report.paragraphs if p.normalized_text]
+        decisions = self._classify_document(paragraphs)
         warnings: list[str] = []
-        if self.use_ai and is_ai_configured() and _configured_endpoint_reachable():
-            self._apply_ai_for_ambiguous(decisions, paragraphs, report.source_path, warnings)
-        elif self.use_ai and is_ai_configured():
-            warnings.append(f"Qwen endpoint {get_api_base_url()} сейчас недоступен по TCP; роли V2 определены локальными правилами.")
-        counts = Counter(decision.role for decision in decisions)
+        diagnostics: dict[str, Any] = {
+            "rules_processed": len(decisions),
+            "qwen_candidates": 0,
+            "qwen_sent": 0,
+            "qwen_changed": 0,
+            "qwen_accepted": 0,
+            "qwen_errors": 0,
+            "qwen_timeouts": 0,
+            "qwen_bad_json": 0,
+            "errors": [],
+            "decisions": [],
+        }
+
+        if self.use_ai and self.semantic_provider is not None:
+            ambiguous = [d.to_dict() for d in decisions if d.needs_review or d.confidence < self.review_threshold]
+            diagnostics["qwen_candidates"] = len(ambiguous)
+            if ambiguous:
+                try:
+                    overrides = self.semantic_provider(report, ambiguous) or {}
+                    provider_diagnostics = getattr(getattr(self.semantic_provider, "diagnostics", None), "as_dict", lambda: None)()
+                    if provider_diagnostics:
+                        diagnostics.update(provider_diagnostics)
+                        diagnostics["rules_processed"] = len(decisions)
+                    by_id = {d.block_id: d for d in decisions}
+                    for block_id, patch in overrides.items():
+                        decision = by_id.get(block_id)
+                        if decision is None:
+                            continue
+                        role = str(patch.get("role") or "")
+                        confidence = float(patch.get("confidence") or 0)
+                        if role not in ROLE_NAMES or confidence < 0.60:
+                            continue
+                        original_role = decision.role
+                        decision.role = role
+                        decision.confidence = confidence
+                        decision.needs_review = confidence < self.review_threshold
+                        decision.source = str(patch.get("source") or "qwen")
+                        decision.reason = str(patch.get("reason") or "Qwen role classification")
+                        if role != original_role and not provider_diagnostics:
+                            diagnostics["qwen_changed"] += 1
+                except Exception as exc:  # semantic provider must never break the deterministic path
+                    diagnostics["qwen_errors"] += 1
+                    diagnostics["errors"].append({"kind": type(exc).__name__, "message": str(exc)[:1000]})
+                    warnings.append(f"QwenProvider skipped; deterministic V2 rules were used. {exc}")
+        elif self.use_ai:
+            warnings.append("QwenProvider is not configured; deterministic V2 rules were used.")
+
+        counts = Counter(d.role for d in decisions)
+        used_qwen = any(d.source == "qwen" for d in decisions)
         return SemanticRoleLayer(
-            provider="v2-rules+qwen" if any(decision.source == "qwen" for decision in decisions) else "v2-rules",
+            provider="v2-context-rules+qwen" if used_qwen else "v2-context-rules",
             warnings=warnings,
             role_counts=dict(sorted(counts.items())),
-            block_roles=[decision.to_dict() for decision in decisions],
+            block_roles=[d.to_dict() for d in decisions],
+            diagnostics=diagnostics,
         )
 
     def article_structure(self, report: DocumentReport) -> ArticleStructure:
         roles = self.classify(report)
         role_by_id = {item["block_id"]: item for item in roles.block_roles}
-        blocks = []
+        blocks: list[dict[str, Any]] = []
         for block in report.flow:
             role = role_by_id.get(block.id, {})
             blocks.append(
@@ -111,6 +174,11 @@ class RoleClassifierV2:
                     "confidence": role.get("confidence", 1.0 if block.kind != "paragraph" else 0.5),
                     "needs_review": role.get("needs_review", False),
                     "object_id": block.object_id,
+                    "zone": role.get("zone"),
+                    "language": role.get("language"),
+                    "group_id": role.get("group_id"),
+                    "subtype": role.get("subtype"),
+                    "heading_level": role.get("heading_level"),
                 }
             )
         return ArticleStructure(
@@ -119,159 +187,537 @@ class RoleClassifierV2:
             warnings=roles.warnings,
             role_counts=roles.role_counts,
             blocks=blocks,
+            diagnostics=roles.diagnostics,
         )
 
-    def _classify_one(self, paragraph: ParagraphInfo, index: int, paragraphs: list[ParagraphInfo], front_limit: int) -> RoleDecision:
-        text = paragraph.normalized_text
-        lowered = text.casefold()
-        front = index < front_limit
-        font_size = _dominant_size(paragraph)
-        bold_ratio = _bold_ratio(paragraph)
-        alignment = _effective_alignment(paragraph)
-        numbered = bool(paragraph.numbering) or bool(re.match(r"^\s*(\d+(\.\d+)*|[IVXLC]+|[A-ZА-Я])[\).\s]+", text))
-        style_name = (paragraph.style_name or paragraph.style_id or "").casefold()
-        previous = paragraphs[index - 1].normalized_text if index else ""
+    def _classify_document(self, paragraphs: list[ParagraphInfo]) -> list[RoleDecision]:
+        if not paragraphs:
+            return []
 
-        if _is_citation(text):
-            return RoleDecision(paragraph.id, "citation", 0.88, "rules", "citation marker")
-        if _is_editorial_metadata(text, front):
-            return RoleDecision(paragraph.id, "editorial_metadata", 0.95, "rules", "front matter marker, UDC/DOI/category/citation metadata")
-        if "@" in text and len(text) <= 180:
-            return RoleDecision(paragraph.id, "email", 0.92, "rules", "email-like short paragraph")
-        if _is_references_heading(lowered):
-            return RoleDecision(paragraph.id, "references_heading", 0.96, "rules", "references heading marker", heading_level=1)
-        if re.search(r"\b(funding|финансирован)", lowered):
-            return RoleDecision(paragraph.id, "funding_heading", 0.9, "rules", "funding heading marker", heading_level=1)
-        if re.search(r"\b(acknowledg|благодарност)", lowered):
-            return RoleDecision(paragraph.id, "acknowledgements_heading", 0.9, "rules", "acknowledgement heading marker", heading_level=1)
-        if re.search(r"\b(conflict|конфликт интерес)", lowered):
-            return RoleDecision(paragraph.id, "conflict_heading", 0.9, "rules", "conflict heading marker", heading_level=1)
-        if _is_abstract(text, previous):
-            return RoleDecision(paragraph.id, "abstract", 0.9, "rules", "abstract heading/text marker")
-        if _is_keywords(text):
-            return RoleDecision(paragraph.id, "keywords", 0.92, "rules", "keywords marker")
-        if _is_figure_caption(text):
-            return RoleDecision(paragraph.id, "figure_caption", 0.9, "rules", "caption marker with caption punctuation after number")
-        if _is_table_caption(text):
-            return RoleDecision(paragraph.id, "table_caption", 0.9, "rules", "table caption marker")
-        if _looks_like_reference_item(text, previous):
-            return RoleDecision(paragraph.id, "reference_item", 0.84, "rules", "reference-like numbered/list paragraph")
-        if front and _looks_like_author(text):
-            return RoleDecision(paragraph.id, "author", 0.74, "rules", "front matter name-like paragraph", needs_review=True)
-        if front and _looks_like_affiliation(text):
-            return RoleDecision(paragraph.id, "affiliation", 0.76, "rules", "front matter organization/address marker")
-        if front and _looks_like_title(text, alignment, font_size, bold_ratio):
-            return RoleDecision(paragraph.id, "title", 0.72, "rules", "front matter title-like formatting", needs_review=True)
-        heading_level = _heading_level(text, paragraph, style_name, numbered, font_size, bold_ratio, front=front)
-        if heading_level:
-            return RoleDecision(paragraph.id, f"heading_{heading_level}", 0.86, "rules", "heading formatting/numbering pattern", heading_level=heading_level)
-        if numbered and len(text) < 180 and not text.endswith("."):
-            return RoleDecision(paragraph.id, "heading_2", 0.68, "rules", "numbered short paragraph needs heading/list review", needs_review=True, heading_level=2)
-        return RoleDecision(paragraph.id, "body", 0.82 if len(text) > 120 else 0.68, "rules", "default body paragraph", needs_review=len(text) <= 80)
+        decision_by_id: dict[str, RoleDecision] = {}
+        front_end = _front_matter_end(paragraphs)
+        references_start = _find_references_start(paragraphs)
+        author_info_start = _find_author_info_start(paragraphs)
 
-    def _apply_ai_for_ambiguous(
-        self,
-        decisions: list[RoleDecision],
-        paragraphs: list[ParagraphInfo],
-        document_name: str,
-        warnings: list[str],
-    ) -> None:
-        candidates = [
-            (decision, paragraph)
-            for decision, paragraph in zip(decisions, paragraphs)
-            if decision.needs_review or decision.confidence < self.review_threshold
-        ][:25]
-        if not candidates:
+        front = paragraphs[:front_end]
+        self._classify_front_matter(front, decision_by_id)
+
+        heading_anchors = _heading_anchor_signatures(paragraphs[front_end:references_start if references_start is not None else len(paragraphs)])
+        special_state: str | None = None
+        for idx in range(front_end, len(paragraphs)):
+            p = paragraphs[idx]
+            text = p.normalized_text
+            lowered = _strip_heading_number(text).casefold().strip(" .:")
+            lang = _language(text)
+
+            if references_start is not None and idx >= references_start:
+                if author_info_start is not None and idx >= author_info_start:
+                    decision_by_id[p.id] = self._classify_author_info_tail(p, lowered, lang)
+                    continue
+                if idx == references_start:
+                    decision_by_id[p.id] = RoleDecision(p.id, "references_heading", 0.99, "rules", "references zone anchor", heading_level=1, zone=REFERENCES, language=lang)
+                else:
+                    decision_by_id[p.id] = RoleDecision(p.id, "reference_item", 0.96, "rules", "paragraph inside references zone", zone=REFERENCES, language=lang)
+                continue
+
+            special_role = _special_heading_role(lowered)
+            if special_role:
+                special_state = special_role.removesuffix("_heading")
+                decision_by_id[p.id] = RoleDecision(
+                    p.id,
+                    special_role,
+                    0.98,
+                    "rules",
+                    "back-matter heading marker",
+                    heading_level=1,
+                    zone=BACK_MATTER,
+                    language=lang,
+                )
+                continue
+
+            # Captions keep their object role even when they occur between a back-matter
+            # heading and its translated counterpart.  Acknowledgement sections in real
+            # journal files may still contain figures.
+            if _is_figure_caption(text):
+                decision_by_id[p.id] = RoleDecision(p.id, "figure_caption", 0.96, "rules", "caption syntax", zone=BODY, language=lang)
+                continue
+            if _is_table_caption(text):
+                decision_by_id[p.id] = RoleDecision(p.id, "table_caption", 0.96, "rules", "table caption syntax", zone=BODY, language=lang)
+                continue
+
+            if special_state:
+                next_role = f"{special_state}_text"
+                decision_by_id[p.id] = RoleDecision(p.id, next_role, 0.93, "rules", "text following back-matter heading", zone=BACK_MATTER, language=lang)
+                continue
+
+            level, reason, confidence = _classify_heading(p, heading_anchors, first_body=(idx == front_end))
+            if level:
+                decision_by_id[p.id] = RoleDecision(p.id, f"heading_{level}", confidence, "rules", reason, heading_level=level, zone=BODY, language=lang)
+                special_state = None
+                continue
+
+            special_state = None
+            decision_by_id[p.id] = RoleDecision(p.id, "body", 0.94 if len(text) >= 100 else 0.82, "rules", "body-zone paragraph", zone=BODY, language=lang)
+
+        decisions = [decision_by_id[p.id] for p in paragraphs]
+        _refine_heading_hierarchy(paragraphs, decisions)
+        _attach_caption_continuations(paragraphs, decisions)
+        return decisions
+
+    def _classify_front_matter(self, paragraphs: list[ParagraphInfo], out: dict[str, RoleDecision]) -> None:
+        if not paragraphs:
             return
-        payload = {
-            "systemInstruction": {"parts": [{"text": "Ты классификатор структурных ролей DOCX. Не переписывай текст. Верни JSON."}]},
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [
-                        {
-                            "text": json.dumps(
-                                {
-                                    "document_name": document_name,
-                                    "allowed_roles": ROLE_NAMES,
-                                    "blocks": [
-                                        {
-                                            "block_id": paragraph.id,
-                                            "text": paragraph.normalized_text[:700],
-                                            "style": paragraph.style_name or paragraph.style_id,
-                                            "effective_formatting": paragraph.effective_formatting,
-                                            "numbering": paragraph.numbering,
-                                            "current_role": decision.role,
-                                            "current_confidence": decision.confidence,
-                                        }
-                                        for decision, paragraph in candidates
-                                    ],
-                                    "response": {"decisions": [{"block_id": "block_0001", "role": "body", "confidence": 0.8, "reason": "short"}]},
-                                },
-                                ensure_ascii=False,
-                            )
-                        }
-                    ],
-                }
-            ],
-            "generationConfig": {"maxOutputTokens": 4096, "temperature": 0, "responseMimeType": "application/json"},
-        }
-        try:
-            response, model = generate_content(payload, model=get_configured_model(getattr(settings, "AI_MODEL", "")), timeout=_v2_ai_timeout_seconds())
-            raw = extract_response_text(response)
-            ai_payload = json.loads(raw)
-            by_id = {decision.block_id: decision for decision in decisions}
-            for item in ai_payload.get("decisions", []):
-                role = str(item.get("role") or "")
-                block_id = str(item.get("block_id") or "")
-                confidence = float(item.get("confidence") or 0)
-                if role in ROLE_NAMES and block_id in by_id and confidence >= 0.64:
-                    by_id[block_id].role = role
-                    by_id[block_id].confidence = confidence
-                    by_id[block_id].source = "qwen"
-                    by_id[block_id].reason = str(item.get("reason") or f"Qwen {model}")
-                    by_id[block_id].needs_review = confidence < self.review_threshold
-        except (AIProviderError, OSError, ValueError, ValidationError, json.JSONDecodeError) as exc:
-            warnings.append(f"Qwen не применён для спорных V2-ролей; оставлены локальные правила. {exc}")
 
+        citation_positions = [i for i, p in enumerate(paragraphs) if _is_citation(p.normalized_text)]
+        groups: list[tuple[int, int]] = []
+        start = 0
+        for pos in citation_positions:
+            groups.append((start, pos))
+            start = pos + 1
+        if not groups:
+            groups = [(0, len(paragraphs) - 1)]
 
-def _front_matter_limit(paragraphs: list[ParagraphInfo]) -> int:
-    for index, paragraph in enumerate(paragraphs):
-        text = paragraph.normalized_text.strip()
+        previous_end = -1
+        group_no = 0
+        for raw_start, end in groups:
+            segment = list(range(raw_start, end + 1))
+            author_idx = _best_author_index(paragraphs, segment)
+            email_idx = _first_index(segment, lambda i: _is_email(paragraphs[i].normalized_text))
+            abstract_idx = _first_index(segment, lambda i: _starts_abstract(paragraphs[i].normalized_text))
+            keywords_idx = _first_index(segment, lambda i: _is_keywords(paragraphs[i].normalized_text))
+            citation_idx = _first_index(segment, lambda i: _is_citation(paragraphs[i].normalized_text))
+            has_front_anchor = any(index is not None for index in (author_idx, email_idx, abstract_idx, keywords_idx, citation_idx))
+
+            if author_idx is None and raw_start == 0 and len(groups) > 1:
+                previous_end = end
+                continue
+
+            title_idx = None
+            if has_front_anchor:
+                title_idx = _best_title_index(paragraphs, segment, author_idx, abstract_idx)
+                if title_idx is None:
+                    title_idx = _best_title_index(paragraphs, segment, email_idx, abstract_idx)
+
+            if title_idx is None:
+                for i in segment:
+                    self._set_front_fallback(paragraphs, i, out)
+                previous_end = end
+                continue
+
+            group_no += 1
+            group_id = f"front_group_{group_no}"
+            group_lang = _language(paragraphs[title_idx].normalized_text)
+
+            for i in segment:
+                p = paragraphs[i]
+                text = p.normalized_text
+                lang = _language(text) or group_lang
+                if i < title_idx:
+                    self._set_front_metadata(paragraphs, i, out)
+                elif i == title_idx:
+                    out[p.id] = RoleDecision(p.id, "title", 0.97, "rules", "title immediately precedes author/affiliation block", zone=FRONT_MATTER, language=group_lang, group_id=group_id)
+                elif author_idx is not None and i == author_idx:
+                    out[p.id] = RoleDecision(p.id, "author", 0.96, "rules", "front-matter author line", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                elif email_idx is not None and i == email_idx:
+                    out[p.id] = RoleDecision(p.id, "email", 0.99, "rules", "email syntax in front matter", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                elif abstract_idx is not None and keywords_idx is not None and abstract_idx <= i < keywords_idx:
+                    out[p.id] = RoleDecision(p.id, "abstract", 0.97, "rules", "abstract range bounded by abstract/keywords markers", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                elif keywords_idx is not None and i == keywords_idx:
+                    out[p.id] = RoleDecision(p.id, "keywords", 0.99, "rules", "keywords marker", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                elif citation_idx is not None and i == citation_idx:
+                    out[p.id] = RoleDecision(p.id, "citation", 0.99, "rules", "citation marker", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                elif author_idx is not None and email_idx is not None and author_idx < i < email_idx:
+                    out[p.id] = RoleDecision(p.id, "affiliation", 0.94, "rules", "paragraph between author and email in front matter", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                elif author_idx is not None and abstract_idx is not None and author_idx < i < abstract_idx and not _is_email(text):
+                    out[p.id] = RoleDecision(p.id, "affiliation", 0.86, "rules", "front-matter block between author and abstract", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                else:
+                    self._set_front_metadata(paragraphs, i, out, group_id=group_id)
+            previous_end = end
+
+        for p in paragraphs:
+            if p.id not in out:
+                self._set_front_metadata(paragraphs, paragraphs.index(p), out)
+
+    @staticmethod
+    def _set_front_metadata(paragraphs: list[ParagraphInfo], i: int, out: dict[str, RoleDecision], group_id: str | None = None) -> None:
+        p = paragraphs[i]
+        text = p.normalized_text
         lowered = text.casefold()
-        if index < 6:
+        subtype = None
+        role = "editorial_metadata"
+        confidence = 0.90
+        if re.search(r"\b(тип статьи|article type)\b", lowered):
+            role, subtype, confidence = "article_type", "article_type", 0.98
+        elif re.search(r"\b(рубрика журнала|rubric|section)\s*:?$", lowered):
+            subtype, confidence = "rubric_label", 0.98
+        elif i > 0 and re.search(r"\b(рубрика журнала|rubric|section)\s*:?$", paragraphs[i - 1].normalized_text.casefold()):
+            role, subtype, confidence = "rubric", "rubric_value", 0.97
+        elif re.search(r"\bудк\b|\bdoi\s*:", lowered):
+            subtype, confidence = "bibliographic_id", 0.99
+        elif re.search(r"short communications|original papers|review articles|nobelistics", lowered):
+            role, subtype, confidence = "rubric", "rubric_value", 0.95
+        out[p.id] = RoleDecision(p.id, role, confidence, "rules", "front-matter metadata before title", zone=FRONT_MATTER, language=_language(text), group_id=group_id, subtype=subtype)
+
+    @staticmethod
+    def _set_front_fallback(paragraphs: list[ParagraphInfo], i: int, out: dict[str, RoleDecision]) -> None:
+        p = paragraphs[i]
+        text = p.normalized_text
+        lowered = text.casefold()
+        lang = _language(text)
+        if _is_front_metadata_marker(lowered):
+            RoleClassifierV2._set_front_metadata(paragraphs, i, out)
+        elif _is_email(text):
+            out[p.id] = RoleDecision(p.id, "email", 0.96, "rules", "email syntax in title-less front block", zone=FRONT_MATTER, language=lang)
+        elif _starts_abstract(text):
+            out[p.id] = RoleDecision(p.id, "abstract", 0.86, "rules", "abstract marker in title-less front block", needs_review=True, zone=FRONT_MATTER, language=lang)
+        elif _is_keywords(text):
+            out[p.id] = RoleDecision(p.id, "keywords", 0.94, "rules", "keywords marker in title-less front block", zone=FRONT_MATTER, language=lang)
+        elif _is_citation(text):
+            out[p.id] = RoleDecision(p.id, "citation", 0.94, "rules", "citation marker in title-less front block", zone=FRONT_MATTER, language=lang)
+        elif _looks_like_author(text):
+            out[p.id] = RoleDecision(p.id, "author", 0.72, "rules", "possible author in title-less front block", needs_review=True, zone=FRONT_MATTER, language=lang)
+        elif _looks_like_affiliation(text):
+            out[p.id] = RoleDecision(p.id, "affiliation", 0.74, "rules", "possible affiliation in title-less front block", needs_review=True, zone=FRONT_MATTER, language=lang)
+        elif _is_figure_caption(text):
+            out[p.id] = RoleDecision(p.id, "figure_caption", 0.90, "rules", "caption syntax in title-less document", zone=BODY, language=lang)
+        elif _is_table_caption(text):
+            out[p.id] = RoleDecision(p.id, "table_caption", 0.90, "rules", "table caption syntax in title-less document", zone=BODY, language=lang)
+        else:
+            out[p.id] = RoleDecision(p.id, "body", 0.82 if len(text) >= 80 else 0.68, "rules", "title-less document fallback body", needs_review=len(text) < 80, zone=BODY, language=lang)
+
+    @staticmethod
+    def _classify_author_info_tail(p: ParagraphInfo, lowered: str, lang: str | None) -> RoleDecision:
+        if _is_author_information_heading(lowered):
+            return RoleDecision(p.id, "author_information", 0.98, "rules", "author information heading", heading_level=1, zone=AUTHOR_INFO, language=lang)
+        if re.match(r"^(received|поступил|revised|accepted|принята)", lowered):
+            return RoleDecision(p.id, "received_metadata", 0.98, "rules", "received/revised/accepted metadata", zone=AUTHOR_INFO, language=lang)
+        if lowered.startswith("copyright") or "creative commons" in lowered:
+            return RoleDecision(p.id, "copyright_metadata", 0.98, "rules", "copyright metadata", zone=AUTHOR_INFO, language=lang)
+        return RoleDecision(p.id, "author_information", 0.88, "rules", "paragraph inside author-information tail", zone=AUTHOR_INFO, language=lang)
+
+
+def _front_matter_end(paragraphs: list[ParagraphInfo]) -> int:
+    last_citation = -1
+    last_keywords = -1
+    for i, p in enumerate(paragraphs[:80]):
+        if _is_citation(p.normalized_text):
+            last_citation = i
+        if _is_keywords(p.normalized_text):
+            last_keywords = i
+    anchor = max(last_citation, last_keywords)
+    if anchor >= 0:
+        return anchor + 1
+    for i, p in enumerate(paragraphs):
+        text = _strip_heading_number(p.normalized_text).casefold().strip(" .:")
+        if text in {"introduction", "введение"}:
+            return i
+    return min(len(paragraphs), 32)
+
+
+def _find_references_start(paragraphs: list[ParagraphInfo]) -> int | None:
+    for i, p in enumerate(paragraphs):
+        if _is_references_heading(_strip_heading_number(p.normalized_text).casefold()):
+            return i
+    return None
+
+
+def _find_author_info_start(paragraphs: list[ParagraphInfo]) -> int | None:
+    for i, p in enumerate(paragraphs):
+        if _is_author_information_heading(_strip_heading_number(p.normalized_text).casefold()):
+            return i
+        lowered = p.normalized_text.casefold()
+        if re.match(r"^received\b", lowered) or lowered.startswith("copyright"):
+            return i
+    return None
+
+
+def _heading_anchor_signatures(paragraphs: list[ParagraphInfo]) -> dict[int, list[tuple[float, float, float, str]]]:
+    anchors: dict[int, list[tuple[float, float, float, str]]] = defaultdict(list)
+    for p in paragraphs:
+        text = p.normalized_text
+        match = re.match(r"^\s*(\d+(?:\.\d+){0,2})\.?(?:\s+|$)", text)
+        if not match:
             continue
-        if lowered in {"introduction", "введение"}:
-            return index
-        if re.match(r"^\s*1\.?\s+(introduction|введение)\b", lowered):
-            return index
-        if re.match(r"^\s*1[\).]\s+\S", text) and not _is_editorial_metadata(text, True):
-            return index
-    return min(len(paragraphs), 40)
+        level = min(3, match.group(1).count(".") + 1)
+        anchors[level].append(_format_signature(p))
+    return anchors
 
 
-def _v2_ai_timeout_seconds() -> int:
-    fallback = min(int(getattr(settings, "AI_REQUEST_TIMEOUT", 120) or 120), 15)
-    try:
-        return max(3, int(os.getenv("TEMPLATE_V2_AI_TIMEOUT_SECONDS", fallback)))
-    except (TypeError, ValueError):
-        return fallback
+def _classify_heading(p: ParagraphInfo, anchors: dict[int, list[tuple[float, float, float, str]]], *, first_body: bool) -> tuple[int | None, str, float]:
+    text = p.normalized_text
+    if _is_figure_caption(text) or _is_table_caption(text) or len(text) > 220:
+        return None, "", 0.0
+    numeric = re.match(r"^\s*(\d+(?:\.\d+){0,2})\.?(?:\s+|$)", text)
+    if numeric:
+        level = min(3, numeric.group(1).count(".") + 1)
+        return level, "explicit hierarchical number", 0.99
+
+    if text.endswith(('.', ';', '?', '!')) and not first_body:
+        return None, "", 0.0
+
+    style = (p.style_name or p.style_id or "").casefold()
+    if "heading 1" in style or "заголовок 1" in style:
+        return 1, "Word heading style", 0.99
+    if "heading 2" in style or "заголовок 2" in style:
+        return 2, "Word heading style", 0.99
+    if "heading 3" in style or "заголовок 3" in style:
+        return 3, "Word heading style", 0.99
+
+    bold = _bold_ratio(p)
+    italic = _italic_ratio(p)
+    align = _alignment(p)
+    size = _dominant_size(p) or 0.0
+    outline = p.properties.get("outline_level")
+    candidate = first_body or outline is not None or bold >= 0.45 or (align == "center" and len(text) <= 150)
+    if not candidate:
+        return None, "", 0.0
+
+    sig = _format_signature(p)
+    scored: list[tuple[float, int]] = []
+    for level, samples in anchors.items():
+        if not samples:
+            continue
+        scored.append((min(_signature_distance(sig, sample) for sample in samples), level))
+    if scored:
+        distance, level = min(scored)
+        if distance <= 2.4:
+            return level, "formatting matched numbered heading anchors", max(0.82, 0.97 - distance * 0.05)
+
+    if first_body:
+        return 1, "first body block is a short heading-like paragraph", 0.90
+    if italic >= 0.30 and bold >= 0.30:
+        return 2, "bold/italic short heading pattern", 0.88
+    if align == "center" and bold >= 0.40:
+        return 1, "centered bold short heading", 0.86
+    if bold >= 0.60 and size >= 10:
+        return 2, "short bold subheading", 0.80
+    return None, "", 0.0
 
 
-def _configured_endpoint_reachable() -> bool:
-    parsed = urlparse(get_api_base_url())
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+def _format_signature(p: ParagraphInfo) -> tuple[float, float, float, str]:
+    return (_dominant_size(p) or 0.0, _bold_ratio(p), _italic_ratio(p), _alignment(p))
+
+
+def _signature_distance(a: tuple[float, float, float, str], b: tuple[float, float, float, str]) -> float:
+    size = abs(a[0] - b[0]) / 2.0
+    bold = abs(a[1] - b[1]) * 2.0
+    italic = abs(a[2] - b[2]) * 1.5
+    align = 0.0 if a[3] == b[3] else 0.8
+    return size + bold + italic + align
+
+
+def _best_author_index(paragraphs: list[ParagraphInfo], indices: list[int]) -> int | None:
+    candidates: list[tuple[float, int]] = []
+    for i in indices:
+        text = paragraphs[i].normalized_text
+        score = 0.0
+        if "©" in text:
+            score += 4.0
+        if _looks_like_author(text):
+            score += 2.0
+        if "," in text and len(text) < 220:
+            score += 0.5
+        if _looks_like_affiliation(text) or _is_email(text):
+            score -= 3.0
+        if score > 0:
+            candidates.append((score, i))
+    return max(candidates, default=(0.0, -1))[1] if candidates else None
+
+
+def _best_title_index(paragraphs: list[ParagraphInfo], indices: list[int], author_idx: int | None, abstract_idx: int | None) -> int | None:
+    upper = author_idx if author_idx is not None else abstract_idx
+    eligible = [i for i in indices if upper is None or i < upper]
+    candidates: list[tuple[float, int]] = []
+    for i in eligible:
+        text = paragraphs[i].normalized_text
+        lowered = text.casefold()
+        if len(text) < 18 or _is_email(text) or _looks_like_affiliation(text) or _looks_like_author(text):
+            continue
+        if _is_front_metadata_marker(lowered):
+            continue
+        score = 0.0
+        if upper is not None:
+            score += max(0.0, 4.0 - (upper - i) * 0.45)
+        score += min(2.2, len(text) / 90)
+        score += min(1.5, _bold_ratio(paragraphs[i]) * 2)
+        if _alignment(paragraphs[i]) == "center":
+            score += 1.5
+        if text.endswith("."):
+            score -= 1.5
+        candidates.append((score, i))
+    return max(candidates, default=(0.0, -1))[1] if candidates else None
+
+
+def _first_index(indices: list[int], predicate) -> int | None:
+    for i in indices:
+        if predicate(i):
+            return i
+    return None
+
+
+def _special_heading_role(lowered_without_number: str) -> str | None:
+    value = lowered_without_number.strip(" .:")
+    if re.fullmatch(r"(?:funding|финансирование)", value):
+        return "funding_heading"
+    if re.fullmatch(r"(?:acknowledg(?:e)?ments?|благодарности)", value):
+        return "acknowledgements_heading"
+    if re.fullmatch(r"(?:conflict(?:s)? of interests?|конфликт интересов)", value):
+        return "conflict_heading"
+    return None
+
+
+def _refine_heading_hierarchy(paragraphs: list[ParagraphInfo], decisions: list[RoleDecision]) -> None:
+    """Use the local heading sequence to refine unnumbered subheadings.
+
+    If a section already contains an explicit level-2 heading, later unnumbered
+    heading-like paragraphs before the next explicit level-1 heading belong to the
+    same level unless their typography strongly contradicts it.  This is how real
+    manuscripts encode sequences such as 2.1 + unnumbered 2.2/2.3/2.4.
+    """
+    current_h1 = False
+    saw_h2 = False
+    by_id = {d.block_id: d for d in decisions}
+    for p in paragraphs:
+        d = by_id[p.id]
+        if d.zone != BODY or not d.role.startswith("heading_"):
+            continue
+        explicit = re.match(r"^\s*(\d+(?:\.\d+){0,2})\.?(?:\s+|$)", p.normalized_text)
+        if d.role == "heading_1":
+            if explicit:
+                current_h1 = True
+                saw_h2 = False
+                continue
+            if current_h1 and saw_h2:
+                d.role = "heading_2"
+                d.heading_level = 2
+                d.confidence = max(d.confidence, 0.90)
+                d.reason = "unnumbered heading continued a section that already contains level-2 headings"
+                continue
+            current_h1 = True
+            saw_h2 = False
+        elif d.role == "heading_2":
+            saw_h2 = True
+
+
+def _attach_caption_continuations(paragraphs: list[ParagraphInfo], decisions: list[RoleDecision]) -> None:
+    by_id = {d.block_id: d for d in decisions}
+    for i in range(1, len(paragraphs)):
+        prev = by_id[paragraphs[i - 1].id]
+        cur = by_id[paragraphs[i].id]
+        if prev.role not in {"figure_caption", "table_caption"}:
+            continue
+        if cur.zone != BODY or cur.role not in {"body", "heading_1", "heading_2", "heading_3"}:
+            continue
+        text = paragraphs[i].normalized_text
+        if len(text) > 220 or _looks_like_sentence(text):
+            continue
+        if _alignment(paragraphs[i]) == "center" or _format_similarity(paragraphs[i - 1], paragraphs[i]) >= 0.70:
+            cur.role = prev.role
+            cur.confidence = 0.91
+            cur.needs_review = False
+            cur.reason = "continuation of preceding caption"
+            cur.group_id = prev.group_id or f"caption_{paragraphs[i - 1].id}"
+            prev.group_id = cur.group_id
+
+
+def _format_similarity(a: ParagraphInfo, b: ParagraphInfo) -> float:
+    score = 0.0
+    if _alignment(a) == _alignment(b):
+        score += 0.4
+    if abs((_dominant_size(a) or 0) - (_dominant_size(b) or 0)) <= 0.5:
+        score += 0.3
+    if abs(_bold_ratio(a) - _bold_ratio(b)) <= 0.2:
+        score += 0.15
+    if (a.style_id or "") == (b.style_id or ""):
+        score += 0.15
+    return score
+
+
+def _looks_like_sentence(text: str) -> bool:
+    if len(text) > 130:
+        return True
+    if re.match(r"^(fig\.|figure|рис\.?|рисунок|table|таблица)\s*\d+\s+(?:presents?|shows?|illustrates?)\b", text, flags=re.I):
+        return True
+    words = text.split()
+    return len(words) > 22 and text.endswith(('.', '!', '?'))
+
+
+def _is_front_metadata_marker(lowered: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(удк|doi|тип статьи|article type|рубрика журнала|rubric|short communications|original papers|review articles|nobelistics)\b",
+            lowered,
+        )
+    )
+
+
+def _is_references_heading(lowered: str) -> bool:
+    return bool(re.fullmatch(r"(?:references|список литературы|литература|bibliography)", lowered.strip(" .:")))
+
+
+def _is_author_information_heading(lowered: str) -> bool:
+    value = lowered.strip(" .:")
+    return value.startswith("information about the authors") or value.startswith("информация об авторах")
+
+
+def _starts_abstract(text: str) -> bool:
+    return bool(re.match(r"^(abstract|аннотация|резюме)\b", text.casefold()))
+
+
+def _is_keywords(text: str) -> bool:
+    return bool(re.match(r"^(keywords|key words|ключевые слова)\b", text.casefold()))
+
+
+def _is_citation(text: str) -> bool:
+    return bool(re.match(r"^(for citation|для цитирования)\b", text.casefold()))
+
+
+def _is_figure_caption(text: str) -> bool:
+    # Require punctuation after the figure number.  "Fig. 4 presents..." is body.
+    return bool(re.match(r"^(?:fig\.|figure|рис\.?|рисунок)\s*\d+\s*[.\):\-–]\s*\S", text.strip(), flags=re.IGNORECASE))
+
+
+def _is_table_caption(text: str) -> bool:
+    return bool(re.match(r"^(?:table|таблица)\s*\d+\s*[.\):\-–]?\s+\S", text.strip(), flags=re.IGNORECASE))
+
+
+def _is_email(text: str) -> bool:
+    return bool(re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", text)) and len(text) < 220
+
+
+def _looks_like_author(text: str) -> bool:
+    lowered = text.casefold()
+    if len(text) > 240 or any(marker in lowered for marker in ("university", "университет", "institute", "институт", "doi", "удк", "street", "ул.")):
         return False
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    try:
-        timeout = max(0.2, float(os.getenv("TEMPLATE_V2_AI_CONNECT_TIMEOUT_SECONDS", "1.5")))
-    except (TypeError, ValueError):
-        timeout = 1.5
-    try:
-        with socket.create_connection((parsed.hostname, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
+    if "©" in text:
+        return True
+    # Initials + surname, or Latin full names separated by commas.
+    if re.search(r"\b[A-ZА-ЯЁ]\.?\s*[A-ZА-ЯЁ]\.?\s*[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё-]+", text):
+        return True
+    if re.search(r"\b[A-Z][a-z]+(?:\s+[A-Z]\.)?\s+[A-Z][A-Za-z-]+", text) and ("," in text or ";" in text):
+        return True
+    return False
+
+
+def _looks_like_affiliation(text: str) -> bool:
+    return bool(re.search(r"\b(university|institute|academy|centre|center|department|laboratory|университет|институт|академ|центр|кафедр|лаборатор|российская федерация|russian federation)\b", text.casefold()))
+
+
+def _strip_heading_number(text: str) -> str:
+    return re.sub(r"^\s*\d+(?:\.\d+){0,2}\.?\s+", "", text).strip()
+
+
+def _language(text: str) -> str | None:
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return None
+    cyr = sum("а" <= ch.casefold() <= "я" or ch.casefold() == "ё" for ch in letters)
+    lat = sum("a" <= ch.casefold() <= "z" for ch in letters)
+    if cyr >= max(2, lat * 1.3):
+        return "ru"
+    if lat >= max(2, cyr * 1.3):
+        return "en"
+    return "mixed"
 
 
 def _dominant_size(paragraph: ParagraphInfo) -> float | None:
@@ -294,96 +740,19 @@ def _bold_ratio(paragraph: ParagraphInfo) -> float:
         total += length
         if run.effective_formatting.get("bold") is True or run.font.get("bold") is True:
             bold += length
-    return bold / total if total else 0
+    return bold / total if total else 0.0
 
 
-def _effective_alignment(paragraph: ParagraphInfo) -> str:
+def _italic_ratio(paragraph: ParagraphInfo) -> float:
+    total = 0
+    italic = 0
+    for run in paragraph.runs:
+        length = max(1, len(run.text))
+        total += length
+        if run.effective_formatting.get("italic") is True or run.font.get("italic") is True:
+            italic += length
+    return italic / total if total else 0.0
+
+
+def _alignment(paragraph: ParagraphInfo) -> str:
     return str((paragraph.effective_formatting.get("paragraph") or {}).get("alignment") or paragraph.properties.get("alignment") or "")
-
-
-def _is_editorial_metadata(text: str, front: bool) -> bool:
-    lowered = text.casefold()
-    if re.search(r"\b(удк|doi|for citation|forcitation|citation|тип статьи|рубрика|short communications|nobelistics)\b", lowered):
-        return True
-    if front and len(text) < 80 and re.search(r"\b(article type|review|communication|editorial)\b", lowered):
-        return True
-    return False
-
-
-def _is_references_heading(lowered: str) -> bool:
-    return bool(re.match(r"^(references|список литературы|литература|bibliography)\b", lowered))
-
-
-def _is_abstract(text: str, previous: str) -> bool:
-    lowered = text.casefold()
-    return bool(re.match(r"^(abstract|аннотация|резюме)\b", lowered) or previous.casefold() in {"abstract", "аннотация"})
-
-
-def _is_keywords(text: str) -> bool:
-    return bool(re.match(r"^(keywords|key words|ключевые слова)\b", text.casefold()))
-
-
-def _is_citation(text: str) -> bool:
-    return bool(re.match(r"^(for citation|для цитирования)\b", text.casefold()))
-
-
-def _is_figure_caption(text: str) -> bool:
-    return bool(re.match(r"^(fig\.|figure|рис\.?|рисунок)\s*\d+[.\):\-–]\s+\S", text.strip(), flags=re.IGNORECASE))
-
-
-def _is_table_caption(text: str) -> bool:
-    return bool(re.match(r"^(table|таблица)\s*\d+[.\):\-–]?\s+\S", text.strip(), flags=re.IGNORECASE))
-
-
-def _looks_like_reference_item(text: str, previous: str) -> bool:
-    if _is_references_heading(previous.casefold()):
-        return True
-    return bool(re.match(r"^\s*\[?\d+\]?[\).]\s+.+(doi|https?://|//|изд|journal|vol\.|pp\.)", text, flags=re.IGNORECASE))
-
-
-def _heading_level(text: str, paragraph: ParagraphInfo, style_name: str, numbered: bool, font_size: float | None, bold_ratio: float, *, front: bool = False) -> int | None:
-    if _is_editorial_metadata(text, True) or _is_figure_caption(text) or _is_table_caption(text):
-        return None
-    if "heading 1" in style_name or "заголовок 1" in style_name:
-        return 1
-    if "heading 2" in style_name or "заголовок 2" in style_name:
-        return 2
-    if "heading 3" in style_name or "заголовок 3" in style_name:
-        return 3
-    if front and not numbered and paragraph.properties.get("outline_level") is None:
-        return None
-    match = re.match(r"^\s*(\d+(?:\.\d+){0,2})\.?\s+\S", text)
-    if match and len(text) < 220 and not text.endswith("."):
-        return min(3, match.group(1).count(".") + 1)
-    if len(text) < 140 and not text.endswith(".") and (bold_ratio >= 0.55 or paragraph.properties.get("outline_level") is not None):
-        return 2 if numbered else 1
-    if font_size and font_size >= 12 and len(text) < 160 and not text.endswith("."):
-        return 1
-    return None
-
-
-def _looks_like_author(text: str) -> bool:
-    if len(text) > 180 or any(marker in text.casefold() for marker in ("university", "институт", "doi", "удк")):
-        return False
-    return bool(
-        re.search(
-            r"\b[A-ZА-ЯЁ][a-zа-яё]+(?:\s+[A-ZА-ЯЁ]\.){1,2}\s+[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё-]+"
-            r"|\b[A-ZА-ЯЁ][a-zа-яё]+(?:\s+[A-ZА-ЯЁ][a-zа-яё]+)*[a-zа-яёA-ZА-ЯЁ]*[,;]\s+"
-            r"|\b[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ][a-zа-яё]+",
-            text,
-        )
-    )
-
-
-def _looks_like_affiliation(text: str) -> bool:
-    return bool(re.search(r"\b(university|institute|academy|department|laboratory|университет|институт|академ|кафедр|лаборатор)", text.casefold()))
-
-
-def _looks_like_title(text: str, alignment: str, font_size: float | None, bold_ratio: float) -> bool:
-    if len(text) < 25 or len(text) > 260 or text.endswith("."):
-        return False
-    if _is_editorial_metadata(text, True) or _looks_like_author(text) or _looks_like_affiliation(text):
-        return False
-    if ":" in text and len(text) < 90:
-        return False
-    return alignment in {"center", "both"} or bold_ratio >= 0.45 or bool(font_size and font_size >= 12) or len(text) >= 55

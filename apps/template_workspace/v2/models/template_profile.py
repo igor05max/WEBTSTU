@@ -13,6 +13,7 @@ class ArticleStructure:
     warnings: list[str]
     role_counts: dict[str, int]
     blocks: list[dict[str, Any]]
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain(self)
@@ -26,6 +27,11 @@ class RoleFormatProfile:
     typical_paragraph_formatting: dict[str, Any]
     typical_run_formatting: dict[str, Any]
     observed_variants: list[dict[str, Any]] = field(default_factory=list)
+    representative_block_id: str | None = None
+    clean_examples_count: int = 0
+    property_distributions: dict[str, Any] = field(default_factory=dict)
+    synthetic: bool = False
+    derived_from: str | None = None
 
 
 @dataclass
@@ -60,6 +66,8 @@ class TemplateProfile:
     drawing_profiles: dict[str, Any]
     missing_roles: list[str]
     warnings: list[str] = field(default_factory=list)
+    front_language_order: list[str] = field(default_factory=list)
+    front_role_sequence: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain(self)
@@ -75,4 +83,3 @@ class MappingPreview:
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain(self)
-

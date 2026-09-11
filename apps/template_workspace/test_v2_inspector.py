@@ -15,8 +15,10 @@ from django.urls import reverse
 from docx import Document
 from docx.enum.section import WD_SECTION
 
+from apps.checks.ai_client import AIProviderError
 from apps.template_workspace.models import TemplateJob
-from apps.template_workspace.v2.classification.roles import RoleClassifierV2
+from apps.template_workspace.v2.ai import QwenProvider
+from apps.template_workspace.v2.classification.roles import ROLE_NAMES, RoleClassifierV2
 from apps.template_workspace.v2.comparison.document_diff import DocumentDiffBuilder
 from apps.template_workspace.v2.editor.safe_word_editor import SafeWordEditor
 from apps.template_workspace.v2.inspector.document import DocumentInspector
@@ -97,11 +99,9 @@ class TemplateV2InspectorTests(TestCase):
 
     def test_inspector_does_not_modify_docx(self):
         before = file_hash(self.path)
-        with patch("apps.template_workspace.v2.classification.roles.generate_content") as ai_call:
-            report = DocumentInspector(self.path).inspect()
+        report = DocumentInspector(self.path).inspect()
         self.assertEqual(file_hash(self.path), before)
         self.assertIsNone(report.semantic_roles)
-        ai_call.assert_not_called()
 
     def test_document_flow_preserves_paragraph_table_order(self):
         report = DocumentInspector(self.path).inspect()
@@ -130,19 +130,48 @@ class TemplateV2InspectorTests(TestCase):
     def test_role_classifier_is_separate_from_raw_inspector(self):
         report = DocumentInspector(self.path).inspect()
         roles = RoleClassifierV2(use_ai=False).classify(report)
-        self.assertEqual(roles.provider, "v2-rules")
+        self.assertEqual(roles.provider, "v2-context-rules")
         self.assertGreater(roles.role_counts["body"], 0)
+        self.assertEqual(roles.diagnostics["rules_processed"], 3)
+        self.assertEqual(roles.diagnostics["qwen_sent"], 0)
 
     @override_settings(AI_BASE_URL="http://192.0.2.10:8088/v1")
-    def test_unreachable_ai_endpoint_uses_local_v2_roles_without_model_request(self):
+    def test_qwen_provider_error_uses_local_v2_roles_without_crashing(self):
         report = DocumentInspector(self.path).inspect()
-        with patch("apps.template_workspace.v2.classification.roles.socket.create_connection", side_effect=OSError), patch(
-            "apps.template_workspace.v2.classification.roles.generate_content"
-        ) as ai_call:
-            roles = RoleClassifierV2().classify(report)
-        self.assertEqual(roles.provider, "v2-rules")
-        self.assertTrue(any("недоступен по TCP" in warning for warning in roles.warnings))
-        ai_call.assert_not_called()
+        provider = QwenProvider(allowed_roles=ROLE_NAMES, timeout=1)
+        error = AIProviderError(
+            stage="generate_content",
+            kind="network_error",
+            message="Нет соединения с локальным AI API через VPN.",
+            endpoint="http://192.0.2.10:8088/v1/chat/completions",
+        )
+        with patch("apps.template_workspace.v2.ai.qwen_provider.generate_content", side_effect=error):
+            roles = RoleClassifierV2(use_ai=True, review_threshold=0.99, semantic_provider=provider).classify(report)
+        self.assertEqual(roles.provider, "v2-context-rules")
+        self.assertGreater(roles.diagnostics["qwen_sent"], 0)
+        self.assertGreater(roles.diagnostics["qwen_errors"], 0)
+        self.assertTrue(provider.diagnostics.errors)
+
+    @override_settings(AI_BASE_URL="http://192.0.2.10:8088/v1", AI_MODEL="qwen-test")
+    def test_qwen_provider_can_override_only_ambiguous_roles(self):
+        path = Path(self.tmp.name) / "qwen.docx"
+        document = Document()
+        document.add_paragraph("Short ambiguous heading")
+        document.save(path)
+        report = DocumentInspector(path).inspect()
+        provider = QwenProvider(allowed_roles=ROLE_NAMES, timeout=1)
+        response = {
+            "candidates": [
+                {"content": {"parts": [{"text": '{"role":"heading_2","confidence":0.94,"reason":"short heading-like block"}'}]}}
+            ]
+        }
+        with patch("apps.template_workspace.v2.ai.qwen_provider.generate_content", return_value=(response, "qwen-test")) as qwen:
+            roles = RoleClassifierV2(use_ai=True, semantic_provider=provider).classify(report)
+        self.assertEqual(roles.provider, "v2-context-rules+qwen")
+        self.assertEqual(roles.diagnostics["qwen_sent"], 1)
+        self.assertEqual(roles.diagnostics["qwen_changed"], 1)
+        self.assertEqual(roles.block_roles[0]["role_hint"], "heading_2")
+        qwen.assert_called_once()
 
     def test_role_classifier_does_not_confuse_fig_sentence_with_caption_or_list(self):
         document = Document()
@@ -170,7 +199,7 @@ class TemplateV2InspectorTests(TestCase):
         mapping = RoleMatcher().build_preview(article_structure, template_profile)
         self.assertIn("body", template_profile.roles)
         self.assertGreater(mapping.summary["total_mappings"], 0)
-        self.assertIn("No DOCX edits", " ".join(mapping.warnings))
+        self.assertIn("analysed independently", " ".join(mapping.warnings))
 
     def test_safe_word_editor_preserves_article_objects(self):
         output = Path(self.tmp.name) / "result.docx"
@@ -260,6 +289,7 @@ class TemplateV2ViewTests(TestCase):
         self.assertTrue((analysis_directory(job) / "template_profile.json").exists())
         self.assertTrue((analysis_directory(job) / "mapping_preview.json").exists())
         self.assertTrue((analysis_directory(job) / "editor_report.json").exists())
+        self.assertTrue((analysis_directory(job) / "qwen_report.json").exists())
         self.assertTrue(result_docx_path(job).exists())
         self.assertFalse((analysis_directory(job) / "document_diff.json").exists())
 

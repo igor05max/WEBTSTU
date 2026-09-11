@@ -198,6 +198,7 @@ class SemanticRoleLayer:
     warnings: list[str]
     role_counts: dict[str, int]
     block_roles: list[dict[str, Any]]
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

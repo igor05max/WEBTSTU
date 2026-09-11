@@ -157,23 +157,46 @@ Current V2 stage:
   hyperlinks, headers and footers;
 - keeps `DocumentInspector` deterministic/offline with no Qwen calls;
 - classifies roles through `RoleClassifierV2`, using Qwen only for ambiguous
-  blocks after local rules;
+  blocks after local rules via `apps/template_workspace/v2/ai/QwenProvider`;
 - builds `TemplateProfile` and `LayoutProfile` from TEMPLATE formatting,
   sections, tables, drawings, formulas, OLE objects, headers and footers;
 - builds `MappingPreview` from ARTICLE structure to TEMPLATE rules;
 - writes `article_report.json`, `template_report.json`,
   `article_structure.json`, `template_profile.json`, and
   `mapping_preview.json`;
-- writes a first-pass `result.docx` with `SafeWordEditor`, applying TEMPLATE
-  paragraph/run formatting, styles, numbering, theme and section geometry to a
-  copy of ARTICLE while preserving ARTICLE tables, drawings, formulas, media and
+- writes `qwen_report.json` with `rules_processed`, `qwen_sent`,
+  `qwen_changed`, timeout/error/bad JSON counts, and accepted Qwen decisions;
+- writes `result.docx` with pass7 `SafeWordEditor`, applying role-scoped
+  TEMPLATE formatting/layout evidence to a copy of ARTICLE while preserving
+  ARTICLE tables, drawings, formulas, media, hyperlinks, numbering and
   relationships;
-- writes `editor_report.json` describing applied edits and limitations.
+- writes `editor_report.json` describing applied edits, layout metrics and
+  limitations.
 
-In normal ARTICLE+TEMPLATE mode, do not copy TEMPLATE header/footer text into
-RESULT, because that leaks content from another article. Reference-pair CLI
-runs may copy TEMPLATE headers/footers only when comparing the same article
-before/after formatting.
+Qwen rules:
+
+- Qwen is not launched on the laptop and is not inside this Django project.
+- Production Django reaches the remote/local Qwen HTTP API through the VPN.
+- Endpoint/model/key come from the existing AI config/env (`AI_BASE_URL`,
+  `AI_MODEL`, `AI_API_KEY`); V2-specific controls are
+  `TEMPLATE_V2_QWEN_ENABLED`, `TEMPLATE_V2_QWEN_MODEL`,
+  `TEMPLATE_V2_QWEN_TIMEOUT_SECONDS`, `TEMPLATE_V2_QWEN_MAX_BLOCKS`, and
+  `TEMPLATE_V2_QWEN_CONTEXT_RADIUS`.
+- High-confidence rule decisions are not sent to Qwen.
+- Low-confidence or `needs_review=true` blocks are sent with current text,
+  2-3 neighbouring blocks, document zone, Word formatting/features, and the
+  allowed role list.
+- Qwen must return only strict JSON: `{"role": "...", "confidence": 0.94,
+  "reason": "..."}`.
+- Qwen only classifies role hints. It must not edit text, DOCX, formatting,
+  layout, tables, formulas, media or relationships.
+- Timeout, VPN/API failure, malformed JSON, unknown role or low confidence must
+  leave the deterministic rules fallback in place and must not fail the job.
+
+In ARTICLE+TEMPLATE mode, `SafeWordEditor` may copy only the reusable TEMPLATE
+journal header/footer shell when it can replace footer author text with ARTICLE
+authors. If the ARTICLE author shortline is not detected, it keeps ARTICLE
+headers/footers to avoid leaking text from another article.
 
 `DocumentDiffBuilder` is not the normal ARTICLE+TEMPLATE path. Use it only for
 reference pairs where the source and formatted file are the same article, e.g.
@@ -200,6 +223,7 @@ Key files:
 ```text
 apps/template_workspace/v2/ooxml/
 apps/template_workspace/v2/inspector/document.py
+apps/template_workspace/v2/ai/qwen_provider.py
 apps/template_workspace/v2/classification/roles.py
 apps/template_workspace/v2/formatting/effective.py
 apps/template_workspace/v2/profile/template.py
@@ -235,7 +259,13 @@ When Qwen is reachable and there are ambiguous role blocks, role reports may
 show providers like:
 
 ```text
-v2-rules+qwen
+v2-context-rules+qwen
+```
+
+When no block needs Qwen or Qwen is disabled/unavailable, the provider stays:
+
+```text
+v2-context-rules
 ```
 
 ## Real Document Context
@@ -278,10 +308,14 @@ Common unrelated local artifacts include `.codex_*`, `tmp/`, `work/`, `output/`,
 
 As of 2026-09-11:
 
-- `origin/main` contains V2.
+- `origin/main` contains isolated Word-first V2 under `/template/v2/`.
 - Production route `/template/` is alive and redirects guests to login.
 - Production route `/template/v2/` is alive and redirects guests to login.
 - Production services `webtstu`, `nginx`, and `openvpn-client@vrlab` are active.
 - Qwen works through `http://192.168.92.20:1234/v1` with model `qwen3.5-9b`.
-- V2 role classification now reports `v2-rules` or `v2-rules+qwen`; the old
-  `hybrid(...)` provider belongs to the legacy paper formatter path, not V2.
+- V2 role classification now reports `v2-context-rules` or
+  `v2-context-rules+qwen`; the old `hybrid(...)` provider belongs to the legacy
+  paper formatter path, not V2.
+- pass7 `SafeWordEditor` keeps ARTICLE as the physical DOCX base, preserves
+  native tables/formulas/media/hyperlinks, uses role-scoped formatting/layout,
+  and writes `editor_report.json` plus `qwen_report.json`.

@@ -16,6 +16,8 @@ from apps.checks.ai_client import get_api_base_url, is_ai_configured
 from apps.submissions.document_conversion import LegacyDocConversionError, convert_legacy_doc_to_docx
 from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.services import output_directory
+from apps.template_workspace.v2.ai import QwenProvider
+from apps.template_workspace.v2.classification.roles import ROLE_NAMES
 from apps.template_workspace.v2.classification.roles import RoleClassifierV2
 from apps.template_workspace.v2.editor.safe_word_editor import SafeWordEditor
 from apps.template_workspace.v2.inspector.document import DocumentInspector
@@ -36,6 +38,18 @@ def write_json(path: Path, payload: Any) -> None:
 
 def result_docx_path(job: TemplateJob) -> Path:
     return analysis_directory(job) / "result.docx"
+
+
+def qwen_report_path(job: TemplateJob) -> Path:
+    return analysis_directory(job) / "qwen_report.json"
+
+
+def build_qwen_role_provider() -> QwenProvider | None:
+    if os.getenv("TEMPLATE_V2_QWEN_ENABLED", "1") != "1":
+        return None
+    if not is_ai_configured():
+        return None
+    return QwenProvider(allowed_roles=ROLE_NAMES)
 
 
 def _working_docx_path(job: TemplateJob, field, label: str) -> tuple[Path, list[str]]:
@@ -91,11 +105,13 @@ def run_v2_job(job_id: str) -> None:
         conversion_warnings.extend(warnings)
         source_report = DocumentInspector(source_path).inspect()
         template_report = DocumentInspector(template_path).inspect()
-        classifier = RoleClassifierV2()
-        article_structure = classifier.article_structure(source_report)
-        template_profile = TemplateProfileBuilder(classifier=classifier).build(template_report)
+        qwen_provider = build_qwen_role_provider()
+        article_classifier = RoleClassifierV2(use_ai=qwen_provider is not None, semantic_provider=qwen_provider)
+        template_classifier = RoleClassifierV2(use_ai=False)
+        article_structure = article_classifier.article_structure(source_report)
+        template_profile = TemplateProfileBuilder(classifier=template_classifier).build(template_report)
         mapping_preview = RoleMatcher().build_preview(article_structure, template_profile)
-        editor_result = SafeWordEditor(classifier=classifier).render(
+        editor_result = SafeWordEditor(classifier=article_classifier).render(
             article_path=source_path,
             template_path=template_path,
             output_path=result_docx_path(job),
@@ -112,9 +128,21 @@ def run_v2_job(job_id: str) -> None:
         write_json(output / "template_profile.json", template_profile.to_dict())
         write_json(output / "mapping_preview.json", mapping_preview.to_dict())
         write_json(output / "editor_report.json", editor_result.to_dict())
+        write_json(output / "qwen_report.json", article_structure.diagnostics)
+        qwen = article_structure.diagnostics
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
+            {
+                "kind": "Qwen role pass",
+                "text": (
+                    f"rules: {qwen.get('rules_processed', 0)}; "
+                    f"to Qwen: {qwen.get('qwen_sent', 0)}; "
+                    f"changed: {qwen.get('qwen_changed', 0)}; "
+                    f"errors: {qwen.get('qwen_errors', 0)}; "
+                    f"timeouts: {qwen.get('qwen_timeouts', 0)}"
+                ),
+            },
             {"kind": "Mapping preview", "text": f"{mapping_preview.summary['total_mappings']} действий; review: {mapping_preview.summary['needs_review']}"},
             {"kind": "RESULT.docx", "text": "; ".join(editor_result.changes)},
             {"kind": "Секции", "text": f"ARTICLE: {len(source_report.sections)}; TEMPLATE: {len(template_report.sections)}"},
@@ -130,8 +158,15 @@ def run_v2_job(job_id: str) -> None:
         warnings.extend(editor_result.warnings)
         if not is_ai_configured():
             warnings.append("Qwen/VPN: AI_BASE_URL не задан в окружении, V2 выполнил только локальную классификацию ролей.")
+        elif qwen_provider is None:
+            warnings.append("Qwen/VPN: TEMPLATE_V2_QWEN_ENABLED выключен, V2 выполнил только локальную классификацию ролей.")
         else:
-            warnings.append(f"Qwen/VPN: endpoint настроен ({get_api_base_url()}); если API недоступен, V2 использует локальный fallback и пишет отдельное предупреждение.")
+            warnings.append(
+                f"Qwen/VPN: endpoint настроен ({get_api_base_url()}); "
+                f"сомнительных блоков отправлено: {qwen.get('qwen_sent', 0)}, "
+                f"ролей изменено: {qwen.get('qwen_changed', 0)}, "
+                f"ошибок: {qwen.get('qwen_errors', 0)}."
+            )
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
             status="completed",
             message="V2 RESULT.docx, отчёты, TemplateProfile и MappingPreview готовы.",
