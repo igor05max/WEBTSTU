@@ -20,6 +20,7 @@ from apps.template_workspace.v2.classification.roles import RoleClassifierV2
 from apps.template_workspace.v2.editor.safe_word_editor import SafeWordEditor
 from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.mapping.preview import RoleMatcher
+from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,8 @@ def run_v2_job(job_id: str) -> None:
         article_structure = classifier.article_structure(source_report)
         template_profile = TemplateProfileBuilder(classifier=classifier).build(template_report)
         mapping_preview = RoleMatcher().build_preview(article_structure, template_profile)
-        editor_result = SafeWordEditor(classifier=classifier).render(
+        planner = build_planning_engine()
+        editor_result = SafeWordEditor(classifier=classifier, planner=planner).render(
             article_path=source_path,
             template_path=template_path,
             output_path=result_docx_path(job),
@@ -111,11 +113,16 @@ def run_v2_job(job_id: str) -> None:
         write_json(output / "article_structure.json", article_structure.to_dict())
         write_json(output / "template_profile.json", template_profile.to_dict())
         write_json(output / "mapping_preview.json", mapping_preview.to_dict())
+        write_json(
+            output / "planning_report.json",
+            planner.last_result.to_dict() if planner.last_result else {},
+        )
         write_json(output / "editor_report.json", editor_result.to_dict())
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
             {"kind": "Mapping preview", "text": f"{mapping_preview.summary['total_mappings']} действий; review: {mapping_preview.summary['needs_review']}"},
+            {"kind": "Планировщик", "text": str(editor_result.metrics.get("planning_provider") or "local")},
             {"kind": "RESULT.docx", "text": "; ".join(editor_result.changes)},
             {"kind": "Секции", "text": f"ARTICLE: {len(source_report.sections)}; TEMPLATE: {len(template_report.sections)}"},
             {"kind": "Таблицы", "text": f"ARTICLE: {len(source_report.tables)}; TEMPLATE: {len(template_report.tables)}"},
@@ -128,10 +135,12 @@ def run_v2_job(job_id: str) -> None:
         warnings.extend(template_profile.warnings)
         warnings.extend(mapping_preview.warnings)
         warnings.extend(editor_result.warnings)
-        if not is_ai_configured():
-            warnings.append("Qwen/VPN: AI_BASE_URL не задан в окружении, V2 выполнил только локальную классификацию ролей.")
+        if not getattr(settings, "TEMPLATE_V2_QWEN_ENABLED", False):
+            warnings.append("Qwen/VPN: планировщик Template V2 выключен; применён детерминированный локальный план.")
+        elif not is_ai_configured():
+            warnings.append("Qwen/VPN: AI_BASE_URL не задан; Template V2 применил детерминированный локальный fallback.")
         else:
-            warnings.append(f"Qwen/VPN: endpoint настроен ({get_api_base_url()}); если API недоступен, V2 использует локальный fallback и пишет отдельное предупреждение.")
+            warnings.append(f"Qwen/VPN: планировщик Template V2 настроен через {get_api_base_url()}; ответ проходит whitelist-валидацию, при сбое используется локальный fallback.")
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
             status="completed",
             message="V2 RESULT.docx, отчёты, TemplateProfile и MappingPreview готовы.",
