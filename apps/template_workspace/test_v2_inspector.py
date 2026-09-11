@@ -328,7 +328,7 @@ class TemplateV2InspectorTests(TestCase):
             "replacement_text": "must be ignored",
         }
         result = QwenLikePlanningEngine()._merge_provider(local, patch_payload, snapshot)
-        self.assertEqual(result.front["citation_expected_lines"], 4)
+        self.assertEqual(result.front["citation_expected_lines"], 0)
         self.assertEqual(result.front["language_order"], ["ru", "en"])
         self.assertEqual(result.flow["large_figure_block_ids"], ["block_0042"])
         self.assertEqual(result.flow["float_lead_after_figure_block_ids"], ["block_0042"])

@@ -195,33 +195,9 @@ class QwenLikePlanningEngine:
         front = dict(local.front)
         flow = dict(local.flow)
         warnings = list(local.warnings)
-        role_values = {
-            str(item)
-            for item in snapshot.get("template", {}).get("front_sequence", [])
-        }
-        language_values = {
-            str(item)
-            for item in snapshot.get("template", {}).get("front_language_order", [])
-        }
-
-        front_patch = patch.get("front")
-        if isinstance(front_patch, dict):
-            for key in ("metadata_row", "reserve_placeholder_citation_slot"):
-                value = front_patch.get(key)
-                if value is True:
-                    front[key] = True
-            value = front_patch.get("citation_expected_lines")
-            if isinstance(value, int) and not isinstance(value, bool):
-                front["citation_expected_lines"] = max(
-                    int(front.get("citation_expected_lines") or 0),
-                    max(0, min(4, value)),
-                )
-            value = front_patch.get("role_sequence")
-            if isinstance(value, list) and all(isinstance(item, str) and item in role_values for item in value):
-                front["role_sequence"] = list(dict.fromkeys(value))
-            value = front_patch.get("language_order")
-            if isinstance(value, list) and all(isinstance(item, str) and item in language_values for item in value):
-                front["language_order"] = list(dict.fromkeys(value))
+        # Front-matter geometry comes directly from TEMPLATE evidence.  Even a
+        # one-line provider adjustment can cascade into an extra page, so Qwen is
+        # advisory here and cannot override these deterministic values.
 
         flow_patch = patch.get("flow")
         if isinstance(flow_patch, dict):
@@ -258,8 +234,6 @@ class QwenLikePlanningEngine:
             ranges = {
                 "max_float_body_blocks": (1, int(flow.get("max_float_body_blocks") or 2)),
                 "max_float_chars": (200, int(flow.get("max_float_chars") or 1800)),
-                "max_relocation_chars": (100, int(flow.get("max_relocation_chars") or 900)),
-                "min_relocation_chars": (int(flow.get("min_relocation_chars") or 120), 600),
             }
             for key, (minimum, maximum) in ranges.items():
                 value = flow_patch.get(key)
