@@ -13,7 +13,6 @@ class ArticleStructure:
     warnings: list[str]
     role_counts: dict[str, int]
     blocks: list[dict[str, Any]]
-    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain(self)

@@ -5,7 +5,7 @@
 <p class="tw-muted">Загрузите ARTICLE и TEMPLATE в Word-формате. V2 анализирует документы независимо, строит TemplateProfile, MappingPreview и RESULT.docx.</p>
 <section class="tw-card">
 <h2>Шаблон два</h2>
-<p>Система читает DOCX как OOXML, выделяет структуру статьи, профиль оформления шаблона и предварительный план сопоставления ролей. Семантические роли идут отдельным слоем: {% if ai_status.configured %}{{ ai_status.provider_label }} настроен через {{ ai_status.endpoint }} и вызывается только для сомнительных блоков; при ошибке V2 продолжит локальными правилами.{% else %}Qwen сейчас не подключён, потому что <code>AI_BASE_URL</code> не задан на этом запуске; анализ Word всё равно работает локально.{% endif %}</p>
+<p>Система читает DOCX как OOXML, выделяет структуру статьи, профиль оформления шаблона, план layout/flow и предварительное сопоставление ролей. В этой версии используется встроенный pass13-планировщик; настоящий Qwen здесь пока не вызывается.</p>
 </section>
 <form method="post" enctype="multipart/form-data" class="tw-card" id="tw-form">
 {% csrf_token %}{{ form.non_field_errors }}

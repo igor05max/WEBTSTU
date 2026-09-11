@@ -101,29 +101,12 @@ class RoleClassifierV2:
         paragraphs = [p for p in report.paragraphs if p.normalized_text]
         decisions = self._classify_document(paragraphs)
         warnings: list[str] = []
-        diagnostics: dict[str, Any] = {
-            "rules_processed": len(decisions),
-            "qwen_candidates": 0,
-            "qwen_sent": 0,
-            "qwen_changed": 0,
-            "qwen_accepted": 0,
-            "qwen_errors": 0,
-            "qwen_timeouts": 0,
-            "qwen_bad_json": 0,
-            "errors": [],
-            "decisions": [],
-        }
 
         if self.use_ai and self.semantic_provider is not None:
             ambiguous = [d.to_dict() for d in decisions if d.needs_review or d.confidence < self.review_threshold]
-            diagnostics["qwen_candidates"] = len(ambiguous)
             if ambiguous:
                 try:
                     overrides = self.semantic_provider(report, ambiguous) or {}
-                    provider_diagnostics = getattr(getattr(self.semantic_provider, "diagnostics", None), "as_dict", lambda: None)()
-                    if provider_diagnostics:
-                        diagnostics.update(provider_diagnostics)
-                        diagnostics["rules_processed"] = len(decisions)
                     by_id = {d.block_id: d for d in decisions}
                     for block_id, patch in overrides.items():
                         decision = by_id.get(block_id)
@@ -133,29 +116,22 @@ class RoleClassifierV2:
                         confidence = float(patch.get("confidence") or 0)
                         if role not in ROLE_NAMES or confidence < 0.60:
                             continue
-                        original_role = decision.role
                         decision.role = role
                         decision.confidence = confidence
                         decision.needs_review = confidence < self.review_threshold
-                        decision.source = str(patch.get("source") or "qwen")
-                        decision.reason = str(patch.get("reason") or "Qwen role classification")
-                        if role != original_role and not provider_diagnostics:
-                            diagnostics["qwen_changed"] += 1
+                        decision.source = "semantic_provider"
+                        decision.reason = str(patch.get("reason") or "semantic provider override")
                 except Exception as exc:  # semantic provider must never break the deterministic path
-                    diagnostics["qwen_errors"] += 1
-                    diagnostics["errors"].append({"kind": type(exc).__name__, "message": str(exc)[:1000]})
-                    warnings.append(f"QwenProvider skipped; deterministic V2 rules were used. {exc}")
+                    warnings.append(f"Semantic provider skipped: {exc}")
         elif self.use_ai:
-            warnings.append("QwenProvider is not configured; deterministic V2 rules were used.")
+            warnings.append("Semantic provider is not configured; deterministic V2 rules were used.")
 
         counts = Counter(d.role for d in decisions)
-        used_qwen = any(d.source == "qwen" for d in decisions)
         return SemanticRoleLayer(
-            provider="v2-context-rules+qwen" if used_qwen else "v2-context-rules",
+            provider="v2-context-rules" if not any(d.source == "semantic_provider" for d in decisions) else "v2-context-rules+provider",
             warnings=warnings,
             role_counts=dict(sorted(counts.items())),
             block_roles=[d.to_dict() for d in decisions],
-            diagnostics=diagnostics,
         )
 
     def article_structure(self, report: DocumentReport) -> ArticleStructure:
@@ -187,7 +163,6 @@ class RoleClassifierV2:
             warnings=roles.warnings,
             role_counts=roles.role_counts,
             blocks=blocks,
-            diagnostics=roles.diagnostics,
         )
 
     def _classify_document(self, paragraphs: list[ParagraphInfo]) -> list[RoleDecision]:
@@ -286,21 +261,18 @@ class RoleClassifierV2:
             abstract_idx = _first_index(segment, lambda i: _starts_abstract(paragraphs[i].normalized_text))
             keywords_idx = _first_index(segment, lambda i: _is_keywords(paragraphs[i].normalized_text))
             citation_idx = _first_index(segment, lambda i: _is_citation(paragraphs[i].normalized_text))
-            has_front_anchor = any(index is not None for index in (author_idx, email_idx, abstract_idx, keywords_idx, citation_idx))
 
             if author_idx is None and raw_start == 0 and len(groups) > 1:
                 previous_end = end
                 continue
 
-            title_idx = None
-            if has_front_anchor:
-                title_idx = _best_title_index(paragraphs, segment, author_idx, abstract_idx)
-                if title_idx is None:
-                    title_idx = _best_title_index(paragraphs, segment, email_idx, abstract_idx)
+            title_idx = _best_title_index(paragraphs, segment, author_idx, abstract_idx)
+            if title_idx is None:
+                title_idx = _best_title_index(paragraphs, segment, email_idx, abstract_idx)
 
             if title_idx is None:
                 for i in segment:
-                    self._set_front_fallback(paragraphs, i, out)
+                    self._set_front_metadata(paragraphs, i, out)
                 previous_end = end
                 continue
 
@@ -357,33 +329,6 @@ class RoleClassifierV2:
         elif re.search(r"short communications|original papers|review articles|nobelistics", lowered):
             role, subtype, confidence = "rubric", "rubric_value", 0.95
         out[p.id] = RoleDecision(p.id, role, confidence, "rules", "front-matter metadata before title", zone=FRONT_MATTER, language=_language(text), group_id=group_id, subtype=subtype)
-
-    @staticmethod
-    def _set_front_fallback(paragraphs: list[ParagraphInfo], i: int, out: dict[str, RoleDecision]) -> None:
-        p = paragraphs[i]
-        text = p.normalized_text
-        lowered = text.casefold()
-        lang = _language(text)
-        if _is_front_metadata_marker(lowered):
-            RoleClassifierV2._set_front_metadata(paragraphs, i, out)
-        elif _is_email(text):
-            out[p.id] = RoleDecision(p.id, "email", 0.96, "rules", "email syntax in title-less front block", zone=FRONT_MATTER, language=lang)
-        elif _starts_abstract(text):
-            out[p.id] = RoleDecision(p.id, "abstract", 0.86, "rules", "abstract marker in title-less front block", needs_review=True, zone=FRONT_MATTER, language=lang)
-        elif _is_keywords(text):
-            out[p.id] = RoleDecision(p.id, "keywords", 0.94, "rules", "keywords marker in title-less front block", zone=FRONT_MATTER, language=lang)
-        elif _is_citation(text):
-            out[p.id] = RoleDecision(p.id, "citation", 0.94, "rules", "citation marker in title-less front block", zone=FRONT_MATTER, language=lang)
-        elif _looks_like_author(text):
-            out[p.id] = RoleDecision(p.id, "author", 0.72, "rules", "possible author in title-less front block", needs_review=True, zone=FRONT_MATTER, language=lang)
-        elif _looks_like_affiliation(text):
-            out[p.id] = RoleDecision(p.id, "affiliation", 0.74, "rules", "possible affiliation in title-less front block", needs_review=True, zone=FRONT_MATTER, language=lang)
-        elif _is_figure_caption(text):
-            out[p.id] = RoleDecision(p.id, "figure_caption", 0.90, "rules", "caption syntax in title-less document", zone=BODY, language=lang)
-        elif _is_table_caption(text):
-            out[p.id] = RoleDecision(p.id, "table_caption", 0.90, "rules", "table caption syntax in title-less document", zone=BODY, language=lang)
-        else:
-            out[p.id] = RoleDecision(p.id, "body", 0.82 if len(text) >= 80 else 0.68, "rules", "title-less document fallback body", needs_review=len(text) < 80, zone=BODY, language=lang)
 
     @staticmethod
     def _classify_author_info_tail(p: ParagraphInfo, lowered: str, lang: str | None) -> RoleDecision:

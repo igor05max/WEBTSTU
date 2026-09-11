@@ -156,42 +156,33 @@ Current V2 stage:
 - inspects document flow, styles, sections, tables, drawings, formulas,
   hyperlinks, headers and footers;
 - keeps `DocumentInspector` deterministic/offline with no Qwen calls;
-- classifies roles through `RoleClassifierV2`, using Qwen only for ambiguous
-  blocks after local rules via `apps/template_workspace/v2/ai/QwenProvider`;
+- classifies roles through `RoleClassifierV2` using local V2 rules only;
+- uses the pass13 `QwenLikePlanningEngine` local simulator for front/layout/flow
+  planning inside `SafeWordEditor`; this is not the real remote Qwen API;
 - builds `TemplateProfile` and `LayoutProfile` from TEMPLATE formatting,
   sections, tables, drawings, formulas, OLE objects, headers and footers;
 - builds `MappingPreview` from ARTICLE structure to TEMPLATE rules;
 - writes `article_report.json`, `template_report.json`,
   `article_structure.json`, `template_profile.json`, and
   `mapping_preview.json`;
-- writes `qwen_report.json` with `rules_processed`, `qwen_sent`,
-  `qwen_changed`, timeout/error/bad JSON counts, and accepted Qwen decisions;
-- writes `result.docx` with pass7 `SafeWordEditor`, applying role-scoped
+- writes `result.docx` with pass13 `SafeWordEditor`, applying role-scoped
   TEMPLATE formatting/layout evidence to a copy of ARTICLE while preserving
   ARTICLE tables, drawings, formulas, media, hyperlinks, numbering and
   relationships;
 - writes `editor_report.json` describing applied edits, layout metrics and
   limitations.
 
-Qwen rules:
+V2 Qwen boundary:
 
-- Qwen is not launched on the laptop and is not inside this Django project.
-- Production Django reaches the remote/local Qwen HTTP API through the VPN.
-- Endpoint/model/key come from the existing AI config/env (`AI_BASE_URL`,
-  `AI_MODEL`, `AI_API_KEY`); V2-specific controls are
-  `TEMPLATE_V2_QWEN_ENABLED`, `TEMPLATE_V2_QWEN_MODEL`,
-  `TEMPLATE_V2_QWEN_TIMEOUT_SECONDS`, `TEMPLATE_V2_QWEN_MAX_BLOCKS`, and
-  `TEMPLATE_V2_QWEN_CONTEXT_RADIUS`.
-- High-confidence rule decisions are not sent to Qwen.
-- Low-confidence or `needs_review=true` blocks are sent with current text,
-  2-3 neighbouring blocks, document zone, Word formatting/features, and the
-  allowed role list.
-- Qwen must return only strict JSON: `{"role": "...", "confidence": 0.94,
-  "reason": "..."}`.
-- Qwen only classifies role hints. It must not edit text, DOCX, formatting,
-  layout, tables, formulas, media or relationships.
-- Timeout, VPN/API failure, malformed JSON, unknown role or low confidence must
-  leave the deterministic rules fallback in place and must not fail the job.
+- Do not replace pass13 with the earlier real `QwenProvider` integration unless
+  the user explicitly asks for a new pass.
+- The current V2 must not call the remote Qwen API and must not write
+  `qwen_report.json`.
+- Future real Qwen work should be a provider behind the planning boundary. It
+  may propose front/layout/flow intent only; OOXML edits remain in
+  `SafeWordEditor`.
+- Qwen or any provider must not edit text, DOCX, formatting, layout, tables,
+  formulas, media or relationships directly.
 
 In ARTICLE+TEMPLATE mode, `SafeWordEditor` may copy only the reusable TEMPLATE
 journal header/footer shell when it can replace footer author text with ARTICLE
@@ -208,7 +199,7 @@ V2 may reuse shared infrastructure:
 - storage/output directories;
 - file upload;
 - background job launching;
-- common AI/Qwen helper code.
+- common helper code that is not coupled to the legacy conversion pipeline.
 
 V2 must not use the legacy `ConversionPipeline`, `ArticleIR`, or old DOCX
 generator as its architectural core.
@@ -223,9 +214,9 @@ Key files:
 ```text
 apps/template_workspace/v2/ooxml/
 apps/template_workspace/v2/inspector/document.py
-apps/template_workspace/v2/ai/qwen_provider.py
 apps/template_workspace/v2/classification/roles.py
 apps/template_workspace/v2/formatting/effective.py
+apps/template_workspace/v2/planning/qwen_like.py
 apps/template_workspace/v2/profile/template.py
 apps/template_workspace/v2/mapping/preview.py
 apps/template_workspace/v2/editor/safe_word_editor.py
@@ -242,6 +233,7 @@ Management commands:
 ```bash
 python manage.py inspect_template_v2 --source ARTICLE.docx --template TEMPLATE.docx --output var/template_v2_analysis
 python manage.py inspect_template_v2 --source SOURCE.docx --template FORMATTED_SAME_ARTICLE.docx --reference-pair --output var/template_v2_reference_pair
+python manage.py run_template_v2 ARTICLE.docx TEMPLATE.docx --output var/template_v2_debug
 python manage.py run_template_v2_job JOB_UUID
 ```
 
@@ -252,17 +244,10 @@ cd /opt/webtstu/app
 sudo -u webtstu /opt/webtstu/venv/bin/python manage.py inspect_template_v2 \
   --source /tmp/template-v2-smoke/article.docx \
   --template /tmp/template-v2-smoke/template.docx \
-  --output /tmp/template-v2-smoke/out-live-qwen
+  --output /tmp/template-v2-smoke/out-pass13
 ```
 
-When Qwen is reachable and there are ambiguous role blocks, role reports may
-show providers like:
-
-```text
-v2-context-rules+qwen
-```
-
-When no block needs Qwen or Qwen is disabled/unavailable, the provider stays:
+For the current pass13 V2, role classification stays:
 
 ```text
 v2-context-rules
@@ -313,9 +298,8 @@ As of 2026-09-11:
 - Production route `/template/v2/` is alive and redirects guests to login.
 - Production services `webtstu`, `nginx`, and `openvpn-client@vrlab` are active.
 - Qwen works through `http://192.168.92.20:1234/v1` with model `qwen3.5-9b`.
-- V2 role classification now reports `v2-context-rules` or
-  `v2-context-rules+qwen`; the old `hybrid(...)` provider belongs to the legacy
-  paper formatter path, not V2.
-- pass7 `SafeWordEditor` keeps ARTICLE as the physical DOCX base, preserves
+- V2 role classification reports `v2-context-rules`; the old `hybrid(...)`
+  provider belongs to the legacy paper formatter path, not V2.
+- pass13 `SafeWordEditor` keeps ARTICLE as the physical DOCX base, preserves
   native tables/formulas/media/hyperlinks, uses role-scoped formatting/layout,
-  and writes `editor_report.json` plus `qwen_report.json`.
+  uses `QwenLikePlanningEngine`, and writes `editor_report.json`.

@@ -14,6 +14,7 @@ from apps.template_workspace.v2.models.document_info import DocumentReport, Tabl
 from apps.template_workspace.v2.models.template_profile import ArticleStructure, MappingPreview, TemplateProfile
 from apps.template_workspace.v2.ooxml.namespaces import NS, local_name, qn
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
+from apps.template_workspace.v2.planning.qwen_like import QwenLikePlanningEngine, PlanningResult
 
 
 PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -97,8 +98,9 @@ class SafeWordEditor:
     No network/LLM is required.  ``RoleClassifierV2`` is deterministic by default.
     """
 
-    def __init__(self, classifier: RoleClassifierV2 | None = None):
+    def __init__(self, classifier: RoleClassifierV2 | None = None, planner: QwenLikePlanningEngine | None = None):
         self.classifier = classifier or RoleClassifierV2(use_ai=False)
+        self.planner = planner or QwenLikePlanningEngine()
 
     def render(
         self,
@@ -122,6 +124,12 @@ class SafeWordEditor:
         template_report = template_report or DocumentInspector(template_path).inspect()
         article_structure = article_structure or self.classifier.article_structure(article_report)
         template_profile = template_profile or TemplateProfileBuilder(self.classifier).build(template_report)
+        planning = self.planner.plan(
+            article_report=article_report,
+            template_report=template_report,
+            article_structure=article_structure,
+            template_profile=template_profile,
+        )
 
         decisions = {item["id"]: item for item in article_structure.blocks}
         table_info = {table.id: table for table in article_report.tables}
@@ -139,6 +147,7 @@ class SafeWordEditor:
             "captions_normalized": 0,
             "subfigure_labels_normalized": 0,
             "flow_paragraphs_relocated": 0,
+            "compact_tables_floated": 0,
             "section_markers_inserted": 0,
             "terminal_columns_balanced": False,
             "table_rows_guarded": 0,
@@ -148,6 +157,10 @@ class SafeWordEditor:
             "headers_footers_copied": False,
             "even_odd_headers_enabled": False,
             "unsafe_body_fallbacks": 0,
+            "planning_provider": planning.provider,
+            "placeholder_slots_reserved": 0,
+            "large_figure_page_breaks": 0,
+            "atomic_figure_rows_guarded": 0,
         }
 
         with ZipFile(article_path) as article_zip, ZipFile(template_path) as template_zip:
@@ -227,6 +240,15 @@ class SafeWordEditor:
                 template_zip=template_zip,
             )
 
+            # Preserve the TEMPLATE's front-matter *geometry* when ARTICLE still
+            # contains an editorial citation placeholder.  This is a structure-plan
+            # decision (the future Qwen planner can override it), not fabricated text.
+            metrics["placeholder_slots_reserved"] += _reserve_placeholder_front_slots(
+                body=body,
+                meta_by_node=meta_by_node,
+                planning=planning,
+            )
+
             # Figure-container labels such as ``a`` / ``b`` are layout metadata.
             # The journal convention is ``(a)`` / ``(b)`` in italics.
             metrics["subfigure_labels_normalized"] += _normalise_subfigure_labels(body, table_info, meta_by_node)
@@ -235,10 +257,17 @@ class SafeWordEditor:
             # one short look-ahead prose paragraph so the preceding two-column area
             # is filled instead of leaving a large blank.  Move the *existing* XML
             # node; never reconstruct its contents.
-            metrics["flow_paragraphs_relocated"] += _optimise_large_figure_flow(
+            metrics["flow_paragraphs_relocated"] += _optimise_large_figure_flow_v2(
                 body=body,
                 meta_by_node=meta_by_node,
                 table_info=table_info,
+                planning=planning,
+            )
+            metrics["compact_tables_floated"] += _float_compact_tables_forward(
+                body=body,
+                meta_by_node=meta_by_node,
+                table_info=table_info,
+                planning=planning,
             )
 
             _add_front_language_separators(body, meta_by_node)
@@ -249,6 +278,12 @@ class SafeWordEditor:
 
             wide_spans = _wide_object_spans(body, meta_by_node, table_info, layout)
             metrics["section_markers_inserted"] += _install_wide_section_spans(body, wide_spans, layout)
+            metrics["large_figure_page_breaks"] += _apply_planned_wide_figure_breaks(
+                body=body, spans=wide_spans, meta_by_node=meta_by_node, table_info=table_info, planning=planning
+            )
+            metrics["atomic_figure_rows_guarded"] += _guard_planned_figure_containers(
+                body=body, meta_by_node=meta_by_node, table_info=table_info, planning=planning
+            )
             metrics["wide_object_spans"] = len(wide_spans)
             metrics["terminal_columns_balanced"] = _balance_terminal_two_column_section(
                 body=body,
@@ -275,24 +310,21 @@ class SafeWordEditor:
             replacements: dict[str, bytes] = {"word/document.xml": _serialize_xml(document_root)}
             if copy_template_headers:
                 author_short = _article_author_shortline(article_structure, article_report)
-                if author_short:
-                    story_replacements = _merge_template_header_footer(
-                        article_zip=article_zip,
-                        template_zip=template_zip,
-                        document_root=document_root,
-                        author_shortline=author_short,
-                    )
-                    replacements.update(story_replacements)
-                    # document.xml may have relationship IDs rewritten by the merge.
-                    replacements["word/document.xml"] = _serialize_xml(document_root)
-                    metrics["headers_footers_copied"] = bool(story_replacements)
+                story_replacements = _merge_template_header_footer(
+                    article_zip=article_zip,
+                    template_zip=template_zip,
+                    document_root=document_root,
+                    author_shortline=author_short,
+                )
+                replacements.update(story_replacements)
+                # document.xml may have relationship IDs rewritten by the merge.
+                replacements["word/document.xml"] = _serialize_xml(document_root)
+                metrics["headers_footers_copied"] = bool(story_replacements)
 
-                    settings_payload, even_odd = _merge_template_document_settings(article_zip, template_zip)
-                    if settings_payload is not None:
-                        replacements["word/settings.xml"] = settings_payload
-                    metrics["even_odd_headers_enabled"] = even_odd
-                else:
-                    warnings.append("Skipped TEMPLATE header/footer shell because ARTICLE author shortline was not detected.")
+                settings_payload, even_odd = _merge_template_document_settings(article_zip, template_zip)
+                if settings_payload is not None:
+                    replacements["word/settings.xml"] = settings_payload
+                metrics["even_odd_headers_enabled"] = even_odd
 
             _write_package(article_zip, output_path, replacements)
 
@@ -302,16 +334,14 @@ class SafeWordEditor:
             f"Installed {metrics['front_shells_installed']} native TEMPLATE front-matter layout shell(s), {metrics['journal_symbols_installed']} journal glyph decoration(s), and {metrics['title_breaks_inserted']} balanced title line-break set(s).",
             f"Materialized numbering on {metrics['heading_numbers_materialized']} semantic headings and normalized {metrics['captions_normalized']} caption/metadata conventions plus {metrics['subfigure_labels_normalized']} subfigure labels.",
             f"Relocated {metrics['flow_paragraphs_relocated']} intact prose paragraph(s) around large multi-panel figures to improve two-column balance.",
+            f"Qwen-like planner: {planning.provider}; reserved {metrics['placeholder_slots_reserved']} placeholder front slots, floated {metrics['compact_tables_floated']} compact table(s), and forced {metrics['large_figure_page_breaks']} large-figure page starts.",
             f"Created {metrics['wide_object_spans']} temporary full-width spans for wide ARTICLE objects.",
             f"Resized {metrics['tables_resized']} native tables and {metrics['drawings_resized']} native drawings without recreating them.",
             "Preserved ARTICLE tables, formulas, media, hyperlinks, numbering and document relationships by default.",
             "Did not copy TEMPLATE styles.xml/numbering.xml/theme wholesale; formatting is explicit and role-scoped.",
         ]
         if copy_template_headers:
-            if metrics["headers_footers_copied"]:
-                changes.append("Copied the TEMPLATE journal header/footer shell and replaced footer author text with ARTICLE authors; TEMPLATE page numbers were not copied.")
-            else:
-                changes.append("Kept ARTICLE headers/footers because safe ARTICLE author text for footer replacement was not detected.")
+            changes.append("Copied the TEMPLATE journal header/footer shell and replaced footer author text with ARTICLE authors; TEMPLATE page numbers were not copied.")
         else:
             changes.append("Kept ARTICLE headers/footers.")
         if not template_profile.front_language_order:
@@ -1316,6 +1346,115 @@ def _normalise_subfigure_labels(
     return changed
 
 
+
+def _optimise_large_figure_flow_v2(
+    *,
+    body: etree._Element,
+    meta_by_node: dict[etree._Element, _NodeMeta],
+    table_info: dict[str, TableInfo],
+    planning: PlanningResult,
+) -> int:
+    """Qwen-like floating for very large 3+ panel figures.
+
+    For a large figure Word often has insufficient vertical space because several
+    prose paragraphs immediately precede it.  A journal editor is allowed to float
+    the figure slightly earlier while keeping the explicit ``Fig. N presents...``
+    lead-in in place.  We move at most two *existing* body paragraphs from just
+    before that lead-in to immediately after the figure caption.  No text is split
+    or rewritten.
+    """
+
+    if not planning.flow.get("allow_safe_prose_relocation"):
+        return 0
+    moved = 0
+    for table in list(body):
+        if local_name(table) != "tbl":
+            continue
+        meta = meta_by_node.get(table)
+        info = table_info.get(meta.block_id) if meta and meta.block_id else None
+        if info is None or info.classification != "FIGURE_CONTAINER":
+            continue
+        drawing_count = len(table.xpath(".//w:drawing|.//w:pict", namespaces=NS))
+        if drawing_count < 3:
+            continue
+        children = list(body)
+        try:
+            ti = children.index(table)
+        except ValueError:
+            continue
+
+        # Caption after the table.
+        caption = None
+        caption_end = None
+        for j in range(ti + 1, min(len(children), ti + 8)):
+            n = children[j]
+            if local_name(n) == "p" and not normalize_text(element_text(n)):
+                continue
+            nm = meta_by_node.get(n)
+            if local_name(n) == "p" and nm and nm.role == "figure_caption":
+                caption = n; caption_end = n
+                group = nm.group_id
+                k = j + 1
+                while group and k < len(children):
+                    km = meta_by_node.get(children[k])
+                    if local_name(children[k]) == "p" and km and km.role == "figure_caption" and km.group_id == group:
+                        caption_end = children[k]; k += 1
+                    else:
+                        break
+            break
+        if caption is None or caption_end is None:
+            continue
+        cap_text = normalize_text(element_text(caption))
+        m = re.match(r"^(?:Fig\.|Figure)\s*(\d+)", cap_text, re.I)
+        figure_no = m.group(1) if m else None
+
+        # Find explicit lead-in before the table (e.g. "Fig. 7 presents...").
+        lead = None
+        for j in range(ti - 1, max(-1, ti - 10), -1):
+            n = children[j]
+            if local_name(n) != "p":
+                continue
+            txt = normalize_text(element_text(n))
+            if not txt:
+                continue
+            nm = meta_by_node.get(n)
+            if not nm or nm.role != "body":
+                break
+            if figure_no and re.search(rf"\bFig(?:ure)?\.?\s*{re.escape(figure_no)}\b", txt, re.I):
+                lead = n
+                break
+        if lead is None:
+            continue
+
+        # Up to two ordinary prose paragraphs immediately before the lead-in.
+        children = list(body)
+        li = children.index(lead)
+        candidates: list[etree._Element] = []
+        j = li - 1
+        while j >= 0 and len(candidates) < 2:
+            n = children[j]
+            if local_name(n) == "p" and not normalize_text(element_text(n)):
+                j -= 1; continue
+            nm = meta_by_node.get(n)
+            if local_name(n) == "p" and nm and nm.role == "body":
+                txt = normalize_text(element_text(n))
+                if 100 <= len(txt) <= int(planning.flow.get("max_float_chars") or 1800):
+                    candidates.append(n); j -= 1; continue
+            break
+        if not candidates:
+            continue
+        # Preserve original order after the caption.
+        candidates.reverse()
+        anchor = caption_end
+        for node in candidates:
+            if node.getparent() is body:
+                body.remove(node)
+            anchor.addnext(node)
+            anchor = node
+            moved += 1
+    return moved
+
+
 def _optimise_large_figure_flow(
     *,
     body: etree._Element,
@@ -1420,6 +1559,227 @@ def _optimise_large_figure_flow(
             moved += 1
     return moved
 
+
+
+
+
+def _float_compact_tables_forward(
+    *,
+    body: etree._Element,
+    meta_by_node: dict[etree._Element, _NodeMeta],
+    table_info: dict[str, TableInfo],
+    planning: PlanningResult,
+) -> int:
+    """Float a small data table a few prose blocks upward like a journal editor.
+
+    This is deliberately conservative: only compact data tables (not layout/figure
+    containers), at most two body paragraphs are crossed, and the destination is
+    immediately after a nearby figure/caption group.  Existing w:p/w:tbl nodes are
+    moved intact, so formulas, hyperlinks and relationships remain untouched.
+    """
+
+    if not planning.flow.get("float_compact_tables_forward"):
+        return 0
+    max_body = int(planning.flow.get("max_float_body_blocks") or 2)
+    max_chars = int(planning.flow.get("max_float_chars") or 1800)
+    moved = 0
+    # Snapshot candidates because we mutate body order.
+    candidates = []
+    children = list(body)
+    for i, node in enumerate(children):
+        if local_name(node) != "tbl":
+            continue
+        meta = meta_by_node.get(node)
+        info = table_info.get(meta.block_id) if meta and meta.block_id else None
+        if info is None or info.classification == "FIGURE_CONTAINER":
+            continue
+        if info.row_count > 6 or info.logical_column_count > 4:
+            continue
+        # Caption immediately before table (ignoring blanks).
+        j = i - 1
+        while j >= 0 and local_name(children[j]) == "p" and not normalize_text(element_text(children[j])):
+            j -= 1
+        if j < 0 or local_name(children[j]) != "p":
+            continue
+        cap = children[j]
+        cm = meta_by_node.get(cap)
+        if not cm or cm.role != "table_caption":
+            continue
+        candidates.append((cap, node))
+
+    for caption, table in candidates:
+        if caption.getparent() is not body or table.getparent() is not body:
+            continue
+        children = list(body)
+        ci = children.index(caption)
+        # Walk backwards over up to N body paragraphs/blanks looking for a figure
+        # caption; this describes the common journal pattern Fig -> Table -> prose.
+        body_blocks = 0
+        chars = 0
+        anchor = None
+        k = ci - 1
+        while k >= 0:
+            n = children[k]
+            txt = normalize_text(element_text(n)) if local_name(n) == "p" else ""
+            nm = meta_by_node.get(n)
+            if local_name(n) == "p" and not txt:
+                k -= 1
+                continue
+            if local_name(n) == "p" and nm and nm.role == "body":
+                body_blocks += 1; chars += len(txt)
+                if body_blocks > max_body or chars > max_chars:
+                    break
+                k -= 1
+                continue
+            if local_name(n) == "p" and nm and nm.role == "figure_caption" and body_blocks >= 1:
+                anchor = n
+            break
+        if anchor is None:
+            continue
+
+        # Include blank paragraphs directly between caption and table so we don't
+        # leave a large hole at the old location.
+        group = [caption]
+        n = caption.getnext()
+        while n is not None and n is not table:
+            nxt = n.getnext()
+            if local_name(n) == "p" and not normalize_text(element_text(n)):
+                group.append(n)
+            n = nxt
+        group.append(table)
+        # Preserve one clean separator after the destination anchor.
+        insert_after = anchor
+        while insert_after.getnext() is not None and local_name(insert_after.getnext()) == "p" and not normalize_text(element_text(insert_after.getnext())):
+            insert_after = insert_after.getnext()
+        for node in group:
+            if node.getparent() is body:
+                body.remove(node)
+        pos = body.index(insert_after) + 1
+        for offset, node in enumerate(group):
+            body.insert(pos + offset, node)
+        moved += 1
+    return moved
+
+
+def _reserve_placeholder_front_slots(
+    *,
+    body: etree._Element,
+    meta_by_node: dict[etree._Element, _NodeMeta],
+    planning: PlanningResult,
+) -> int:
+    """Reserve template-like vertical space without inventing missing metadata.
+
+    Editorial manuscripts often contain ``For citation: provided by editors`` while
+    the formatted journal template has a 2-3 line final citation.  If we collapse the
+    placeholder to one line, the second language block/body jumps upward and every
+    later page drifts.  We reserve only the *geometry* with paragraph after-spacing.
+    """
+
+    if not planning.front.get("reserve_placeholder_citation_slot"):
+        return 0
+    expected = int(planning.front.get("citation_expected_lines") or 0)
+    if expected <= 1:
+        return 0
+    changed = 0
+    for p in body.findall("w:p", namespaces=NS):
+        meta = meta_by_node.get(p)
+        if not meta or meta.role != "citation":
+            continue
+        text = normalize_text(element_text(p)).casefold()
+        if not any(x in text for x in ("данные предоставляются редакцией", "provided by editorial", "provided by the editorial office", "to be provided by")):
+            continue
+        # One reserved line is roughly the journal's 230-245 twip automatic line.
+        # Cap at three missing lines so unusual templates cannot create huge gaps.
+        missing = min(2, max(1, expected - 2))
+        ppr = p.find("w:pPr", namespaces=NS)
+        if ppr is None:
+            ppr = etree.Element(qn("w:pPr")); p.insert(0, ppr)
+        spacing = ppr.find("w:spacing", namespaces=NS)
+        if spacing is None:
+            spacing = etree.SubElement(ppr, qn("w:spacing"))
+        old_after = _safe_int(spacing.get(qn("w:after")))
+        reserve = max(old_after, missing * 235)
+        spacing.set(qn("w:after"), str(reserve))
+        spacing.set(qn("w:afterAutospacing"), "0")
+        changed += 1
+    return changed
+
+
+def _apply_planned_wide_figure_breaks(
+    *,
+    body: etree._Element,
+    spans: list[list[etree._Element]],
+    meta_by_node: dict[etree._Element, _NodeMeta],
+    table_info: dict[str, TableInfo],
+    planning: PlanningResult,
+) -> int:
+    """Start very large full-width figure bands cleanly, based on planner intent.
+
+    The future Qwen planner can turn this policy off/on per document.  The page break
+    is attached to the dedicated invisible section marker, never to caption text.
+    """
+
+    if not planning.flow.get("page_break_before_large_full_width_figures"):
+        return 0
+    planned = set(planning.flow.get("large_figure_block_ids") or [])
+    changed = 0
+    for span in spans:
+        table = next((n for n in span if local_name(n) == "tbl"), None)
+        if table is None:
+            continue
+        meta = meta_by_node.get(table)
+        info = table_info.get(meta.block_id) if meta and meta.block_id else None
+        if info is None or info.classification != "FIGURE_CONTAINER" or (planned and info.id not in planned):
+            continue
+        previous = span[0].getprevious()
+        if previous is None or local_name(previous) != "p":
+            continue
+        ppr = previous.find("w:pPr", namespaces=NS)
+        if ppr is None:
+            ppr = etree.Element(qn("w:pPr")); previous.insert(0, ppr)
+        if ppr.find("w:pageBreakBefore", namespaces=NS) is None:
+            etree.SubElement(ppr, qn("w:pageBreakBefore"))
+            changed += 1
+    return changed
+
+
+def _guard_planned_figure_containers(
+    *,
+    body: etree._Element,
+    meta_by_node: dict[etree._Element, _NodeMeta],
+    table_info: dict[str, TableInfo],
+    planning: PlanningResult,
+) -> int:
+    """Prevent multi-panel figure rows/captions from visually tearing apart.
+
+    This is intentionally limited to FIGURE_CONTAINER tables.  Data tables are
+    allowed to paginate naturally.
+    """
+
+    if not planning.flow.get("keep_figure_containers_atomic"):
+        return 0
+    changed = 0
+    for table in body.findall("w:tbl", namespaces=NS):
+        meta = meta_by_node.get(table)
+        info = table_info.get(meta.block_id) if meta and meta.block_id else None
+        if info is None or info.classification != "FIGURE_CONTAINER":
+            continue
+        rows = table.findall("w:tr", namespaces=NS)
+        for ri, row in enumerate(rows):
+            trpr = row.find("w:trPr", namespaces=NS)
+            if trpr is None:
+                trpr = etree.Element(qn("w:trPr")); row.insert(0, trpr)
+            if trpr.find("w:cantSplit", namespaces=NS) is None:
+                etree.SubElement(trpr, qn("w:cantSplit")); changed += 1
+            # Keep each row connected to the next one when the whole figure can fit.
+            if ri < len(rows) - 1:
+                for p in row.xpath("./w:tc/w:p", namespaces=NS):
+                    ppr = p.find("w:pPr", namespaces=NS)
+                    if ppr is None:
+                        ppr = etree.Element(qn("w:pPr")); p.insert(0, ppr)
+                    if ppr.find("w:keepNext", namespaces=NS) is None:
+                        etree.SubElement(ppr, qn("w:keepNext")); changed += 1
+    return changed
 
 # ---------------------------------------------------------------------------
 # Sections and object sizing
