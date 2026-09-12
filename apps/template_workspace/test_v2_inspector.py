@@ -237,7 +237,9 @@ class TemplateV2InspectorTests(TestCase):
 
         template = Document()
         template.add_paragraph("A formatted article title")
+        template.settings.odd_and_even_pages_header_footer = True
         template.sections[0].header.paragraphs[0].text = "JOURNAL HEADER"
+        template.sections[0].even_page_header.paragraphs[0].text = "JOURNAL EVEN HEADER"
         template.sections[0].footer.paragraphs[0].text = "1"
         template.sections[0].footer.add_paragraph("TEMPLATE AUTHOR")
         template_path = Path(self.tmp.name) / "template-story.docx"
@@ -253,6 +255,7 @@ class TemplateV2InspectorTests(TestCase):
 
         rendered = DocumentInspector(output).inspect()
         self.assertIn("JOURNAL HEADER", " ".join(item.text for item in rendered.headers))
+        self.assertIn("JOURNAL EVEN HEADER", " ".join(item.text for item in rendered.headers))
         footer_text = " ".join(item.text for item in rendered.footers)
         self.assertIn("Author", footer_text)
         self.assertNotIn("TEMPLATE AUTHOR", footer_text)
@@ -265,6 +268,107 @@ class TemplateV2InspectorTests(TestCase):
             if item.get("Type", "").endswith(("/header", "/footer"))
         ]
         self.assertEqual(len(story_relationships), len(set(story_relationships)))
+
+        with ZipFile(output) as archive:
+            for part in (name for name in archive.namelist() if name.startswith("word/header") and name.endswith(".xml")):
+                root = etree.fromstring(archive.read(part))
+                for paragraph in root.xpath(".//w:p[normalize-space(string(.))]", namespaces={"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}):
+                    alignment = paragraph.find("w:pPr/w:jc", namespaces={"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+                    self.assertIsNotNone(alignment)
+                    self.assertEqual(
+                        alignment.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val"),
+                        "left",
+                    )
+
+    def test_safe_word_editor_marks_missing_template_doi_and_restores_front_spacing(self):
+        article = Document()
+        article.add_paragraph("УДК 620.3")
+        article.add_paragraph("A practical article title")
+        article.add_paragraph("© Ivan I. Author")
+        article.add_paragraph("Abstract. This paper contains enough text for deterministic role classification.")
+        article.add_paragraph("Keywords: graphite, boron nitride")
+        article.add_paragraph("For citation: data will be provided by the editorial office.")
+        article.add_paragraph("Introduction")
+        article.add_paragraph("This is the article body and it must remain source content.")
+        article_path = Path(self.tmp.name) / "missing-doi-article.docx"
+        article.save(article_path)
+
+        template = Document()
+        identifiers = template.add_paragraph("УДК 999.9")
+        identifiers.paragraph_format.tab_stops.add_tab_stop(7100000)
+        identifiers.add_run("\tDOI: 10.17277/template-article")
+        template.add_paragraph("A formatted article title")
+        template.add_paragraph("© Jane J. Template")
+        template.add_paragraph("Abstract. A sufficiently long template abstract for role classification.")
+        template.add_paragraph("")
+        template.add_paragraph("Keywords: sample; template")
+        template.add_paragraph("")
+        template.add_paragraph("For citation: Template citation text that must never be copied.")
+        template.add_paragraph("Introduction")
+        template.add_paragraph("Template body text that must never be copied.")
+        template_path = Path(self.tmp.name) / "missing-doi-template.docx"
+        template.save(template_path)
+
+        output = Path(self.tmp.name) / "missing-doi-result.docx"
+        result = SafeWordEditor(classifier=RoleClassifierV2(use_ai=False)).render(
+            article_path=article_path,
+            template_path=template_path,
+            output_path=output,
+            copy_template_headers=False,
+        )
+
+        self.assertEqual(result.metrics["template_placeholder_fields"], ["DOI"])
+        with ZipFile(output) as archive:
+            root = etree.fromstring(archive.read("word/document.xml"))
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        paragraphs = root.xpath("/w:document/w:body/w:p", namespaces=ns)
+        identifier = next(p for p in paragraphs if "УДК 620.3" in "".join(p.xpath(".//w:t/text()", namespaces=ns)))
+        identifier_text = "".join(identifier.xpath(".//w:t/text()", namespaces=ns))
+        self.assertIn("DOI: 10.17277/template-article", identifier_text)
+        self.assertNotIn("УДК 999.9", identifier_text)
+        highlighted = identifier.xpath(
+            ".//w:r[w:rPr/w:highlight[@w:val='yellow']]/w:t/text()",
+            namespaces=ns,
+        )
+        self.assertEqual(highlighted, ["DOI: 10.17277/template-article"])
+
+        keywords = next(p for p in paragraphs if "Keywords:" in "".join(p.xpath(".//w:t/text()", namespaces=ns)))
+        after = keywords.xpath("string(w:pPr/w:spacing/@w:after)", namespaces=ns)
+        self.assertGreaterEqual(int(after), 180)
+
+    def test_safe_word_editor_keeps_real_article_doi(self):
+        article = Document()
+        article.add_paragraph("УДК 620.3\tDOI: 10.5555/article-value")
+        article.add_paragraph("A practical article title")
+        article.add_paragraph("© Ivan I. Author")
+        article.add_paragraph("Abstract. This paper contains enough text for deterministic role classification.")
+        article.add_paragraph("Keywords: graphite")
+        article.add_paragraph("For citation: Article citation")
+        article_path = Path(self.tmp.name) / "real-doi-article.docx"
+        article.save(article_path)
+
+        template = Document()
+        template.add_paragraph("УДК 999.9\tDOI: 10.17277/template-value")
+        template.add_paragraph("A formatted article title")
+        template.add_paragraph("© Jane J. Template")
+        template.add_paragraph("Abstract. A sufficiently long template abstract for role classification.")
+        template.add_paragraph("Keywords: sample")
+        template.add_paragraph("For citation: Template citation")
+        template_path = Path(self.tmp.name) / "real-doi-template.docx"
+        template.save(template_path)
+
+        output = Path(self.tmp.name) / "real-doi-result.docx"
+        result = SafeWordEditor(classifier=RoleClassifierV2(use_ai=False)).render(
+            article_path=article_path,
+            template_path=template_path,
+            output_path=output,
+            copy_template_headers=False,
+        )
+        with ZipFile(output) as archive:
+            text = archive.read("word/document.xml").decode("utf-8")
+        self.assertIn("10.5555/article-value", text)
+        self.assertNotIn("10.17277/template-value", text)
+        self.assertEqual(result.metrics["template_placeholders_inserted"], 0)
 
     def test_qwen_like_planner_starts_large_full_width_figures_on_fresh_pages(self):
         snapshot = {

@@ -282,6 +282,13 @@ journal header/footer shell when it can replace footer author text with ARTICLE
 authors. If the ARTICLE author shortline is not detected, it keeps ARTICLE
 headers/footers to avoid leaking text from another article.
 
+Missing top-row editorial identifiers are the only content exception: UDC/УДК
+and DOI may be copied from TEMPLATE as yellow-highlighted placeholders, are
+reported in `editor_report.json`, and must be replaced before publication. A real
+ARTICLE value is never overwritten. The running journal line is always
+left-aligned above its rule, and front-matter paragraph gaps mirror the blank-line
+rhythm between abstract, keywords and citation in TEMPLATE.
+
 `DocumentDiffBuilder` is not the normal ARTICLE+TEMPLATE path. Use it only for
 reference pairs where the source and formatted file are the same article, e.g.
 with `inspect_template_v2 --reference-pair`.

@@ -262,6 +262,9 @@ class SafeWordEditor:
             "unsafe_body_fallbacks": 0,
             "planning_provider": planning.provider,
             "placeholder_slots_reserved": 0,
+            "template_placeholders_inserted": 0,
+            "template_placeholder_fields": [],
+            "front_spacing_adjustments": 0,
             "large_figure_page_breaks": 0,
             "atomic_figure_rows_guarded": 0,
             "inline_figure_captions_guarded": 0,
@@ -293,6 +296,18 @@ class SafeWordEditor:
                 template_zip=template_zip,
             )
 
+            # Editorial identifiers that are absent from ARTICLE cannot be
+            # silently invented.  Reuse the corresponding TEMPLATE field as an
+            # unmistakable yellow placeholder so an editor can replace it before
+            # publication.  Real ARTICLE values always win.
+            placeholder_fields = _install_missing_editorial_placeholders(
+                body=body,
+                meta_by_node=meta_by_node,
+                template_zip=template_zip,
+            )
+            metrics["template_placeholder_fields"] = placeholder_fields
+            metrics["template_placeholders_inserted"] += len(placeholder_fields)
+
             template_hints = _template_render_hints(template_zip, template_report, self.classifier)
 
             # Formatting is applied from effective role profiles directly, rather
@@ -322,6 +337,12 @@ class SafeWordEditor:
                     metrics["captions_normalized"] += _normalise_figure_caption_prefix(
                         child, template_hints["figure_caption_prefix"]
                     )
+
+            metrics["front_spacing_adjustments"] += _apply_front_matter_spacing(
+                body=body,
+                meta_by_node=meta_by_node,
+                gap_twips=int(template_hints["front_role_gap_twips"]),
+            )
 
             # Convert Word list numbering on semantic headings into visible text.
             # This removes the large list-tab gap that otherwise appears after we
@@ -448,6 +469,7 @@ class SafeWordEditor:
             f"Materialized numbering on {metrics['heading_numbers_materialized']} semantic headings and normalized {metrics['captions_normalized']} caption/metadata conventions plus {metrics['subfigure_labels_normalized']} subfigure labels and {metrics['figure_container_metadata_normalized']} figure-container metadata runs.",
             f"Relocated {metrics['flow_paragraphs_relocated']} intact prose paragraph(s) around large multi-panel figures to improve two-column balance.",
             f"Qwen-like planner: {planning.provider}; reserved {metrics['placeholder_slots_reserved']} placeholder front slots, floated {metrics['compact_tables_floated']} compact table(s), and forced {metrics['large_figure_page_breaks']} large-figure page starts.",
+            f"Inserted {metrics['template_placeholders_inserted']} missing editorial field placeholder(s) from TEMPLATE with yellow highlighting and normalized {metrics['front_spacing_adjustments']} front-matter role gap(s).",
             f"Kept {metrics['inline_figure_captions_guarded']} inline figure/caption group(s) together across columns and pages.",
             f"Kept {metrics['compact_tables_kept_together']} compact data table(s) together instead of splitting them across columns/pages.",
             f"Created {metrics['wide_object_spans']} temporary full-width spans for wide ARTICLE objects.",
@@ -461,6 +483,11 @@ class SafeWordEditor:
             changes.append("Kept ARTICLE headers/footers.")
         if not template_profile.front_language_order:
             warnings.append("TEMPLATE language order was not confidently detected; ARTICLE front-matter group order was preserved.")
+        if metrics["template_placeholder_fields"]:
+            fields = ", ".join(metrics["template_placeholder_fields"])
+            warnings.append(
+                f"Replace the yellow TEMPLATE-derived editorial placeholder(s) before publication: {fields}."
+            )
         if mapping_preview and mapping_preview.summary.get("unsafe_body_fallback_count", 0):
             warnings.append("MappingPreview reports unsafe BODY fallbacks. SafeWordEditor ignored those fallbacks and only used exact/synthetic role profiles.")
 
@@ -693,6 +720,164 @@ def _install_template_front_shell(
     return 1
 
 
+def _install_missing_editorial_placeholders(
+    *,
+    body: etree._Element,
+    meta_by_node: dict[etree._Element, _NodeMeta],
+    template_zip: ZipFile,
+) -> list[str]:
+    """Copy missing UDC/DOI fields from TEMPLATE as yellow placeholders.
+
+    These are deliberately limited to the journal's bibliographic identifier row.
+    Author names, titles, citation text, dates and other article content are never
+    candidates.  A real ARTICLE identifier is preserved and suppresses its matching
+    placeholder.
+    """
+
+    template_root = etree.fromstring(template_zip.read("word/document.xml"))
+    template_body = template_root.find("w:body", namespaces=NS)
+    if template_body is None:
+        return []
+
+    template_paragraph = next(
+        (
+            p for p in template_body.findall("w:p", namespaces=NS)
+            if re.search(r"(?:DOI\s*:|\b(?:УДК|UDC)\b)", normalize_text(element_text(p)), re.I)
+        ),
+        None,
+    )
+    if template_paragraph is None:
+        return []
+
+    template_text = normalize_text(element_text(template_paragraph))
+    template_fields = _extract_editorial_fields(template_text)
+    if not template_fields:
+        return []
+
+    article_metadata = [
+        p for p in body.findall("w:p", namespaces=NS)
+        if (meta_by_node.get(p) and meta_by_node[p].role == "editorial_metadata")
+    ]
+    article_metadata_text = " ".join(normalize_text(element_text(p)) for p in article_metadata)
+    missing = [
+        name for name in ("udc", "doi")
+        if name in template_fields and not _has_editorial_field(article_metadata_text, name)
+    ]
+    if not missing:
+        return []
+
+    target = next(
+        (
+            p for p in article_metadata
+            if _has_editorial_field(normalize_text(element_text(p)), "udc")
+            or _has_editorial_field(normalize_text(element_text(p)), "doi")
+        ),
+        None,
+    )
+    if target is None:
+        target = etree.Element(qn("w:p"))
+        anchor = next(
+            (
+                node for node in list(body)
+                if meta_by_node.get(node)
+                and meta_by_node[node].role in {"title", "author", "affiliation", "email", "abstract", "keywords", "citation"}
+            ),
+            None,
+        )
+        body.insert(body.index(anchor) if anchor is not None else 0, target)
+        meta_by_node[target] = _NodeMeta(
+            None,
+            "editorial_metadata",
+            zone="front_matter",
+            subtype="bibliographic_id",
+            confidence=1.0,
+        )
+
+    _copy_editorial_tabs(target, template_paragraph)
+    target_has_text = bool(normalize_text(element_text(target)))
+    inserted: list[str] = []
+
+    # UDC belongs on the left.  When it is missing but DOI is already present,
+    # prepend it without rewriting the ARTICLE DOI runs.
+    if "udc" in missing:
+        _prepend_highlighted_field(target, template_fields["udc"], add_tab=target_has_text)
+        target_has_text = True
+        inserted.append("UDC")
+
+    # DOI belongs at the right tab stop copied from TEMPLATE.
+    if "doi" in missing:
+        _append_highlighted_field(target, template_fields["doi"], add_tab=target_has_text)
+        inserted.append("DOI")
+
+    return inserted
+
+
+def _extract_editorial_fields(text: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    udc = re.search(r"(?:\bУДК\b|\bUDC\b)\s*:?\s*.*?(?=\s*DOI\s*:|$)", text, re.I)
+    # A Word tab is not textual content, so concatenated OOXML text can look like
+    # ``620.3DOI: ...``.  Do not require a word boundary before DOI.
+    doi = re.search(r"DOI\s*:\s*10\.\d{4,9}/[^\s]+", text, re.I)
+    if udc and udc.group(0).strip():
+        fields["udc"] = udc.group(0).strip()
+    if doi and doi.group(0).strip():
+        fields["doi"] = doi.group(0).strip()
+    return fields
+
+
+def _has_editorial_field(text: str, name: str) -> bool:
+    if name == "udc":
+        return bool(re.search(r"(?:\bУДК\b|\bUDC\b)", text, re.I))
+    if name == "doi":
+        return bool(re.search(r"DOI\s*:", text, re.I))
+    return False
+
+
+def _copy_editorial_tabs(target: etree._Element, template: etree._Element) -> None:
+    source_ppr = template.find("w:pPr", namespaces=NS)
+    source_tabs = source_ppr.find("w:tabs", namespaces=NS) if source_ppr is not None else None
+    if source_tabs is None:
+        return
+    target_ppr = target.find("w:pPr", namespaces=NS)
+    if target_ppr is None:
+        target_ppr = etree.Element(qn("w:pPr")); target.insert(0, target_ppr)
+    old_tabs = target_ppr.find("w:tabs", namespaces=NS)
+    if old_tabs is None:
+        target_ppr.append(_clone(source_tabs))
+    else:
+        target_ppr.replace(old_tabs, _clone(source_tabs))
+
+
+def _highlighted_field_run(text: str) -> etree._Element:
+    run = etree.Element(qn("w:r"))
+    rpr = etree.SubElement(run, qn("w:rPr"))
+    highlight = etree.SubElement(rpr, qn("w:highlight"))
+    highlight.set(qn("w:val"), "yellow")
+    node = etree.SubElement(run, qn("w:t"))
+    node.text = text
+    return run
+
+
+def _tab_run() -> etree._Element:
+    run = etree.Element(qn("w:r"))
+    etree.SubElement(run, qn("w:tab"))
+    return run
+
+
+def _append_highlighted_field(paragraph: etree._Element, text: str, *, add_tab: bool) -> None:
+    if add_tab:
+        paragraph.append(_tab_run())
+    paragraph.append(_highlighted_field_run(text))
+
+
+def _prepend_highlighted_field(paragraph: etree._Element, text: str, *, add_tab: bool) -> None:
+    ppr = paragraph.find("w:pPr", namespaces=NS)
+    insert_at = 1 if ppr is not None else 0
+    paragraph.insert(insert_at, _highlighted_field_run(text))
+    if add_tab:
+        paragraph.insert(insert_at + 1, _tab_run())
+
+
 def _template_render_hints(
     template_zip: ZipFile,
     template_report: DocumentReport,
@@ -708,6 +893,7 @@ def _template_render_hints(
     rubric_texts: list[str] = []
     keyword_texts: list[str] = []
     caption_prefix = None
+    front_gap_candidates: list[int] = []
     for index, child in enumerate(children, start=1):
         bid = f"block_{index:04d}" if local_name(child) in {"p", "tbl"} else None
         role = by_id.get(bid or "", {}).get("detected_role")
@@ -724,6 +910,12 @@ def _template_render_hints(
             elif re.match(r"^Figure\s+\d+", text, re.I):
                 caption_prefix = "Figure"
 
+        if role in {"abstract", "keywords"}:
+            child_index = children.index(child)
+            next_index = child_index + 1
+            if next_index < len(children) and local_name(children[next_index]) == "p" and not normalize_text(element_text(children[next_index])):
+                front_gap_candidates.append(_blank_paragraph_line_twips(children[next_index], child))
+
     # Rubric may be inside a VML textbox and therefore absent from top-level
     # classifier output.  Inspect the shell text directly as a fallback.
     if not rubric_texts and body is not None:
@@ -737,7 +929,30 @@ def _template_render_hints(
         "rubric_has_cyrillic": any(_contains_cyrillic(x) for x in rubric_texts),
         "keywords_use_semicolon": any(";" in x for x in keyword_texts),
         "figure_caption_prefix": caption_prefix,
+        "front_role_gap_twips": _median_int(front_gap_candidates, default=235),
     }
+
+
+def _blank_paragraph_line_twips(blank: etree._Element, previous: etree._Element) -> int:
+    for paragraph in (blank, previous):
+        ppr = paragraph.find("w:pPr", namespaces=NS)
+        spacing = ppr.find("w:spacing", namespaces=NS) if ppr is not None else None
+        line = _safe_int(spacing.get(qn("w:line"))) if spacing is not None else 0
+        if 160 <= line <= 400:
+            return line
+        rpr = ppr.find("w:rPr", namespaces=NS) if ppr is not None else None
+        size = rpr.find("w:sz", namespaces=NS) if rpr is not None else None
+        half_points = _safe_int(size.get(qn("w:val"))) if size is not None else 0
+        if 12 <= half_points <= 32:
+            return round(half_points * 11.5)
+    return 235
+
+
+def _median_int(values: list[int], *, default: int) -> int:
+    if not values:
+        return default
+    ordered = sorted(values)
+    return int(ordered[len(ordered) // 2])
 
 
 def _normalise_rubric_translation(paragraph: etree._Element, template_has_cyrillic: bool) -> int:
@@ -917,6 +1132,43 @@ def _merge_front_text_paragraphs(nodes: list[etree._Element], role: str, meta_by
 # ---------------------------------------------------------------------------
 # Role formatting
 # ---------------------------------------------------------------------------
+
+
+def _apply_front_matter_spacing(
+    *,
+    body: etree._Element,
+    meta_by_node: dict[etree._Element, _NodeMeta],
+    gap_twips: int,
+) -> int:
+    """Recreate TEMPLATE's blank-line rhythm without adding content paragraphs."""
+
+    gap = min(360, max(180, gap_twips))
+    paragraphs = [
+        p for p in body.findall("w:p", namespaces=NS)
+        if normalize_text(element_text(p))
+    ]
+    changed = 0
+    for index, paragraph in enumerate(paragraphs[:-1]):
+        meta = meta_by_node.get(paragraph)
+        if not meta or meta.role not in {"abstract", "keywords"} or not meta.group_id:
+            continue
+        following = paragraphs[index + 1]
+        following_meta = meta_by_node.get(following)
+        expected_next = "keywords" if meta.role == "abstract" else "citation"
+        if not following_meta or following_meta.group_id != meta.group_id or following_meta.role != expected_next:
+            continue
+        ppr = paragraph.find("w:pPr", namespaces=NS)
+        if ppr is None:
+            ppr = etree.Element(qn("w:pPr")); paragraph.insert(0, ppr)
+        spacing = ppr.find("w:spacing", namespaces=NS)
+        if spacing is None:
+            spacing = etree.SubElement(ppr, qn("w:spacing"))
+        if _safe_int(spacing.get(qn("w:after"))) >= gap:
+            continue
+        spacing.set(qn("w:after"), str(gap))
+        spacing.set(qn("w:afterAutospacing"), "0")
+        changed += 1
+    return changed
 
 
 def _add_front_language_separators(body: etree._Element, meta_by_node: dict[etree._Element, _NodeMeta]) -> None:
@@ -2621,8 +2873,13 @@ def _materialise_header_format(payload: bytes) -> bytes:
         style = ppr.find("w:pStyle", namespaces=NS)
         if style is not None:
             ppr.remove(style)
-        # Keep TEMPLATE's explicit left/right parity.  It is part of the journal
-        # geometry and remains safe after the style dependency is removed.
+        # The publication line sits above the rule and is left-aligned on every
+        # page.  Some retained files carry an inherited even-page right alignment;
+        # materialise the current journal rule instead of propagating that residue.
+        alignment = ppr.find("w:jc", namespaces=NS)
+        if alignment is None:
+            alignment = etree.SubElement(ppr, qn("w:jc"))
+        alignment.set(qn("w:val"), "left")
         spacing = ppr.find("w:spacing", namespaces=NS)
         if spacing is None:
             spacing = etree.SubElement(ppr, qn("w:spacing"))
