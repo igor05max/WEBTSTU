@@ -12,6 +12,7 @@ from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
+from apps.template_workspace.v2.word_inputs import prepare_word_file
 
 
 class Command(BaseCommand):
@@ -73,10 +74,4 @@ class Command(BaseCommand):
 
     @staticmethod
     def _prepare_word_file(path: Path, output: Path) -> Path:
-        if path.suffix.casefold() == ".docx":
-            return path
-        if path.suffix.casefold() != ".doc":
-            raise ValueError("V2 accepts only DOCX or DOC files.")
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(convert_legacy_doc_to_docx(path.read_bytes()))
-        return output
+        return prepare_word_file(path, output)

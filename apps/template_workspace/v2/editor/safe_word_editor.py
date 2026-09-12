@@ -15,6 +15,9 @@ from apps.template_workspace.v2.models.template_profile import ArticleStructure,
 from apps.template_workspace.v2.ooxml.namespaces import NS, local_name, qn
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.planning.qwen_like import QwenLikePlanningEngine, PlanningResult
+from apps.template_workspace.v2.editor.template_evidence import NativeTemplateFormatting, StoryImporter
+from apps.template_workspace.v2.editor.integrity import native_integrity
+from apps.template_workspace.v2.review import editorial_findings
 
 
 PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -181,6 +184,8 @@ class _LayoutSpec:
     front_section: etree._Element
     body_section: etree._Element
     full_section: etree._Element
+    body_left_twips: int = 0
+    body_right_twips: int = 0
 
 
 class SafeWordEditor:
@@ -235,7 +240,7 @@ class SafeWordEditor:
         decisions = {item["id"]: item for item in article_structure.blocks}
         table_info = {table.id: table for table in article_report.tables}
 
-        warnings: list[str] = list(planning.warnings)
+        warnings: list[str] = list(planning.warnings) + editorial_findings(article_report, template_report, article_structure, template_profile)
         metrics: dict[str, Any] = {
             "formatted_paragraphs": 0,
             "front_blocks_reordered": 0,
@@ -275,10 +280,14 @@ class SafeWordEditor:
             body = document_root.find("w:body", namespaces=NS)
             if body is None:
                 raise ValueError("ARTICLE.docx has no word:body")
+            original_sections = document_root.xpath('//w:sectPr', namespaces=NS)
+            original_story_refs = [_clone(n) for n in original_sections[0] if local_name(n) in {'headerReference','footerReference'}] if original_sections else []
+            _materialise_source_semantics(body, article_zip)
 
             # Attach semantic metadata to the original top-level nodes before any
             # reordering.  The metadata lives only in Python; we do not pollute OOXML.
             meta_by_node = _metadata_for_body(body, decisions)
+            metrics['existing_editorial_placeholders_marked'] = _mark_existing_editorial_placeholders(body, meta_by_node)
 
             # Canonicalise only the *front-matter flow*.  Native body tables/images
             # remain the original OOXML nodes.
@@ -309,6 +318,7 @@ class SafeWordEditor:
             metrics["template_placeholders_inserted"] += len(placeholder_fields)
 
             template_hints = _template_render_hints(template_zip, template_report, self.classifier)
+            _split_abstract_labels(body, meta_by_node, template_report)
 
             # Formatting is applied from effective role profiles directly, rather
             # than copying the TEMPLATE styles.xml wholesale.  That prevents source
@@ -324,7 +334,12 @@ class SafeWordEditor:
                 if profile is None:
                     # Safety: do not convert an unknown semantic role to BODY.
                     continue
-                _apply_role_format(child, role or "body", profile.typical_paragraph_formatting, profile.typical_run_formatting)
+                pformat, rformat = profile.typical_paragraph_formatting, profile.typical_run_formatting
+                if role == 'abstract' and normalize_text(element_text(child)).casefold().strip(' .:') in {'abstract', 'аннотация', 'резюме'}:
+                    variant = next((v for v in profile.observed_variants if any(p.id == v['block_id'] and p.normalized_text.casefold().strip(' .:') in {'abstract','аннотация','резюме'} for p in template_report.paragraphs)), None)
+                    if variant:
+                        pformat, rformat = variant['paragraph'], variant['run']
+                _apply_role_format(child, role or "body", pformat, rformat)
                 metrics["formatted_paragraphs"] += 1
 
                 if role == "rubric":
@@ -398,9 +413,10 @@ class SafeWordEditor:
                 planning=planning,
             )
 
-            _add_front_language_separators(body, meta_by_node)
+            # Role borders come from TEMPLATE, never from a journal-wide preset.
 
             layout = _layout_spec(template_path, template_profile)
+            _compact_blank_body_paragraphs(body, meta_by_node)
             _remove_existing_inline_section_breaks(body)
             metrics["section_markers_inserted"] += _install_front_body_sections(body, meta_by_node, layout)
 
@@ -432,6 +448,16 @@ class SafeWordEditor:
                     info = table_info.get(meta.block_id) if meta and meta.block_id else None
                     target = layout.printable_width_twips if child in full_width_nodes else layout.column_width_twips
                     if _resize_table_to_width(child, target, info):
+                        _apply_template_table_evidence(child, template_zip, template_report)
+                        if layout.body_left_twips and child not in full_width_nodes:
+                            tblpr = child.find("w:tblPr", namespaces=NS)
+                            jc = tblpr.find("w:jc", namespaces=NS)
+                            if jc is not None:
+                                jc.set(qn("w:val"), "left")
+                            ind = tblpr.find("w:tblInd", namespaces=NS)
+                            if ind is None:
+                                ind = etree.SubElement(tblpr, qn("w:tblInd"))
+                            ind.set(qn("w:w"), str(layout.body_left_twips)); ind.set(qn("w:type"), "dxa")
                         metrics["tables_resized"] += 1
                         if info is not None and info.classification != "FIGURE_CONTAINER":
                             metrics["table_rows_guarded"] += _guard_table_rows(child)
@@ -439,6 +465,10 @@ class SafeWordEditor:
                                 metrics["compact_tables_kept_together"] += 1
                 elif local_name(child) == "p":
                     target = layout.printable_width_twips if child in full_width_nodes else layout.column_width_twips
+                    if child.xpath(".//w:drawing|.//w:pict|.//w:object|.//m:oMath|.//m:oMathPara", namespaces=NS) and layout.body_left_twips:
+                        # Inline equations in prose retain its first-line indent;
+                        # stand-alone objects need the template text-area inset.
+                        _set_object_paragraph_insets(child, layout)
                     metrics["drawings_resized"] += _resize_top_level_drawings(child, target)
 
             replacements: dict[str, bytes] = {"word/document.xml": _serialize_xml(document_root)}
@@ -455,11 +485,26 @@ class SafeWordEditor:
                 replacements["word/document.xml"] = _serialize_xml(document_root)
                 metrics["headers_footers_copied"] = bool(story_replacements)
 
-                settings_payload, even_odd = _merge_template_document_settings(article_zip, template_zip)
-                if settings_payload is not None:
-                    replacements["word/settings.xml"] = settings_payload
-                metrics["even_odd_headers_enabled"] = even_odd
+                if story_replacements:
+                    settings_payload, even_odd = _merge_template_document_settings(article_zip, template_zip)
+                    if settings_payload is not None:
+                        replacements["word/settings.xml"] = settings_payload
+                    metrics["even_odd_headers_enabled"] = even_odd
 
+            if not metrics['headers_footers_copied']:
+                sections = document_root.xpath('//w:sectPr', namespaces=NS)
+                if sections:
+                    for ref in reversed(original_story_refs):
+                        sections[0].insert(0, ref)
+                    replacements['word/document.xml'] = _serialize_xml(document_root)
+
+            metrics['native_integrity'] = native_integrity(
+                article_zip, document_root, replacements,
+                source_author_ids=[b['id'] for b in article_structure.blocks if b.get('detected_role') == 'author'],
+                correspondence_symbols=metrics['journal_symbols_installed'],
+                excluded_metadata_ids=[b['id'] for b in article_structure.blocks if b.get('detected_role') in {'editorial_metadata','article_type','rubric'}])
+            if not metrics['native_integrity']['passed']:
+                raise ValueError('Native content preservation failed: ' + repr(metrics['native_integrity']))
             _write_package(article_zip, output_path, replacements)
 
         changes = [
@@ -529,6 +574,11 @@ def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Elem
         return {"front_blocks_reordered": 0, "front_paragraphs_merged": 0}
 
     front_nodes = children[:body_start]
+    if sum(bool(re.match(r'^(?:ORCID|SPIN|AuthorID)\s*:', normalize_text(element_text(n)), re.I)) for n in front_nodes) >= 2:
+        return {"front_blocks_reordered": 0, "front_paragraphs_merged": 0}
+    if any(local_name(n) == 'tbl' or n.xpath('.//w:drawing|.//w:pict|.//w:object|.//m:oMath', namespaces=NS) for n in front_nodes):
+        # A floating/object front needs native anchoring, not paragraph sorting.
+        return {"front_blocks_reordered": 0, "front_paragraphs_merged": 0}
     # Only operate on front paragraphs; a front table/object is preserved in place.
     front_paragraphs = [n for n in front_nodes if local_name(n) == "p"]
     if not front_paragraphs:
@@ -541,6 +591,12 @@ def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Elem
         text = normalize_text(element_text(node))
         meta = meta_by_node.get(node)
         if not text:
+            continue
+        if (meta and meta.role == 'editorial_metadata'
+                and re.fullmatch(r'(?:Авторы|Authors)\s*:', text, re.I)
+                and any(meta_by_node.get(n) and meta_by_node[n].role == 'author' for n in front_paragraphs)):
+            # The source's stand-alone field label is replaced by the template's
+            # author placement; do not strand it after the abstract/keywords.
             continue
         if meta and meta.group_id:
             groups.setdefault(meta.group_id, []).append(node)
@@ -590,7 +646,7 @@ def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Elem
             role_nodes = by_role.pop(role, [])
             if not role_nodes:
                 continue
-            if role in {"affiliation", "abstract"} and len(role_nodes) > 1:
+            if role in profile.front_merge_roles and len(role_nodes) > 1:
                 combined = _merge_front_text_paragraphs(role_nodes, role, meta_by_node)
                 canonical.append(combined)
                 merged += len(role_nodes) - 1
@@ -678,6 +734,7 @@ def _install_template_front_shell(
     )
     if shell is None:
         return 0
+    NativeTemplateFormatting(template_zip).materialise(shell)
     inner = shell.xpath(".//w:txbxContent/w:p", namespaces=NS)
     text_inner = [p for p in inner if normalize_text(element_text(p))]
     if len(text_inner) < 2:
@@ -741,8 +798,9 @@ def _install_missing_editorial_placeholders(
 
     template_paragraph = next(
         (
-            p for p in template_body.findall("w:p", namespaces=NS)
-            if re.search(r"(?:DOI\s*:|\b(?:УДК|UDC)\b)", normalize_text(element_text(p)), re.I)
+            p for p in template_body.xpath('./w:p|./w:tbl/w:tr/w:tc/w:p', namespaces=NS)[:24]
+            if len(normalize_text(element_text(p))) < 180
+            and re.match(r"^(?:DOI\s*:?\s*10\.|(?:УДК|UDC)\b)", normalize_text(element_text(p)), re.I)
         ),
         None,
     )
@@ -758,7 +816,7 @@ def _install_missing_editorial_placeholders(
         p for p in body.findall("w:p", namespaces=NS)
         if (meta_by_node.get(p) and meta_by_node[p].role == "editorial_metadata")
     ]
-    article_metadata_text = " ".join(normalize_text(element_text(p)) for p in article_metadata)
+    article_metadata_text = " ".join(normalize_text(element_text(p)) for p in list(body)[:20])
     missing = [
         name for name in ("udc", "doi")
         if name in template_fields and not _has_editorial_field(article_metadata_text, name)
@@ -814,10 +872,10 @@ def _install_missing_editorial_placeholders(
 
 def _extract_editorial_fields(text: str) -> dict[str, str]:
     fields: dict[str, str] = {}
-    udc = re.search(r"(?:\bУДК\b|\bUDC\b)\s*:?\s*.*?(?=\s*DOI\s*:|$)", text, re.I)
+    udc = re.search(r"(?:\bУДК\b|\bUDC\b)\s*:?\s*.*?(?=\s*DOI\s*:?|$)", text, re.I)
     # A Word tab is not textual content, so concatenated OOXML text can look like
     # ``620.3DOI: ...``.  Do not require a word boundary before DOI.
-    doi = re.search(r"DOI\s*:\s*10\.\d{4,9}/[^\s]+", text, re.I)
+    doi = re.search(r"DOI\s*:?\s*10\.\d{4,9}/[^\s]+", text, re.I)
     if udc and udc.group(0).strip():
         fields["udc"] = udc.group(0).strip()
     if doi and doi.group(0).strip():
@@ -829,7 +887,7 @@ def _has_editorial_field(text: str, name: str) -> bool:
     if name == "udc":
         return bool(re.search(r"(?:\bУДК\b|\bUDC\b)", text, re.I))
     if name == "doi":
-        return bool(re.search(r"DOI\s*:", text, re.I))
+        return bool(re.search(r"DOI\s*:?\s*10\.", text, re.I))
     return False
 
 
@@ -856,6 +914,31 @@ def _highlighted_field_run(text: str) -> etree._Element:
     node = etree.SubElement(run, qn("w:t"))
     node.text = text
     return run
+
+
+def _mark_existing_editorial_placeholders(body, metadata):
+    changed = 0
+    for node in list(body)[:40]:
+        meta = metadata.get(node)
+        if local_name(node) != 'tbl' and (not meta or meta.zone != 'front_matter'):
+            continue
+        paragraphs = [node] if local_name(node) == 'p' else node.xpath('.//w:tc/w:p', namespaces=NS)
+        for p in paragraphs:
+            value = normalize_text(element_text(p))
+            if not (re.search(r'\bDOI\b.*(?:_{2,}|x{3,})', value, re.I)
+                    or re.fullmatch(r'(?:EDN|DOI)\s*:', value, re.I)
+                    or re.search(r'©\s*(?:Автор\(ы\)|The Author\(s\))', value, re.I)):
+                continue
+            for run in p.xpath('.//w:r[w:t]', namespaces=NS):
+                rpr = run.find('w:rPr', NS)
+                if rpr is None:
+                    rpr = etree.Element(qn('w:rPr')); run.insert(0,rpr)
+                highlight = rpr.find('w:highlight', NS)
+                if highlight is None:
+                    highlight = etree.SubElement(rpr,qn('w:highlight'))
+                highlight.set(qn('w:val'),'yellow')
+            changed += 1
+    return changed
 
 
 def _tab_run() -> etree._Element:
@@ -929,7 +1012,7 @@ def _template_render_hints(
         "rubric_has_cyrillic": any(_contains_cyrillic(x) for x in rubric_texts),
         "keywords_use_semicolon": any(";" in x for x in keyword_texts),
         "figure_caption_prefix": caption_prefix,
-        "front_role_gap_twips": _median_int(front_gap_candidates, default=235),
+        "front_role_gap_twips": _median_int(front_gap_candidates, default=0),
     }
 
 
@@ -1104,24 +1187,17 @@ def _replace_paragraph_text_preserve_rpr(paragraph: etree._Element, text: str) -
 
 def _merge_front_text_paragraphs(nodes: list[etree._Element], role: str, meta_by_node: dict[etree._Element, _NodeMeta]) -> etree._Element:
     first = nodes[0]
-    texts = [normalize_text(element_text(n)) for n in nodes if normalize_text(element_text(n))]
-    if role == "abstract":
-        # Convert a stand-alone marker + body paragraphs into the inline journal
-        # form: "Abstract. ..." / "Аннотация. ...".
-        marker = None
-        rest = texts
-        if texts and texts[0].casefold().strip(" .:") in {"abstract", "аннотация"}:
-            marker = texts[0].strip(" .:")
-            rest = texts[1:]
-        if marker:
-            text = marker + ". " + " ".join(rest)
-        else:
-            text = " ".join(texts)
-    else:
-        text = " ".join(texts)
-    _set_plain_text(first, text)
+    # Move original rich XML, including superscripts, hyperlinks, bookmarks,
+    # fields and equations. Flattening through element_text destroys science.
     meta = meta_by_node[first]
     for node in nodes[1:]:
+        separator = etree.SubElement(first, qn("w:r"))
+        text = etree.SubElement(separator, qn("w:t"))
+        text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        text.text = " "
+        for child in list(node):
+            if local_name(child) != "pPr":
+                first.append(child)
         if node.getparent() is not None:
             node.getparent().remove(node)
         meta_by_node.pop(node, None)
@@ -1142,7 +1218,7 @@ def _apply_front_matter_spacing(
 ) -> int:
     """Recreate TEMPLATE's blank-line rhythm without adding content paragraphs."""
 
-    gap = min(360, max(180, gap_twips))
+    gap = max(0, gap_twips)
     paragraphs = [
         p for p in body.findall("w:p", namespaces=NS)
         if normalize_text(element_text(p))
@@ -1208,6 +1284,41 @@ def _apply_role_format(paragraph: etree._Element, role: str, paragraph_profile: 
         _bold_prefix(paragraph, r"^(?:Table|Таблица)\s*\d+[A-Za-zА-Яа-я]?\s*[\.:]")
 
 
+def _split_abstract_labels(body, metadata, template_report):
+    if not any(p.normalized_text.casefold().strip(' .:') in {'abstract','аннотация','резюме'} for p in template_report.paragraphs):
+        return
+    for paragraph in list(body):
+        meta = metadata.get(paragraph)
+        if not meta or meta.role != 'abstract':
+            continue
+        match = re.match(r'^(?:abstract|аннотация|резюме)\s*[.:]\s*', element_text(paragraph), re.I)
+        if not match or len(element_text(paragraph)) <= match.end():
+            continue
+        runs = paragraph.findall('w:r', NS)
+        if not runs or ''.join(element_text(r) for r in runs) != element_text(paragraph):
+            continue
+        label = etree.Element(qn('w:p'))
+        consumed = 0
+        for run in list(runs):
+            value = element_text(run)
+            if consumed >= match.end():
+                break
+            if len(run.findall('w:t', NS)) != 1 or run.xpath('./w:drawing|./w:pict|./w:object', namespaces=NS):
+                break
+            remaining = match.end() - consumed
+            if len(value) <= remaining:
+                label.append(run)
+            else:
+                prefix = _clone(run)
+                prefix.find('w:t', NS).text = value[:remaining].rstrip()
+                run.find('w:t', NS).text = value[remaining:]
+                label.append(prefix)
+            consumed += len(value)
+        if len(label):
+            paragraph.addprevious(label)
+            metadata[label] = _NodeMeta(None, meta.role, meta.zone, meta.language, meta.group_id, meta.subtype, meta.confidence)
+
+
 def _apply_paragraph_profile(paragraph: etree._Element, role: str, profile: dict[str, Any]) -> None:
     old = paragraph.find("w:pPr", namespaces=NS)
     keep: list[etree._Element] = []
@@ -1220,20 +1331,14 @@ def _apply_paragraph_profile(paragraph: etree._Element, role: str, profile: dict
         new.append(child)
 
     alignment = profile.get("alignment")
-    if role in {"article_type", "rubric", "title", "author", "affiliation", "email", "heading_1", "heading_2", "heading_3", "figure_caption", "table_caption", "references_heading", "funding_heading", "acknowledgements_heading", "conflict_heading"}:
-        alignment = "center"
-    elif role in TEXT_ROLES | {"abstract", "keywords", "citation"}:
-        alignment = alignment or "both"
-    elif role == "editorial_metadata":
-        # UDC/DOI line is left/justified in the journal shell.
-        alignment = alignment or "left"
+    alignment = alignment or "left"
     if alignment:
         jc = etree.SubElement(new, qn("w:jc"))
         jc.set(qn("w:val"), str(alignment))
 
     spacing = dict(profile.get("spacing") or {})
-    if role in TEXT_ROLES | {"abstract", "keywords", "citation", "figure_caption", "table_caption"} and not spacing:
-        spacing = {qn("w:line"): "245", qn("w:lineRule"): "auto"}
+    if not spacing:
+        spacing = {qn("w:line"): "240", qn("w:lineRule"): "auto"}
     if spacing:
         el = etree.SubElement(new, qn("w:spacing"))
         _copy_attribute_dict(el, spacing)
@@ -1243,20 +1348,37 @@ def _apply_paragraph_profile(paragraph: etree._Element, role: str, profile: dict
         if qn("w:after") not in el.attrib:
             el.set(qn("w:after"), "0")
 
-    indentation = dict(profile.get("indentation") or {})
-    if role in {"body", "reference_item", "funding_text", "acknowledgements_text", "conflict_text"} and not indentation:
-        indentation = {qn("w:firstLine"): "426"}
-    if role in FRONT_ROLES | HEADING_ROLES | CAPTION_ROLES:
-        # Front/caption/heading profiles should not inherit the manuscript's large
-        # first-line indent accidentally.
-        indentation = {k: v for k, v in indentation.items() if _local_attr_name(k) not in {"firstLine", "hanging"}}
+    indentation = {qn("w:left"): "0", qn("w:right"): "0", **dict(profile.get("indentation") or {})}
+    if not any(_local_attr_name(k) in {'firstLine','hanging'} for k in indentation):
+        indentation[qn('w:firstLine')] = '0'
     if indentation:
         ind = etree.SubElement(new, qn("w:ind"))
         _copy_attribute_dict(ind, indentation)
 
     if role in HEADING_ROLES | CAPTION_ROLES:
-        etree.SubElement(new, qn("w:keepNext"))
+        etree.SubElement(new, qn("w:keepNext")).set(qn('w:val'), '0' if role == 'figure_caption' else '1')
         etree.SubElement(new, qn("w:keepLines"))
+    # Explicitly cancel source Normal-style layout defaults. In MDPI these are
+    # off; inheriting a source document grid doubles the title/body line pitch.
+    for flag in ('snapToGrid', 'contextualSpacing'):
+        etree.SubElement(new, qn('w:' + flag)).set(qn('w:val'), '0')
+    if role not in HEADING_ROLES | CAPTION_ROLES:
+        etree.SubElement(new, qn('w:keepNext')).set(qn('w:val'), '0')
+        etree.SubElement(new, qn('w:keepLines')).set(qn('w:val'), '0')
+    for name, attributes in (profile.get("border_properties") or {}).items():
+        border = new.find("w:pBdr", namespaces=NS)
+        if border is None:
+            border = etree.SubElement(new, qn("w:pBdr"))
+        _copy_attribute_dict(etree.SubElement(border, qn(f"w:{name}")), attributes)
+    if profile.get("tabs"):
+        for tab in new.findall("w:tabs", namespaces=NS):
+            new.remove(tab)
+        tabs = etree.SubElement(new, qn("w:tabs"))
+        for attributes in profile["tabs"]:
+            _copy_attribute_dict(etree.SubElement(tabs, qn("w:tab")), attributes)
+    if role.startswith('heading_'):
+        outline = etree.SubElement(new, qn("w:outlineLvl"))
+        outline.set(qn("w:val"), str(int(role[-1]) - 1))
 
     if old is None:
         paragraph.insert(0, new)
@@ -1282,6 +1404,8 @@ def _apply_run_profile(paragraph: etree._Element, role: str, profile: dict[str, 
         size = str(defaults["size"])
         sz = etree.SubElement(rpr, qn("w:sz")); sz.set(qn("w:val"), size)
         szcs = etree.SubElement(rpr, qn("w:szCs")); szcs.set(qn("w:val"), size)
+        if profile.get('color'):
+            etree.SubElement(rpr, qn('w:color')).set(qn('w:val'), str(profile['color']))
 
         if defaults.get("bold") is True:
             etree.SubElement(rpr, qn("w:b"))
@@ -1300,11 +1424,27 @@ def _apply_run_profile(paragraph: etree._Element, role: str, profile: dict[str, 
             run.replace(old, rpr)
 
 
+def _materialise_source_semantics(body, article_zip):
+    """Keep inherited hidden/positioned runs even when replacing source styles."""
+    native = NativeTemplateFormatting(article_zip)
+    for p in body.xpath('.//w:p', namespaces=NS):
+        for run in p.findall('w:r', NS):
+            effective = native.properties(p, 'rPr', run)
+            for child in effective:
+                if local_name(child) not in {'vanish', 'webHidden', 'specVanish', 'vertAlign', 'position'}:
+                    continue
+                old = run.find('w:rPr', NS)
+                if old is None:
+                    old = etree.Element(qn('w:rPr')); run.insert(0, old)
+                if old.find(child.tag) is None:
+                    old.append(_clone(child))
+
+
 def _role_run_defaults(role: str, profile: dict[str, Any]) -> dict[str, Any]:
     fonts = profile.get("fonts") or {}
     font_name = None
     for key, value in fonts.items():
-        if _local_attr_name(key) in {"ascii", "hAnsi"} and value and str(value).casefold() != "calibri":
+        if _local_attr_name(key) in {"ascii", "hAnsi"} and value:
             font_name = str(value)
             break
     # The journal's default Normal style is Times New Roman.  Some effective
@@ -1317,45 +1457,19 @@ def _role_run_defaults(role: str, profile: dict[str, Any]) -> dict[str, Any]:
         size = int(raw_size) if raw_size else 22
     except (TypeError, ValueError):
         size = 22
-    # Role-aware journal defaults, in half-points.
-    if role == "title":
-        size = max(size, 28)
-    elif role in {"abstract", "keywords", "citation"}:
-        size = 20
-    elif role in {"reference_item", "table_caption", "figure_caption"}:
-        # The supplied journal uses 10 pt for captions and references even when
-        # only a 11/12 pt complex-script size is visible in the source profile.
-        # Using that ``szCs`` value for Latin text made captions oversized and
-        # stretched the bibliography by almost a full page.
-        size = 20
-    elif role in {"body", "heading_1", "heading_2", "heading_3", "funding_heading", "funding_text", "acknowledgements_heading", "acknowledgements_text", "conflict_heading", "conflict_text"}:
-        size = 22
-
-    bold: bool | None = None
-    italic: bool | None = None
-    if role in {"article_type", "title", "author", "heading_1", "references_heading", "funding_heading", "acknowledgements_heading", "conflict_heading"}:
-        bold, italic = True, False
-    elif role == "rubric":
-        bold, italic = True, True
-    elif role == "heading_2":
-        bold, italic = True, True
-    elif role == "heading_3":
-        bold, italic = False, True
-    elif role == "affiliation":
-        bold, italic = False, True
-    elif role in {"email", "abstract", "keywords", "citation", "body", "reference_item", "figure_caption", "table_caption", "funding_text", "acknowledgements_text", "conflict_text", "editorial_metadata", "article_type", "rubric"}:
-        bold, italic = False, False
+    bold = bool(profile.get("bold", False))
+    italic = bool(profile.get("italic", False))
     return {"font_name": font_name, "size": size, "bold": bold, "italic": italic}
 
 
 def _preserve_semantic_run_properties(old: etree._Element | None, role: str) -> list[etree._Element]:
     if old is None:
         return []
-    preserve = {"vertAlign", "lang", "rtl", "strike", "dstrike", "caps", "smallCaps", "u", "color", "highlight"}
+    preserve = {"vertAlign", "lang", "rtl", "strike", "dstrike", "caps", "smallCaps", "u", "highlight", "vanish", "webHidden", "specVanish", "position"}
     # In flowing prose preserve author-supplied emphasis (variables, Latin names,
     # etc.).  In titles/headings/front roles typography is governed by TEMPLATE.
-    if role in {"body", "reference_item"}:
-        preserve |= {"b", "i"}
+    if role in TEXT_ROLES | {"abstract", "keywords", "citation"}:
+        preserve |= {"b", "i", "color"}
     result: list[etree._Element] = []
     for child in old:
         if local_name(child) in preserve:
@@ -1551,6 +1665,8 @@ def _materialise_reference_numbering(
         if local_name(paragraph) != "p":
             continue
         meta = meta_by_node.get(paragraph)
+        if meta and meta.role == 'references_heading':
+            sequence = 0
         if not meta or meta.role != "reference_item":
             continue
         text = normalize_text(element_text(paragraph))
@@ -1573,7 +1689,6 @@ def _materialise_reference_numbering(
         ind = ppr.find("w:ind", namespaces=NS)
         if ind is not None:
             ind.attrib.pop(qn("w:hanging"), None)
-            ind.attrib.pop(qn("w:left"), None)
         jc = ppr.find("w:jc", namespaces=NS)
         if jc is None:
             jc = etree.SubElement(ppr, qn("w:jc"))
@@ -2299,13 +2414,13 @@ def _layout_spec(template_path: Path, profile: TemplateProfile) -> _LayoutSpec:
     if not sections:
         raise ValueError("TEMPLATE.docx contains no section properties")
     base = _clone(sections[0])
-    _strip_page_numbering(base)
+    _strip_story_refs_and_page_numbering(base)
     _set_section_columns(base, 1)
     _set_section_type(base, "continuous")
 
-    body_template = next((_clone(s) for s in sections if _section_column_count(s) == max(2, profile.layout.default_body_column_count)), _clone(sections[-1]))
+    body_template = next((_clone(s) for s in sections if _section_column_count(s) == max(1, profile.layout.default_body_column_count)), _clone(sections[-1]))
     _strip_story_refs_and_page_numbering(body_template)
-    _set_section_columns(body_template, max(2, profile.layout.default_body_column_count))
+    _set_section_columns(body_template, max(1, profile.layout.default_body_column_count))
     _set_section_type(body_template, "continuous")
 
     full = _clone(body_template)
@@ -2320,9 +2435,13 @@ def _layout_spec(template_path: Path, profile: TemplateProfile) -> _LayoutSpec:
     printable = max(1000, width - left - right)
     cols = body_template.find("w:cols", namespaces=NS)
     gap = int(cols.get(qn("w:space"), "340")) if cols is not None else 340
-    num = max(2, _section_column_count(body_template))
-    column = int((printable - gap * (num - 1)) / num)
-    return _LayoutSpec(printable, column, gap, base, body_template, full)
+    num = max(1, _section_column_count(body_template))
+    body_role = profile.roles.get("body")
+    insets = body_role.typical_paragraph_formatting.get("indentation", {}) if body_role else {}
+    left_indent = max(0, _safe_int(insets.get(qn("w:left"))))
+    right_indent = max(0, _safe_int(insets.get(qn("w:right"))))
+    column = max(1000, int((printable - gap * (num - 1)) / num) - left_indent - right_indent)
+    return _LayoutSpec(printable, column, gap, base, body_template, full, left_indent, right_indent)
 
 
 def _remove_existing_inline_section_breaks(body: etree._Element) -> None:
@@ -2359,6 +2478,8 @@ def _wide_object_spans(
     tables: dict[str, TableInfo],
     layout: _LayoutSpec,
 ) -> list[list[etree._Element]]:
+    if _section_column_count(layout.body_section) == 1:
+        return []
     children = list(body)
     spans: list[list[etree._Element]] = []
     for i, node in enumerate(children):
@@ -2479,7 +2600,7 @@ def _resize_table_to_width(table: etree._Element, target_twips: int, info: Table
     factor = min(factor, 1.35)
     new_widths = [max(120, int(width * factor)) for width in widths]
     if info is not None and info.classification != "FIGURE_CONTAINER":
-        new_widths = _rebalance_data_column_widths(new_widths, int(sum(new_widths)))
+        new_widths = _rebalance_data_column_widths(new_widths, int(sum(new_widths)), table)
     new_total = int(sum(new_widths))
     for col, nw in zip(grid_cols, new_widths):
         col.set(qn("w:w"), str(nw))
@@ -2500,21 +2621,29 @@ def _resize_table_to_width(table: etree._Element, target_twips: int, info: Table
         layout = etree.SubElement(tblpr, qn("w:tblLayout"))
     layout.set(qn("w:type"), "fixed")
 
-    # Scale explicit cell widths using the same factor, preserving spans/merges.
-    for tcw in table.xpath(".//w:tcPr/w:tcW", namespaces=NS):
-        if tcw.get(qn("w:type"), "dxa") == "dxa":
-            old = _safe_int(tcw.get(qn("w:w")))
-            if old > 0:
-                tcw.set(qn("w:w"), str(max(120, int(old * factor))))
+    # Cell widths must agree with the REBALANCED grid, including gridSpan. A
+    # proportional tcW left behind after grid changes makes Word exceed margins.
+    for row in table.findall('w:tr', NS):
+        start = row.find('w:trPr/w:gridBefore', NS)
+        col_index = _safe_int(start.get(qn('w:val'))) if start is not None else 0
+        for cell in row.findall('w:tc', NS):
+            tcpr = cell.find('w:tcPr', NS)
+            if tcpr is None:
+                tcpr = etree.Element(qn('w:tcPr')); cell.insert(0, tcpr)
+            span = tcpr.find('w:gridSpan', NS)
+            count = max(1, _safe_int(span.get(qn('w:val'))) if span is not None else 1)
+            tcw = tcpr.find('w:tcW', NS)
+            if tcw is None:
+                tcw = etree.SubElement(tcpr, qn('w:tcW'))
+            tcw.set(qn('w:w'), str(sum(new_widths[col_index:col_index+count])))
+            tcw.set(qn('w:type'), 'dxa')
+            _scale_drawings(cell, factor=min(1.0, factor), max_width_twips=max(120, sum(new_widths[col_index:col_index+count])-110))
+            col_index += count
 
-    if info is not None and info.classification != "FIGURE_CONTAINER":
-        _apply_journal_data_table_style(table, info)
-
-    _scale_drawings(table, factor=factor, max_width_twips=target_twips)
     return True
 
 
-def _rebalance_data_column_widths(widths: list[int], total: int) -> list[int]:
+def _rebalance_data_column_widths(widths: list[int], total: int, table=None) -> list[int]:
     if not widths or total <= 0:
         return widths
     n = len(widths)
@@ -2524,19 +2653,36 @@ def _rebalance_data_column_widths(widths: list[int], total: int) -> list[int]:
         min_width = int(total * 0.19)
     else:
         min_width = int(total * 0.075)
+    minima = [min_width] * n
+    if table is not None:
+        for row in table.findall('w:tr', NS):
+            column = 0
+            for cell in row.findall('w:tc', NS):
+                span = cell.find('w:tcPr/w:gridSpan', NS)
+                count = max(1, _safe_int(span.get(qn('w:val'))) if span is not None else 1)
+                value = normalize_text(element_text(cell))
+                if count == 1 and column < n and re.fullmatch(r'[<>−–+\-]?\d{1,8}(?:[.,]\d{1,6})?\s*%?', value):
+                    minima[column] = max(minima[column], len(value) * 125 + 220)
+                elif count == 1 and column < n and re.fullmatch(r'[A-Za-zА-Яа-яЁё]{1,10}', value):
+                    # Short row labels/acronyms should not be split into single
+                    # letters just because the manuscript first column was tiny.
+                    minima[column] = max(minima[column], len(value) * 100 + 220)
+                column += count
+    if sum(minima) > total:
+        minima = [min_width] * n
     result = list(widths)
-    deficit = sum(max(0, min_width - w) for w in result)
+    deficit = sum(max(0, minima[i] - w) for i, w in enumerate(result))
     if deficit <= 0:
         return result
     donors = sorted(range(n), key=lambda i: result[i], reverse=True)
     for i in range(n):
-        if result[i] < min_width:
-            result[i] = min_width
+        if result[i] < minima[i]:
+            result[i] = minima[i]
     excess = sum(result) - total
     for i in donors:
         if excess <= 0:
             break
-        can_give = max(0, result[i] - min_width)
+        can_give = max(0, result[i] - minima[i])
         take = min(can_give, excess)
         result[i] -= take; excess -= take
     if excess > 0:
@@ -2707,6 +2853,132 @@ def _resize_top_level_drawings(paragraph: etree._Element, target_twips: int) -> 
     return count
 
 
+def _set_object_paragraph_insets(paragraph, layout):
+    ppr = paragraph.find('w:pPr', NS)
+    if ppr is None:
+        ppr = etree.Element(qn('w:pPr')); paragraph.insert(0, ppr)
+    ind = ppr.find('w:ind', NS)
+    if ind is None:
+        ind = etree.SubElement(ppr, qn('w:ind'))
+    ind.set(qn('w:left'), str(layout.body_left_twips))
+    ind.set(qn('w:right'), str(layout.body_right_twips))
+    if not normalize_text(element_text(paragraph)):
+        ind.attrib.pop(qn('w:hanging'), None)
+        ind.set(qn('w:firstLine'), '0')
+
+
+def _compact_blank_body_paragraphs(body, metadata):
+    in_body = False
+    for p in list(body):
+        meta = metadata.get(p)
+        if meta and meta.zone == 'body':
+            in_body = True
+        if not in_body or local_name(p) != 'p' or normalize_text(element_text(p)):
+            continue
+        if p.xpath('.//w:drawing|.//w:pict|.//w:object|.//m:oMath|.//w:fldChar|.//w:instrText|.//w:bookmarkStart|.//w:bookmarkEnd|.//w:sectPr|.//w:br[@w:type="page"]', namespaces=NS):
+            continue
+        ppr = p.find('w:pPr', NS)
+        if ppr is None:
+            ppr = etree.Element(qn('w:pPr')); p.insert(0,ppr)
+        for name in ('spacing','rPr'):
+            old = ppr.find('w:'+name, NS)
+            if old is not None:
+                ppr.remove(old)
+        spacing = etree.SubElement(ppr, qn('w:spacing'))
+        for key,value in {'before':'0','after':'0','line':'20','lineRule':'exact'}.items():
+            spacing.set(qn('w:'+key),value)
+        rpr = etree.SubElement(ppr, qn('w:rPr'))
+        etree.SubElement(rpr, qn('w:sz')).set(qn('w:val'),'2')
+
+
+def _apply_template_table_evidence(table, template_zip, report):
+    if table.xpath('.//w:drawing|.//w:pict|.//w:object', namespaces=NS):
+        return
+    metadata_row = len(normalize_text(element_text(table))) < 240 and bool(re.search(r'\b(?:УДК|UDC|DOI)\b', element_text(table), re.I))
+    candidates = [t for t in report.tables if t.classification == 'DATA_TABLE']
+    if metadata_row:
+        candidates = [t for t in report.tables if t.row_count == 1 and t.logical_column_count <= 3 and not t.has_drawings]
+    if not candidates:
+        candidates = [t for t in report.tables if not t.has_drawings and t.row_count > 1]
+    if not candidates:
+        return
+    root = etree.fromstring(template_zip.read('word/document.xml'))
+    body = root.find('w:body', NS)
+    example = body[int(candidates[0].id.removeprefix('block_')) - 1]
+    if local_name(example) != 'tbl':
+        return
+    native = NativeTemplateFormatting(template_zip)
+    source_pr = example.find('w:tblPr', NS)
+    target_pr = table.find('w:tblPr', NS)
+    if source_pr is not None and target_pr is not None:
+        for style in target_pr.findall('w:tblStyle', NS):
+            target_pr.remove(style)
+        if metadata_row:
+            borders = target_pr.find('w:tblBorders', NS)
+            if borders is not None:
+                target_pr.remove(borders)
+            for tcpr in table.xpath('.//w:tcPr', namespaces=NS):
+                borders = tcpr.find('w:tcBorders', NS)
+                if borders is not None:
+                    tcpr.remove(borders)
+        for prop in source_pr:
+            if local_name(prop) in {'tblBorders', 'tblCellMar', 'shd'}:
+                _replace_child_by_local_name(target_pr, _clone(prop))
+    sample_rows = example.findall('w:tr', NS)
+    for row_index, row in enumerate(table.findall('w:tr', NS)):
+        sample = sample_rows[0 if row_index == 0 else min(1, len(sample_rows)-1)]
+        sample_cells = sample.findall('w:tc', NS)
+        for index, cell in enumerate(row.findall('w:tc', NS)):
+            sample_cell = sample_cells[min(index, len(sample_cells)-1)]
+            tcpr = cell.find('w:tcPr', NS)
+            if tcpr is None:
+                tcpr = etree.Element(qn('w:tcPr')); cell.insert(0,tcpr)
+            old_borders = tcpr.find('w:tcBorders', NS)
+            if old_borders is not None:
+                tcpr.remove(old_borders)
+            borders = etree.SubElement(tcpr, qn('w:tcBorders'))
+            reference_borders = sample_cell.find('w:tcPr/w:tcBorders', NS)
+            for side in ('top','left','bottom','right','insideH','insideV'):
+                reference_side = reference_borders.find('w:'+side, NS) if reference_borders is not None else None
+                if reference_side is not None:
+                    borders.append(_clone(reference_side))
+                else:
+                    etree.SubElement(borders, qn('w:'+side)).set(qn('w:val'),'nil')
+        paragraphs = sample.xpath('./w:tc/w:p', namespaces=NS)
+        paragraph = next((p for p in paragraphs if normalize_text(element_text(p))), None)
+        if paragraph is None:
+            paragraph = next((p for p in example.xpath('.//w:tc/w:p', namespaces=NS) if normalize_text(element_text(p))), None)
+        if paragraph is None:
+            continue
+        sample_run = max(paragraph.findall('w:r', NS), key=lambda r: len(element_text(r)), default=None)
+        for p in row.xpath('./w:tc/w:p', namespaces=NS):
+            ppr = native.properties(paragraph)
+            # Cell paragraphs never inherit page-wide template sidebar indents.
+            for prop in ppr.findall('w:ind', NS):
+                ppr.remove(prop)
+            ind = etree.SubElement(ppr, qn('w:ind'))
+            for attr in ('left', 'right', 'firstLine'):
+                ind.set(qn('w:'+attr), '0')
+            old = p.find('w:pPr', NS)
+            if old is not None:
+                p.remove(old)
+            p.insert(0, ppr)
+            for run in p.xpath('.//w:r[not(ancestor::m:oMath)]', namespaces=NS):
+                old = run.find('w:rPr', NS)
+                rpr = native.properties(paragraph, 'rPr', sample_run)
+                for prop in _preserve_semantic_run_properties(old, 'body'):
+                    _replace_child_by_local_name(rpr, prop)
+                if old is not None:
+                    run.remove(old)
+                run.insert(0, rpr)
+        if row_index == 0:
+            trpr = row.find('w:trPr', NS)
+            if trpr is None:
+                trpr = etree.Element(qn('w:trPr')); row.insert(0, trpr)
+            if trpr.find('w:tblHeader', NS) is None:
+                etree.SubElement(trpr, qn('w:tblHeader'))
+
+
 def _scale_drawings(node: etree._Element, *, factor: float, max_width_twips: int) -> None:
     max_emu = int(max_width_twips * EMU_PER_TWIP * 0.98)
     for holder in node.xpath(".//wp:inline|.//wp:anchor", namespaces=NS):
@@ -2790,11 +3062,42 @@ def _merge_template_header_footer(
             article_rels_root.remove(item)
 
     replacements: dict[str, bytes] = {}
+    importer = StoryImporter(template_zip, article_zip)
+    native = NativeTemplateFormatting(template_zip)
     copied_relationships: dict[tuple[str, str], str] = {}
     mapped_refs: list[etree._Element] = []
     next_id = _next_relationship_id(article_rels_root)
 
     for ref, rel, story_part in valid_refs:
+        def transform_story(payload):
+            root = etree.fromstring(payload)
+            native.materialise(root)
+            for p in root.xpath('.//w:p', namespaces=NS):
+                value = normalize_text(element_text(p))
+                # Only a pure author shortline is article-specific footer text.
+                # Do not overwrite publication details or a DOI with author names.
+                if story_part.startswith('word/footer') and _is_footer_author_line(value):
+                    _set_plain_text_preserve_ppr(p, author_shortline)
+                # Preserve the user's explicit running-line alignment correction.
+                if story_part.startswith('word/header') and re.match(r'^Journal of .+\bVol\.', value):
+                    ppr = p.find('w:pPr', NS)
+                    jc = ppr.find('w:jc', NS)
+                    if jc is None:
+                        jc = etree.SubElement(ppr, qn('w:jc'))
+                    jc.set(qn('w:val'), 'left')
+                # Unresolved publishing identifiers in a retained shell are
+                # editorial placeholders, not facts about the new ARTICLE.
+                if re.search(r'doi\.org/|\b(?:Received|Accepted|Published):', value, re.I):
+                    for run in p.xpath('.//w:r[w:t]', namespaces=NS):
+                        rpr = run.find('w:rPr', NS)
+                        if rpr is None:
+                            rpr = etree.Element(qn('w:rPr')); run.insert(0, rpr)
+                        highlight = rpr.find('w:highlight', NS)
+                        if highlight is None:
+                            highlight = etree.SubElement(rpr, qn('w:highlight'))
+                        highlight.set(qn('w:val'), 'yellow')
+            return _serialize_xml(root)
+        copied_part = importer.copy(story_part, transform_story)
         relationship_key = (rel["Type"], rel["Target"])
         new_id = copied_relationships.get(relationship_key)
         if new_id is None:
@@ -2803,20 +3106,11 @@ def _merge_template_header_footer(
             relationship = etree.Element(f"{{{PACKAGE_REL_NS}}}Relationship")
             relationship.set("Id", new_id)
             relationship.set("Type", rel["Type"])
-            relationship.set("Target", rel["Target"])
+            relationship.set("Target", copied_part.removeprefix('word/'))
             article_rels_root.append(relationship)
         ref.set(qn("r:id"), new_id)
         mapped_refs.append(ref)
 
-        payload = template_zip.read(story_part)
-        if story_part.startswith("word/header"):
-            payload = _materialise_header_format(payload)
-        elif story_part.startswith("word/footer"):
-            payload = _sanitise_footer_author(payload, author_shortline)
-        replacements[story_part] = payload
-        story_rels = _rels_part_name(story_part)
-        if story_rels in template_zip.namelist():
-            replacements[story_rels] = template_zip.read(story_rels)
 
     for child in list(first_result):
         if local_name(child) in {"headerReference", "footerReference"}:
@@ -2825,10 +3119,17 @@ def _merge_template_header_footer(
         first_result.insert(index, ref)
 
     replacements["word/_rels/document.xml.rels"] = _serialize_xml(article_rels_root)
-    content_types = _merge_content_types(article_zip, template_zip, replacements)
-    if content_types is not None:
-        replacements["[Content_Types].xml"] = content_types
+    replacements.update(importer.parts)
+    replacements['[Content_Types].xml'] = _serialize_xml(importer.content_types)
     return replacements
+
+
+def _is_footer_author_line(text: str) -> bool:
+    if re.fullmatch(r'(?:template|sample)\s+author(?:s| names?)?', text, re.I):
+        return True
+    if not text or len(text) > 240 or re.search(r'\b(?:doi|vol|journal|technologies)\b|https?://', text, re.I):
+        return False
+    return bool(re.search(r'\bet al\.|и др\.|\b[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ][a-zа-яё]+|\b[A-ZА-ЯЁ][a-zа-яё]+\s+[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.', text))
 
 
 def _merge_template_document_settings(article_zip: ZipFile, template_zip: ZipFile) -> tuple[bytes | None, bool]:

@@ -97,8 +97,10 @@ class RoleClassifierV2:
         self.review_threshold = review_threshold
         self.semantic_provider = semantic_provider
 
-    def classify(self, report: DocumentReport) -> SemanticRoleLayer:
+    def classify(self, report: DocumentReport, *, template_mode: bool = False) -> SemanticRoleLayer:
         paragraphs = [p for p in report.paragraphs if p.normalized_text]
+        if template_mode:
+            paragraphs = _template_sample_paragraphs(paragraphs)
         decisions = self._classify_document(paragraphs)
         warnings: list[str] = []
 
@@ -173,6 +175,22 @@ class RoleClassifierV2:
         front_end = _front_matter_end(paragraphs)
         references_start = _find_references_start(paragraphs)
         author_info_start = _find_author_info_start(paragraphs)
+        translated_tail: dict[str, RoleDecision] = {}
+        if references_start is not None:
+            for idx in range(references_start + 1, len(paragraphs)):
+                if not _starts_abstract(paragraphs[idx].normalized_text):
+                    continue
+                end = next((j for j in range(idx + 1, min(len(paragraphs), idx + 8)) if _is_keywords(paragraphs[j].normalized_text)), None)
+                if end is None:
+                    continue
+                start = idx
+                for j in range(max(references_start + 1, idx - 4), idx):
+                    if _looks_like_author(paragraphs[j].normalized_text):
+                        start = j
+                        break
+                self._classify_front_matter(paragraphs[start:end + 1], translated_tail)
+                for decision in translated_tail.values():
+                    decision.zone = BACK_MATTER
 
         front = paragraphs[:front_end]
         self._classify_front_matter(front, decision_by_id)
@@ -186,6 +204,18 @@ class RoleClassifierV2:
             lang = _language(text)
 
             if references_start is not None and idx >= references_start:
+                if p.id in translated_tail:
+                    decision_by_id[p.id] = translated_tail[p.id]
+                    continue
+                if _is_references_heading(lowered):
+                    decision_by_id[p.id] = RoleDecision(p.id, "references_heading", 0.99, "rules", "references zone anchor", heading_level=1, zone=REFERENCES, language=lang)
+                    continue
+                if _is_biography(text):
+                    decision_by_id[p.id] = RoleDecision(p.id, "author_information", 0.95, "rules", "author biography marker", zone=AUTHOR_INFO, language=lang)
+                    continue
+                if re.match(r'^(?:Acknowledgements|Поддержка исследований|Funding)\.', text, re.I):
+                    decision_by_id[p.id] = RoleDecision(p.id, "funding_text", 0.95, "rules", "inline funding marker", zone=BACK_MATTER, language=lang)
+                    continue
                 if author_info_start is not None and idx >= author_info_start:
                     decision_by_id[p.id] = self._classify_author_info_tail(p, lowered, lang)
                     continue
@@ -250,7 +280,11 @@ class RoleClassifierV2:
             groups.append((start, pos))
             start = pos + 1
         if not groups:
-            groups = [(0, len(paragraphs) - 1)]
+            ends = [i for i, p in enumerate(paragraphs) if _is_keywords(p.normalized_text)]
+            if len(ends) > 1:
+                groups = list(zip([0] + [i + 1 for i in ends[:-1]], ends))
+            else:
+                groups = [(0, len(paragraphs) - 1)]
 
         previous_end = -1
         group_no = 0
@@ -279,20 +313,30 @@ class RoleClassifierV2:
             group_no += 1
             group_id = f"front_group_{group_no}"
             group_lang = _language(paragraphs[title_idx].normalized_text)
+            author_indices = {i for i in segment if (abstract_idx is None or i < abstract_idx)
+                              and i != title_idx and _looks_like_author(paragraphs[i].normalized_text)}
+            if author_idx is not None:
+                author_indices.add(author_idx)
 
             for i in segment:
                 p = paragraphs[i]
                 text = p.normalized_text
                 lang = _language(text) or group_lang
-                if i < title_idx:
+                if i in author_indices:
+                    out[p.id] = RoleDecision(p.id, "author", 0.96, "rules", "front-matter author line", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                elif i < title_idx:
                     self._set_front_metadata(paragraphs, i, out)
                 elif i == title_idx:
                     out[p.id] = RoleDecision(p.id, "title", 0.97, "rules", "title immediately precedes author/affiliation block", zone=FRONT_MATTER, language=group_lang, group_id=group_id)
+                elif re.search(r'(?:affiliation|аффилиац)', (p.style_name or '') + ' ' + text, re.I) and not re.match(r'^\*?\s*(?:Correspondence|для переписки)', text, re.I):
+                    out[p.id] = RoleDecision(p.id, "affiliation", 0.97, "rules", "affiliation style or label", zone=FRONT_MATTER, language=lang, group_id=group_id)
+                elif re.match(r'^\*?\s*(?:Correspondence|для переписки)', text, re.I):
+                    out[p.id] = RoleDecision(p.id, "email", 0.99, "rules", "correspondence marker", zone=FRONT_MATTER, language=lang, group_id=group_id)
                 elif author_idx is not None and i == author_idx:
                     out[p.id] = RoleDecision(p.id, "author", 0.96, "rules", "front-matter author line", zone=FRONT_MATTER, language=lang, group_id=group_id)
                 elif email_idx is not None and i == email_idx:
                     out[p.id] = RoleDecision(p.id, "email", 0.99, "rules", "email syntax in front matter", zone=FRONT_MATTER, language=lang, group_id=group_id)
-                elif abstract_idx is not None and keywords_idx is not None and abstract_idx <= i < keywords_idx:
+                elif abstract_idx is not None and abstract_idx <= i < (keywords_idx if keywords_idx is not None else end + 1):
                     out[p.id] = RoleDecision(p.id, "abstract", 0.97, "rules", "abstract range bounded by abstract/keywords markers", zone=FRONT_MATTER, language=lang, group_id=group_id)
                 elif keywords_idx is not None and i == keywords_idx:
                     out[p.id] = RoleDecision(p.id, "keywords", 0.99, "rules", "keywords marker", zone=FRONT_MATTER, language=lang, group_id=group_id)
@@ -318,7 +362,7 @@ class RoleClassifierV2:
         subtype = None
         role = "editorial_metadata"
         confidence = 0.90
-        if re.search(r"\b(тип статьи|article type)\b", lowered):
+        if re.search(r"\b(тип статьи|article type|type of the paper)\b", lowered) or lowered in {"article", "review", "communication"}:
             role, subtype, confidence = "article_type", "article_type", 0.98
         elif re.search(r"\b(рубрика журнала|rubric|section)\s*:?$", lowered):
             subtype, confidence = "rubric_label", 0.98
@@ -345,6 +389,12 @@ def _front_matter_end(paragraphs: list[ParagraphInfo]) -> int:
     last_citation = -1
     last_keywords = -1
     for i, p in enumerate(paragraphs[:80]):
+        # Stop at the FIRST body anchor. Later translated summaries/keywords must
+        # not swallow the entire paper into the front-matter zone.
+        stripped = _strip_heading_number(p.normalized_text).casefold()
+        if i > 0 and (re.match(r"^(?:introduction|введение)(?:[.\s:]|$)", stripped)
+                      or re.match(r"^0\.\s+how to use", p.normalized_text, re.I)):
+            return i
         if _is_citation(p.normalized_text):
             last_citation = i
         if _is_keywords(p.normalized_text):
@@ -356,7 +406,7 @@ def _front_matter_end(paragraphs: list[ParagraphInfo]) -> int:
         text = _strip_heading_number(p.normalized_text).casefold().strip(" .:")
         if text in {"introduction", "введение"}:
             return i
-    return min(len(paragraphs), 32)
+    return min(len(paragraphs), 8)
 
 
 def _find_references_start(paragraphs: list[ParagraphInfo]) -> int | None:
@@ -455,34 +505,36 @@ def _best_author_index(paragraphs: list[ParagraphInfo], indices: list[int]) -> i
     candidates: list[tuple[float, int]] = []
     for i in indices:
         text = paragraphs[i].normalized_text
+        if _starts_abstract(text) or _is_keywords(text) or _is_citation(text):
+            break
         score = 0.0
         if "©" in text:
             score += 4.0
         if _looks_like_author(text):
             score += 2.0
-        if "," in text and len(text) < 220:
-            score += 0.5
         if _looks_like_affiliation(text) or _is_email(text):
             score -= 3.0
         if score > 0:
             candidates.append((score, i))
-    return max(candidates, default=(0.0, -1))[1] if candidates else None
+    return max(candidates, key=lambda item: (item[0], -item[1]))[1] if candidates else None
 
 
 def _best_title_index(paragraphs: list[ParagraphInfo], indices: list[int], author_idx: int | None, abstract_idx: int | None) -> int | None:
-    upper = author_idx if author_idx is not None else abstract_idx
+    upper = abstract_idx
     eligible = [i for i in indices if upper is None or i < upper]
     candidates: list[tuple[float, int]] = []
     for i in eligible:
         text = paragraphs[i].normalized_text
         lowered = text.casefold()
+        style = (paragraphs[i].style_name or "").casefold()
+        if re.search(r"(?:^|[_ .])title$|^название|^заглав", style) or lowered == "title":
+            return i
         if len(text) < 18 or _is_email(text) or _looks_like_affiliation(text) or _looks_like_author(text):
             continue
-        if _is_front_metadata_marker(lowered):
+        if _is_front_metadata_marker(lowered) or _starts_abstract(text) or _is_keywords(text) or lowered.strip(': ') in {'авторы', 'authors'}:
             continue
         score = 0.0
-        if upper is not None:
-            score += max(0.0, 4.0 - (upper - i) * 0.45)
+        score += max(0.0, 4.0 - (i - indices[0]) * 0.8)
         score += min(2.2, len(text) / 90)
         score += min(1.5, _bold_ratio(paragraphs[i]) * 2)
         if _alignment(paragraphs[i]) == "center":
@@ -597,7 +649,11 @@ def _is_front_metadata_marker(lowered: str) -> bool:
 
 
 def _is_references_heading(lowered: str) -> bool:
-    return bool(re.fullmatch(r"(?:references|список литературы|литература|bibliography)", lowered.strip(" .:")))
+    return bool(re.fullmatch(r"(?:references|список литературы|литература|bibliography|(?:список|перечень) использованн(?:ых|ой) (?:источников|литературы)|библиографический список)", lowered.strip(" .:")))
+
+
+def _is_biography(text: str) -> bool:
+    return len(text) > 80 and bool(re.search(r'Research interests:|Область научных интересов|Научные интересы|—\s*(?:д-р|к\.т\.н|Ph\.D|Programmer|senior|младший|техник)', text, re.I))
 
 
 def _is_author_information_heading(lowered: str) -> bool:
@@ -632,16 +688,36 @@ def _is_email(text: str) -> bool:
 
 def _looks_like_author(text: str) -> bool:
     lowered = text.casefold()
-    if len(text) > 240 or any(marker in lowered for marker in ("university", "университет", "institute", "институт", "doi", "удк", "street", "ул.")):
+    if len(text) > 240 or _starts_abstract(text) or _is_keywords(text) or _is_citation(text) or any(marker in lowered for marker in ("university", "университет", "institute", "институт", "doi", "удк", "street", "ул.")):
         return False
     if "©" in text:
         return True
-    # Initials + surname, or Latin full names separated by commas.
-    if re.search(r"\b[A-ZА-ЯЁ]\.?\s*[A-ZА-ЯЁ]\.?\s*[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё-]+", text):
+    # A citation contains authors followed by an article title. It is not an
+    # additional author line merely because initials occur at its beginning.
+    if len(text.split()) > 18 and not re.search(r'\[\d{4}-\d{4}-\d{4}-[\dX]{4}\]', text):
+        return False
+    if re.search(r"\[\d{4}-\d{4}-\d{4}-[\dX]{4}\]", text) and len(text) < 120:
         return True
+    if re.fullmatch(r"[A-ZА-ЯЁ][\w-]+\s+[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.?(?:\s*[,;]\s*[A-ZА-ЯЁ][\w-]+\s+[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.?)?", text):
+        return True
+    # Initials + surname, or Latin full names separated by commas.
+    initial_names = r"\b(?:[A-ZА-ЯЁ]\.\s*){1,3}[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё-]+|\b[A-ZА-ЯЁ][a-zа-яё-]+\s+(?:[A-ZА-ЯЁ]\.\s*){1,3}"
+    if re.search(initial_names, text):
+        residue = re.sub(initial_names, '', text)
+        return len(re.findall(r'[A-Za-zА-Яа-яЁё]', residue)) < 8
     if re.search(r"\b[A-Z][a-z]+(?:\s+[A-Z]\.)?\s+[A-Z][A-Za-z-]+", text) and ("," in text or ";" in text):
         return True
     return False
+
+
+def _template_sample_paragraphs(paragraphs: list[ParagraphInfo]) -> list[ParagraphInfo]:
+    """An instruction preamble is not a title/body formatting example."""
+    for i, p in enumerate(paragraphs[:100]):
+        if i >= 3 and re.match(r"^(?:УДК|UDC)\s*[:\d]", p.normalized_text, re.I):
+            preamble = ' '.join(x.normalized_text for x in paragraphs[:i]).casefold()
+            if 'образец' in preamble and ('оформлен' in preamble or 'требован' in preamble):
+                return paragraphs[i:]
+    return paragraphs
 
 
 def _looks_like_affiliation(text: str) -> bool:

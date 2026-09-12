@@ -23,8 +23,9 @@ def get_ai_source():
     return "ai"
 
 
-def get_api_base_url():
-    return str(getattr(settings, "AI_BASE_URL", "") or "").strip().rstrip("/")
+def get_api_base_url(base_url=None):
+    value = getattr(settings, "AI_BASE_URL", "") if base_url is None else base_url
+    return str(value or "").strip().rstrip("/")
 
 
 def get_models_endpoint():
@@ -49,8 +50,8 @@ def validate_api_key(api_key):
     return normalized
 
 
-def _validate_configuration(api_key=None):
-    if not get_api_base_url():
+def _validate_configuration(api_key=None, *, base_url=None):
+    if not get_api_base_url(base_url):
         raise ValueError("Адрес локального AI API не задан в AI_BASE_URL.")
     return validate_api_key(get_api_key(api_key))
 
@@ -248,11 +249,11 @@ def parse_generation_models(payload):
     return result
 
 
-def fetch_generation_models(*, api_key=None, timeout=None, opener=None):
-    api_key = _validate_configuration(api_key)
+def fetch_generation_models(*, api_key=None, timeout=None, opener=None, base_url=None):
+    api_key = _validate_configuration(api_key, base_url=base_url)
     default_timeout = getattr(settings, "AI_MODELS_TIMEOUT", 30)
     timeout = max(1, int(timeout if timeout is not None else default_timeout))
-    endpoint = get_models_endpoint()
+    endpoint = f"{get_api_base_url(base_url)}/models"
     payload = _request_json(
         method="GET",
         endpoint=endpoint,
@@ -391,13 +392,14 @@ def generate_content(
     timeout=None,
     models=None,
     opener=None,
+    base_url=None,
 ):
-    api_key = _validate_configuration(api_key)
+    api_key = _validate_configuration(api_key, base_url=base_url)
     default_timeout = getattr(settings, "AI_REQUEST_TIMEOUT", 120)
     timeout = max(1, int(timeout if timeout is not None else default_timeout))
-    models = models or fetch_generation_models(api_key=api_key, opener=opener)
+    models = models or fetch_generation_models(api_key=api_key, opener=opener, base_url=base_url)
     candidates = _ordered_candidates(models, model)
-    endpoint = f"{get_api_base_url()}/chat/completions"
+    endpoint = f"{get_api_base_url(base_url)}/chat/completions"
     last_error = None
     for model_id in candidates:
         for include_extensions in (True, False):
@@ -440,7 +442,7 @@ def generate_content(
         stage="generate_content",
         kind="no_compatible_models",
         message="Не удалось выбрать локальную модель для генерации текста.",
-        endpoint=get_models_endpoint(),
+        endpoint=f"{get_api_base_url(base_url)}/models",
     )
 
 

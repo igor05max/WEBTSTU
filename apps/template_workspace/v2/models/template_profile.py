@@ -67,6 +67,7 @@ class TemplateProfile:
     warnings: list[str] = field(default_factory=list)
     front_language_order: list[str] = field(default_factory=list)
     front_role_sequence: list[str] = field(default_factory=list)
+    front_merge_roles: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain(self)

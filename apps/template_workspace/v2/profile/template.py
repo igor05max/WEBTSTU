@@ -63,7 +63,7 @@ class TemplateProfileBuilder:
         self.min_confidence = min_confidence
 
     def build(self, report: DocumentReport) -> TemplateProfile:
-        roles = self.classifier.classify(report)
+        roles = self.classifier.classify(report, template_mode=True)
         role_by_id = {item["block_id"]: item for item in roles.block_roles}
         paragraphs_by_role: dict[str, list[tuple[ParagraphInfo, dict[str, Any]]]] = defaultdict(list)
         for paragraph in report.paragraphs:
@@ -96,6 +96,9 @@ class TemplateProfileBuilder:
             warnings=roles.warnings,
             front_language_order=front_language_order,
             front_role_sequence=front_role_sequence,
+            front_merge_roles=[role for role in ("abstract", "affiliation", "author")
+                               if len(paragraphs_by_role.get(role, [])) == len(front_titles)
+                               and bool(front_titles)],
         )
 
     def _role_profile(self, role: str, items: list[tuple[ParagraphInfo, dict[str, Any]]]) -> RoleFormatProfile | None:

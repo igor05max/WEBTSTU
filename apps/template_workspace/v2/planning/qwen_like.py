@@ -54,6 +54,7 @@ class QwenLikePlanningEngine:
     ) -> PlanningResult:
         snapshot = self._snapshot(article_report, template_report, article_structure, template_profile)
         local = self._local_plan(snapshot)
+        snapshot['allowed_flow'] = dict(local.flow)
         if self.provider is None:
             self.last_result = local
             return local
@@ -153,6 +154,7 @@ class QwenLikePlanningEngine:
         # stable when started on a fresh page/column band than when squeezed after a
         # few prose lines.  Data tables are allowed to flow naturally.
         figure_tables = [t for t in snapshot["article"]["tables"] if t["classification"] == "FIGURE_CONTAINER"]
+        multicolumn = snapshot['template']['layout'].get('default_body_column_count', 1) > 1
         large_figure_ids = []
         two_panel_ids = []
         for t in figure_tables:
@@ -171,12 +173,12 @@ class QwenLikePlanningEngine:
                 "language_order": list(snapshot["template"]["front_language_order"]),
             },
             flow={
-                "page_break_before_large_full_width_figures": bool(large_figure_ids),
-                "large_figure_block_ids": large_figure_ids,
-                "float_lead_after_figure_block_ids": two_panel_ids,
+                "page_break_before_large_full_width_figures": bool(large_figure_ids) and multicolumn,
+                "large_figure_block_ids": large_figure_ids if multicolumn else [],
+                "float_lead_after_figure_block_ids": two_panel_ids if multicolumn else [],
                 "keep_figure_containers_atomic": True,
-                "allow_safe_prose_relocation": True,
-                "float_compact_tables_forward": True,
+                "allow_safe_prose_relocation": multicolumn,
+                "float_compact_tables_forward": multicolumn,
                 "max_float_body_blocks": 2,
                 "max_float_chars": 1800,
                 "max_relocation_chars": 900,
@@ -211,7 +213,7 @@ class QwenLikePlanningEngine:
                 # Deterministic safety/quality decisions are a floor.  A provider
                 # may enable a conservative operation but cannot disable one that
                 # local evidence already requires.
-                if value is True:
+                if value is True and snapshot['template'].get('layout', {}).get('default_body_column_count', 1) > 1:
                     flow[key] = True
             id_fields = {
                 "large_figure_block_ids": set(flow.get("large_figure_block_ids") or []),

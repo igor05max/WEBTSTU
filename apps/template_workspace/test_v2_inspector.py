@@ -389,7 +389,7 @@ class TemplateV2InspectorTests(TestCase):
                 "front_sequence": [],
                 "front_language_order": [],
                 "roles": {},
-                "layout": {},
+                "layout": {"default_body_column_count": 2},
             },
         }
         plan = QwenLikePlanningEngine()._local_plan(snapshot)
@@ -411,7 +411,7 @@ class TemplateV2InspectorTests(TestCase):
             "article": {"blocks": [], "tables": []},
             "template": {
                 "paragraphs": [], "front_sequence": ["title", "author"],
-                "front_language_order": ["ru", "en"], "roles": {}, "layout": {},
+                "front_language_order": ["ru", "en"], "roles": {}, "layout": {"default_body_column_count": 2},
             },
         })
         local.flow["large_figure_block_ids"] = ["block_0042"]

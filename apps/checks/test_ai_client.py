@@ -110,6 +110,18 @@ class AIClientTests(SimpleTestCase):
     AI_DISABLE_THINKING=True,
 )
 class OpenAICompatibleClientTests(SimpleTestCase):
+    def test_per_call_endpoint_does_not_change_global_settings(self):
+        from django.conf import settings
+        observed = []
+        def opener(request, timeout):
+            observed.append(request.full_url)
+            if request.full_url.endswith('/models'):
+                return _JSONResponse(b'{"data":[{"id":"qwen-special"}]}')
+            return _JSONResponse(b'{"choices":[{"message":{"content":"{}"}}]}')
+        generate_content({}, base_url='http://192.0.2.20:9000/v1/', opener=opener)
+        self.assertEqual(observed, ['http://192.0.2.20:9000/v1/models', 'http://192.0.2.20:9000/v1/chat/completions'])
+        self.assertEqual(settings.AI_BASE_URL, 'http://192.0.2.10:8088/v1')
+
     def test_fetches_openai_compatible_models_without_api_key(self):
         observed = {}
 

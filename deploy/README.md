@@ -89,6 +89,22 @@ AI_MODEL=qwen3.5-9b
 SUBMISSION_DOCUMENT_EXTRACTION_AI_ENABLED=1
 ```
 
+Проверено 2026-09-12: порт `1234` не исчез, но на `8088` снова доступна отдельная
+модель `qwen3.8-27b-vision`. Для Template V2 можно задавать её независимо от
+общих AI-модулей (пустой адрес означает использование `AI_BASE_URL`):
+
+```dotenv
+TEMPLATE_V2_QWEN_ENABLED=1
+TEMPLATE_V2_QWEN_BASE_URL=http://192.168.92.20:8088/v1
+TEMPLATE_V2_QWEN_MODEL=qwen3.8-27b-vision
+TEMPLATE_V2_QWEN_TIMEOUT=120
+```
+
+Перед изменением `.env` сохранить резервную копию. Проверять оба `/v1/models`
+и реальный `/v1/chat/completions` с production через `tun0`: список моделей сам
+по себе не гарантирует, что модель загружена. Не менять общий `AI_BASE_URL`
+ради одного форматтера. История подключения — `docs/CODEX_PROJECT_ORIENTATION.md`.
+
 ## HTTPS
 
 Production-домен — `abstract-tidy-berry.ruweb.place`. Сертификат хранится в

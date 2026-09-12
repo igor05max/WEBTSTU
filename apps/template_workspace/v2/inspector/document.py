@@ -525,6 +525,8 @@ class DocumentInspector:
             "pageBreakBefore": bool_prop(p_pr, "w:pageBreakBefore"),
             "outline_level": child_attr(p_pr, "w:outlineLvl"),
             "borders": bool(first_child(p_pr, "w:pBdr") is not None),
+            "border_properties": {local_name(x): dict(x.attrib) for x in first_child(p_pr, "w:pBdr")} if first_child(p_pr, "w:pBdr") is not None else {},
+            "tabs": [dict(x.attrib) for x in p_pr.findall("w:tabs/w:tab", namespaces=NS)],
             "section_break": first_child(p_pr, "w:sectPr") is not None,
         }
 

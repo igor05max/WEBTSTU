@@ -22,6 +22,7 @@ from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
+from apps.template_workspace.v2.word_inputs import prepare_word_file
 
 logger = logging.getLogger(__name__)
 
@@ -44,13 +45,13 @@ def _working_docx_path(job: TemplateJob, field, label: str) -> tuple[Path, list[
     suffix = source.suffix.casefold()
     if suffix == ".docx":
         return source, []
-    if suffix != ".doc":
-        raise ValueError(f"{label} должен быть DOCX или DOC.")
+    if suffix not in {".doc", ".dotx"}:
+        raise ValueError(f"{label} должен быть DOCX, DOC или DOTX.")
     converted_directory = analysis_directory(job) / "converted"
     converted_directory.mkdir(parents=True, exist_ok=True)
     converted_path = converted_directory / f"{label.lower()}.docx"
-    converted_path.write_bytes(convert_legacy_doc_to_docx(source.read_bytes()))
-    return converted_path, [f"{label}: исходный DOC сконвертирован в рабочую DOCX-копию для V2."]
+    prepare_word_file(source, converted_path)
+    return converted_path, [f"{label}: исходный {suffix.upper()[1:]} подготовлен как рабочая DOCX-копия для V2."]
 
 
 def expire_v2_jobs(owner) -> None:

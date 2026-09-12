@@ -125,12 +125,19 @@ AI_MODEL=qwen3.5-9b
 SUBMISSION_DOCUMENT_EXTRACTION_AI_ENABLED=1
 ```
 
-Important history:
+Endpoint verification on 2026-09-12 at 20:34–20:45 UTC:
 
 - Older docs/chats used `AI_BASE_URL=http://192.168.92.20:8088/v1`.
-- That port is stale on the current setup.
+- **8088 is working again**: `/v1/models` reports `qwen3.8-27b-vision`
+  (llama.cpp, completion + multimodal, advertised context 81920). A real JSON
+  completion and image-based layout review both succeeded from production.
 - The VPN host `192.168.92.20` is reachable from production through `tun0`.
-- The working OpenAI-compatible API is currently on port `1234`.
+- Port `1234` also remains available. This is not an exclusive port migration.
+  General site modules still use `AI_BASE_URL` on `1234`.
+- V2 has an independent `TEMPLATE_V2_QWEN_BASE_URL` override; an empty value
+  falls back to `AI_BASE_URL`. Set it together with the model, never change the
+  global endpoint just to test a V2 model. Successful four-pair server runs were
+  recorded with both `qwen3.5-9b`/1234 and `qwen3.8-27b-vision`/8088.
 - `/v1/models` returns several models; `qwen3.5-9b` is the reliable choice.
 - `qwen_9b_custom_lora` may appear in `/models`, but it failed to load because
   the runtime for `torchSafetensors` was missing.
@@ -148,6 +155,7 @@ ip -br addr
 ip route get 192.168.92.20
 ping -c 3 -W 3 192.168.92.20
 curl -sS --connect-timeout 5 --max-time 15 http://192.168.92.20:1234/v1/models
+curl -sS --connect-timeout 5 --max-time 15 http://192.168.92.20:8088/v1/models
 cd /opt/webtstu/app
 sudo -u webtstu /opt/webtstu/venv/bin/python manage.py shell -c \
   'from apps.checks.ai_client import test_connection; import json; print(json.dumps(test_connection(timeout=30), ensure_ascii=False, indent=2))'
@@ -242,7 +250,8 @@ ARTICLE.docx + TEMPLATE.docx
 
 Current V2 stage:
 
-- accepts DOCX and converts legacy DOC to a working DOCX copy before analysis;
+- accepts DOCX/DOC articles and DOCX/DOC/DOTX templates; DOTX preparation only
+  changes the package main content type, without a renderer round-trip;
 - reads DOCX as an OOXML package;
 - inspects document flow, styles, sections, tables, drawings, formulas,
   hyperlinks, headers and footers;
@@ -250,7 +259,7 @@ Current V2 stage:
 - classifies roles through `RoleClassifierV2` using local V2 rules only;
 - uses `QwenLikePlanningEngine` for deterministic front/layout/flow defaults;
 - optionally calls real Qwen through `QwenPlanningProvider` when
-  `TEMPLATE_V2_QWEN_ENABLED=1` and `AI_BASE_URL` is configured;
+  `TEMPLATE_V2_QWEN_ENABLED=1` and the V2-specific or shared endpoint is configured;
 - validates the Qwen JSON patch against a fixed whitelist, deterministic
   ARTICLE candidate IDs and bounded numeric ranges; the local plan is a quality
   floor that Qwen cannot disable or broaden; front-matter geometry remains
@@ -285,9 +294,18 @@ headers/footers to avoid leaking text from another article.
 Missing top-row editorial identifiers are the only content exception: UDC/УДК
 and DOI may be copied from TEMPLATE as yellow-highlighted placeholders, are
 reported in `editor_report.json`, and must be replaced before publication. A real
-ARTICLE value is never overwritten. The running journal line is always
-left-aligned above its rule, and front-matter paragraph gaps mirror the blank-line
+ARTICLE value is never overwritten. The JAMT running journal line is
+left-aligned above its rule; other stories keep their own template formatting.
+Front-matter paragraph gaps mirror the blank-line
 rhythm between abstract, keywords and citation in TEMPLATE.
+
+The 2026-09-12 cross-template pass removes the old forced two-column/Times New
+Roman presets. Column count, page size, role fonts and paragraph insets come from
+TEMPLATE (including MDPI's inset text area and A5 Russian templates). Native
+front-matter merges preserve superscripts and hyperlinks. Imported header logos
+use collision-free package names. The final editor gate detects missing text
+tokens/math/native objects and changed source binary parts before writing DOCX.
+See `docs/template_v2_analysis.md` for the corpus and remaining limitations.
 
 `DocumentDiffBuilder` is not the normal ARTICLE+TEMPLATE path. Use it only for
 reference pairs where the source and formatted file are the same article, e.g.

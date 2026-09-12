@@ -12,6 +12,15 @@ def clean(value: dict[str, Any]) -> dict[str, Any]:
     return {key: item for key, item in value.items() if item not in (None, {}, [], "")}
 
 
+def merge_format(base: dict[str, Any], patch: dict[str, Any]) -> None:
+    """OOXML attributes inherit individually (e.g. after does not reset line)."""
+    for key, value in clean(patch).items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            base[key] = {**base[key], **value}
+        else:
+            base[key] = value
+
+
 class EffectiveFormattingResolver:
     """Resolve Word's visible formatting cascade deterministically.
 
@@ -30,8 +39,8 @@ class EffectiveFormattingResolver:
         self.default_character_style = next((s.style_id for s in styles if s.type == "character" and s.default), None)
 
     def paragraph(self, style_id: str | None, direct: dict[str, Any] | None) -> dict[str, Any]:
-        paragraph: dict[str, Any] = {}
-        run: dict[str, Any] = {}
+        paragraph: dict[str, Any] = {"alignment": "left"}
+        run: dict[str, Any] = {"size": "20", "bold": False, "italic": False}
         paragraph.update(self.doc_defaults.get("paragraph", {}))
         run.update(self.doc_defaults.get("run", {}))
 
@@ -39,11 +48,11 @@ class EffectiveFormattingResolver:
         for style in self._style_chain(resolved_style_id):
             if style.type != "paragraph":
                 continue
-            paragraph.update(clean(style.paragraph_properties))
-            run.update(clean(style.run_properties))
+            merge_format(paragraph, style.paragraph_properties)
+            merge_format(run, style.run_properties)
 
         direct = clean(direct or {})
-        paragraph.update(direct)
+        merge_format(paragraph, direct)
         return {"paragraph": clean(paragraph), "run": clean(run)}
 
     def run(self, paragraph_style_id: str | None, character_style_id: str | None, direct: dict[str, Any] | None) -> dict[str, Any]:
@@ -51,8 +60,8 @@ class EffectiveFormattingResolver:
         char_style_id = character_style_id or self.default_character_style
         for style in self._style_chain(char_style_id):
             if style.type == "character":
-                resolved.update(clean(style.run_properties))
-        resolved.update(clean(direct or {}))
+                merge_format(resolved, style.run_properties)
+        merge_format(resolved, direct or {})
         return clean(resolved)
 
     def _style_chain(self, style_id: str | None) -> list[StyleInfo]:
