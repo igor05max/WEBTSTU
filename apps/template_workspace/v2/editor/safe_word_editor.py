@@ -19,7 +19,7 @@ from apps.template_workspace.v2.editor.template_evidence import NativeTemplateFo
 from apps.template_workspace.v2.editor.integrity import native_integrity
 from apps.template_workspace.v2.editor.protected_blocks import (
     code_nodes, visible_code_text, is_display_equation, format_code,
-    format_display_equation, equation_spacing, hide_equation_control_fields,
+    format_display_equation, equation_spacing, hide_equation_control_fields, legacy_equation_ids,
 )
 from apps.template_workspace.v2.review import editorial_findings
 
@@ -299,6 +299,7 @@ class SafeWordEditor:
             metrics['code_blocks_formatted'] = len(protected_code)
             metrics['display_equations_aligned'] = 0
             display_spacing = equation_spacing(template_zip)
+            equation_ids = legacy_equation_ids(article_zip)
             metrics['existing_editorial_placeholders_marked'] = _mark_existing_editorial_placeholders(body, meta_by_node)
 
             # Canonicalise only the *front-matter flow*.  Native body tables/images
@@ -492,7 +493,7 @@ class SafeWordEditor:
                                 metrics["compact_tables_kept_together"] += 1
                 elif local_name(child) == "p":
                     target = layout.printable_width_twips if child in full_width_nodes else layout.column_width_twips
-                    if is_display_equation(child):
+                    if is_display_equation(child, equation_ids):
                         format_display_equation(child, layout, display_spacing)
                         metrics['display_equations_aligned'] += 1
                     elif child.xpath(".//w:drawing|.//w:pict|.//w:object|.//m:oMath|.//m:oMathPara", namespaces=NS) and layout.body_left_twips:

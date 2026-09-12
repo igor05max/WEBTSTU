@@ -129,6 +129,23 @@ class ReadabilityLayoutTests(SimpleTestCase):
             props=NativeTemplateFormatting(z).table_properties(table._tbl,'tblPr')
         self.assertIsNotNone(props.find('w:tblBorders/w:top',NS))
 
+    def test_converted_ole_equation_uses_stream_evidence_not_empty_progid(self):
+        from io import BytesIO
+        from apps.template_workspace.v2.editor.protected_blocks import legacy_equation_ids
+        stream=BytesIO()
+        with ZipFile(stream,'w') as z:
+            z.writestr('word/_rels/document.xml.rels', '<Relationships><Relationship Id="eq" Type="urn:test/oleObject" Target="embeddings/eq.bin"/><Relationship Id="chart" Type="urn:test/oleObject" Target="embeddings/chart.bin"/></Relationships>')
+            z.writestr('word/embeddings/eq.bin',b'MathType'+ 'Equation Native'.encode('utf-16le'))
+            z.writestr('word/embeddings/chart.bin',b'Excel Chart')
+        with ZipFile(stream) as z: ids=legacy_equation_ids(z)
+        self.assertEqual(ids,{'eq'})
+        p=etree.Element(qn('w:p'),nsmap=NS)
+        ole=etree.SubElement(p,qn('o:OLEObject')); ole.set(qn('r:id'),'eq');ole.set('ProgID','')
+        self.assertFalse(is_display_equation(p))
+        self.assertTrue(is_display_equation(p,ids))
+        ole.set(qn('r:id'),'chart')
+        self.assertFalse(is_display_equation(p,ids))
+
     def test_dense_identifier_table_never_gets_negative_column_width(self):
         doc=Document(); table=doc.add_table(rows=2,cols=30)
         for i in range(30):

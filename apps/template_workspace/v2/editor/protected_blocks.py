@@ -1,5 +1,6 @@
 """Layout-only handling for code and display equations; never regenerate content."""
 import json
+import posixpath
 import re
 from lxml import etree
 
@@ -59,11 +60,36 @@ def code_nodes(body):
     return found
 
 
-def is_display_equation(p):
+def legacy_equation_ids(package):
+    """Recover equation identity lost by DOC converters, without running OLE."""
+    relpart = 'word/_rels/document.xml.rels'
+    if relpart not in package.namelist():
+        return set()
+    found = set()
+    for rel in etree.fromstring(package.read(relpart)):
+        if not rel.get('Type', '').endswith('/oleObject') or rel.get('TargetMode') == 'External':
+            continue
+        target = posixpath.normpath(posixpath.join('word', rel.get('Target', '')))
+        if not target.startswith('word/embeddings/') or target not in package.namelist():
+            continue
+        if package.getinfo(target).file_size > 4 * 1024 * 1024:
+            continue
+        data = package.read(target)
+        # Compound-file stream name + producer marker: don't classify arbitrary
+        # spreadsheet/chart objects merely from dimensions or an empty ProgID.
+        if 'Equation Native'.encode('utf-16le') in data and any(
+                tag in data for tag in (b'Equation.3', b'Equation.DSMT4', b'MathType')):
+            found.add(rel.get('Id'))
+    return found
+
+
+def is_display_equation(p, equation_ids=None):
     if p.tag != qn('w:p'):
         return False
     math = p.xpath('.//m:oMath | .//o:OLEObject[contains(@ProgID,"Equation")]', namespaces=NS)
-    if not math:
+    known_legacy = any(n.get(qn('r:id')) in (equation_ids or set())
+                       for n in p.xpath('.//o:OLEObject', namespaces=NS))
+    if not math and not known_legacy:
         return False
     text = ''.join(p.xpath('.//w:t[not(ancestor::m:oMath)]/text()', namespaces=NS)).strip()
     return not text or bool(re.fullmatch(r'[\[(]?\s*\d+(?:[.\-]\d+)*\s*[\])]?', text))
@@ -114,10 +140,11 @@ def equation_spacing(template_zip):
     """Read real equation paragraphs/styles, including equation table cells."""
     native = NativeTemplateFormatting(template_zip)
     root = etree.fromstring(template_zip.read('word/document.xml'))
+    equation_ids = legacy_equation_ids(template_zip)
     for p in root.xpath('//w:p', namespaces=NS):
         sid = p.find('w:pPr/w:pStyle', NS)
         sid = sid.get(qn('w:val'), '') if sid is not None else ''
-        if is_display_equation(p) or (re.search(r'equation|formula|формул', sid, re.I)
+        if is_display_equation(p, equation_ids) or (re.search(r'equation|formula|формул', sid, re.I)
                                      and not re.search(r'number|номер', sid, re.I)):
             spacing = native.properties(p).find('w:spacing', NS)
             if spacing is not None:
