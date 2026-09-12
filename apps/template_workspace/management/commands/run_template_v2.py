@@ -13,6 +13,7 @@ from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.word_inputs import prepare_word_file
+from apps.template_workspace.v2.readability import run_readability_review
 
 
 class Command(BaseCommand):
@@ -64,6 +65,7 @@ class Command(BaseCommand):
             planner.last_result.to_dict() if planner.last_result else {},
         )
         self._write(output / "editor_report.json", editor_result.to_dict())
+        run_readability_review(result_path, output)
 
         self.stdout.write(self.style.SUCCESS(f"Wrote {result_path}"))
         self.stdout.write(self.style.SUCCESS(f"Wrote reports to {output}"))

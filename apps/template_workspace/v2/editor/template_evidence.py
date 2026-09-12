@@ -13,7 +13,8 @@ CT_NS = 'http://schemas.openxmlformats.org/package/2006/content-types'
 
 
 class NativeTemplateFormatting:
-    def __init__(self, package):
+    def __init__(self, package, *, seal_spacing=True):
+        self.seal_spacing = seal_spacing
         self.root = etree.fromstring(package.read('word/styles.xml'))
         self.styles = {s.get(qn('w:styleId')): s for s in self.root.findall('w:style', NS)}
         self.default = next((s.get(qn('w:styleId')) for s in self.styles.values()
@@ -62,6 +63,15 @@ class NativeTemplateFormatting:
         if kind == 'pPr' and result.find('w:jc', NS) is None:
             etree.SubElement(result, qn('w:jc')).set(qn('w:val'), 'left')
         if kind == 'pPr':
+            # Omitted template defaults must not leak from ARTICLE. In particular
+            # 10pt after-spacing can hide a border in an exact-height header frame.
+            if self.seal_spacing:
+                spacing = result.find('w:spacing', NS)
+                if spacing is None:
+                    spacing = etree.SubElement(result, qn('w:spacing'))
+                for attr, value in {'before':'0','after':'0','line':'240','lineRule':'auto'}.items():
+                    if qn('w:'+attr) not in spacing.attrib:
+                        spacing.set(qn('w:'+attr), value)
             ind = result.find('w:ind', NS)
             if ind is None:
                 ind = etree.SubElement(result, qn('w:ind'))
@@ -73,6 +83,26 @@ class NativeTemplateFormatting:
             for flag in ('snapToGrid','contextualSpacing','keepNext','keepLines'):
                 if result.find('w:'+flag, NS) is None:
                     etree.SubElement(result, qn('w:'+flag)).set(qn('w:val'), '0')
+        return result
+
+    def table_properties(self, table, kind, *, first_row=False, last_row=False):
+        """Resolve reusable table-style borders, padding and conditional rows."""
+        sid = table.find('w:tblPr/w:tblStyle', NS)
+        chain = self.chain(sid.get(qn('w:val'))) if sid is not None else []
+        layers = [s.find('w:'+kind, NS) for s in chain]
+        for flag, active in [('firstRow',first_row), ('lastRow',last_row)]:
+            if active:
+                layers.extend(s.find(f'w:tblStylePr[@w:type="{flag}"]/w:{kind}', NS) for s in chain)
+        if kind == 'tblPr':
+            layers.append(table.find('w:tblPr', NS))
+        result = etree.Element(qn('w:'+kind))
+        for layer in layers:
+            if layer is not None:
+                for node in layer:
+                    old = result.find(node.tag)
+                    if old is not None:
+                        result.remove(old)
+                    result.append(deepcopy(node))
         return result
 
     def materialise(self, root):

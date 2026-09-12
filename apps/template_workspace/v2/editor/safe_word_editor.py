@@ -17,6 +17,10 @@ from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.planning.qwen_like import QwenLikePlanningEngine, PlanningResult
 from apps.template_workspace.v2.editor.template_evidence import NativeTemplateFormatting, StoryImporter
 from apps.template_workspace.v2.editor.integrity import native_integrity
+from apps.template_workspace.v2.editor.protected_blocks import (
+    code_nodes, visible_code_text, is_display_equation, format_code,
+    format_display_equation, equation_spacing, hide_equation_control_fields,
+)
 from apps.template_workspace.v2.review import editorial_findings
 
 
@@ -287,6 +291,14 @@ class SafeWordEditor:
             # Attach semantic metadata to the original top-level nodes before any
             # reordering.  The metadata lives only in Python; we do not pollute OOXML.
             meta_by_node = _metadata_for_body(body, decisions)
+            protected_code = code_nodes(body)
+            code_before = {p: visible_code_text(p) for p in protected_code}
+            for p in protected_code:
+                if p in meta_by_node:
+                    meta_by_node[p].role = 'code'
+            metrics['code_blocks_formatted'] = len(protected_code)
+            metrics['display_equations_aligned'] = 0
+            display_spacing = equation_spacing(template_zip)
             metrics['existing_editorial_placeholders_marked'] = _mark_existing_editorial_placeholders(body, meta_by_node)
 
             # Canonicalise only the *front-matter flow*.  Native body tables/images
@@ -328,6 +340,9 @@ class SafeWordEditor:
                     continue
                 meta = meta_by_node.get(child)
                 role = meta.role if meta else None
+                if child in protected_code:
+                    format_code(child, template_profile.roles.get('body'), _apply_role_format)
+                    continue
                 if not normalize_text(element_text(child)):
                     continue
                 profile = template_profile.roles.get(role or "")
@@ -447,9 +462,16 @@ class SafeWordEditor:
                     meta = meta_by_node.get(child)
                     info = table_info.get(meta.block_id) if meta and meta.block_id else None
                     target = layout.printable_width_twips if child in full_width_nodes else layout.column_width_twips
+                    use_wide_template = bool(info and layout.body_left_twips and
+                        any(3 <= t.logical_column_count <= info.logical_column_count and t.caption_nearby and
+                            not t.has_drawings and not t.has_formulas and
+                            sum(_safe_int(w) for w in t.grid) > layout.column_width_twips * 1.15
+                            for t in template_report.tables))
+                    if use_wide_template:
+                        target = layout.printable_width_twips
                     if _resize_table_to_width(child, target, info):
                         _apply_template_table_evidence(child, template_zip, template_report)
-                        if layout.body_left_twips and child not in full_width_nodes:
+                        if layout.body_left_twips and child not in full_width_nodes and not use_wide_template:
                             tblpr = child.find("w:tblPr", namespaces=NS)
                             jc = tblpr.find("w:jc", namespaces=NS)
                             if jc is not None:
@@ -458,6 +480,11 @@ class SafeWordEditor:
                             if ind is None:
                                 ind = etree.SubElement(tblpr, qn("w:tblInd"))
                             ind.set(qn("w:w"), str(layout.body_left_twips)); ind.set(qn("w:type"), "dxa")
+                        elif use_wide_template:
+                            tblpr = child.find('w:tblPr', NS)
+                            ind = tblpr.find('w:tblInd', NS)
+                            if ind is not None:
+                                ind.set(qn('w:w'), '0')
                         metrics["tables_resized"] += 1
                         if info is not None and info.classification != "FIGURE_CONTAINER":
                             metrics["table_rows_guarded"] += _guard_table_rows(child)
@@ -465,12 +492,16 @@ class SafeWordEditor:
                                 metrics["compact_tables_kept_together"] += 1
                 elif local_name(child) == "p":
                     target = layout.printable_width_twips if child in full_width_nodes else layout.column_width_twips
-                    if child.xpath(".//w:drawing|.//w:pict|.//w:object|.//m:oMath|.//m:oMathPara", namespaces=NS) and layout.body_left_twips:
+                    if is_display_equation(child):
+                        format_display_equation(child, layout, display_spacing)
+                        metrics['display_equations_aligned'] += 1
+                    elif child.xpath(".//w:drawing|.//w:pict|.//w:object|.//m:oMath|.//m:oMathPara", namespaces=NS) and layout.body_left_twips:
                         # Inline equations in prose retain its first-line indent;
                         # stand-alone objects need the template text-area inset.
                         _set_object_paragraph_insets(child, layout)
                     metrics["drawings_resized"] += _resize_top_level_drawings(child, target)
 
+            metrics['hidden_equation_controls_guarded'] = hide_equation_control_fields(body)
             replacements: dict[str, bytes] = {"word/document.xml": _serialize_xml(document_root)}
             if copy_template_headers:
                 author_short = _article_author_shortline(article_structure, article_report)
@@ -505,6 +536,9 @@ class SafeWordEditor:
                 excluded_metadata_ids=[b['id'] for b in article_structure.blocks if b.get('detected_role') in {'editorial_metadata','article_type','rubric'}])
             if not metrics['native_integrity']['passed']:
                 raise ValueError('Native content preservation failed: ' + repr(metrics['native_integrity']))
+            metrics['code_content_preserved'] = all(visible_code_text(p) == text for p, text in code_before.items())
+            if not metrics['code_content_preserved']:
+                raise ValueError('Code whitespace or content changed during formatting')
             _write_package(article_zip, output_path, replacements)
 
         changes = [
@@ -2647,6 +2681,50 @@ def _rebalance_data_column_widths(widths: list[int], total: int, table=None) -> 
     if not widths or total <= 0:
         return widths
     n = len(widths)
+    # A narrow identifier column must not consume 15.5% of every four-column
+    # table. Allocate from actual body text, leaving room for long code/model IDs.
+    if table is not None and n >= 3:
+        values = [[] for _ in widths]
+        rows = table.findall('w:tr', NS)
+        for row in rows[1:]:
+            col = 0
+            for cell in row.findall('w:tc', NS):
+                span = cell.find('w:tcPr/w:gridSpan', NS)
+                count = max(1, _safe_int(span.get(qn('w:val'))) if span is not None else 1)
+                if count == 1 and col < n:
+                    values[col].append(normalize_text(element_text(cell)))
+                col += count
+        if all(values) and any(any(len(v)>25 and re.fullmatch(r'[\w.()+/@\-]+',v) for v in column) for column in values):
+            desired = []
+            for column in values:
+                longest = max(len(v) for v in column)
+                if all(re.fullmatch(r'[\d.,%+−–\-<> ]+',v) for v in column):
+                    # Confidence intervals can wrap once at the range separator;
+                    # do not give them the width of a long prose/identifier column.
+                    numeric_length = max(len(part) for v in column for part in re.split(r'(?<=\d)[–−-](?=\d)',v))
+                    desired.append(max(450, numeric_length*105+180))
+                else:
+                    desired.append(max(650, min(2600 if n>=7 else 6500, longest*100+180)))
+            # Header labels need room too, even when all body values are short
+            # numbers. Otherwise "parameter class" becomes a vertical letter stack.
+            col = 0
+            for cell in rows[0].findall('w:tc', NS):
+                span = cell.find('w:tcPr/w:gridSpan', NS)
+                count = max(1, _safe_int(span.get(qn('w:val'))) if span is not None else 1)
+                text = normalize_text(element_text(cell))
+                if count == 1 and col < n:
+                    word = max((len(w) for w in text.split()), default=0)
+                    desired[col] = max(desired[col], word*115+180, min(2600,len(text)*55+180))
+                col += count
+            # Preserve some header space, but favour unbroken scientific IDs.
+            scale = total/sum(desired)
+            result = [max(350, int(v*scale)) for v in desired]
+            if sum(result) > total:
+                # Very dense tables cannot afford a 350-twip floor per column.
+                # Rescale the floor too; never compensate with a negative width.
+                result = [max(1, int(v*total/sum(result))) for v in result]
+            result[max(range(n),key=lambda i:result[i])] += total-sum(result)
+            return result
     if n == 4:
         min_width = int(total * 0.155)
     elif n == 3:
@@ -2817,7 +2895,7 @@ def _keep_compact_table_together(table: etree._Element, info: TableInfo) -> bool
     """Prevent a short table from being split at a page or column boundary."""
 
     rows = table.findall("w:tr", namespaces=NS)
-    if not 1 < len(rows) <= 6:
+    if not 1 < len(rows) <= 12:
         return False
     if len(normalize_text(element_text(table))) > 1800:
         return False
@@ -2828,12 +2906,16 @@ def _keep_compact_table_together(table: etree._Element, info: TableInfo) -> bool
             ppr = paragraph.find("w:pPr", namespaces=NS)
             if ppr is None:
                 ppr = etree.Element(qn("w:pPr")); paragraph.insert(0, ppr)
-            if ppr.find("w:keepLines", namespaces=NS) is None:
-                etree.SubElement(ppr, qn("w:keepLines"))
-                changed = True
-            if row_index < len(rows) - 1 and ppr.find("w:keepNext", namespaces=NS) is None:
-                etree.SubElement(ppr, qn("w:keepNext"))
-                changed = True
+            keep = ppr.find('w:keepLines', NS)
+            if keep is None:
+                keep = etree.SubElement(ppr, qn('w:keepLines'))
+            keep.set(qn('w:val'),'1')
+            if row_index < len(rows) - 1:
+                keep = ppr.find('w:keepNext', NS)
+                if keep is None:
+                    keep = etree.SubElement(ppr, qn('w:keepNext'))
+                keep.set(qn('w:val'),'1')
+            changed = True
     return changed
 
 
@@ -2899,16 +2981,18 @@ def _apply_template_table_evidence(table, template_zip, report):
     if metadata_row:
         candidates = [t for t in report.tables if t.row_count == 1 and t.logical_column_count <= 3 and not t.has_drawings]
     if not candidates:
-        candidates = [t for t in report.tables if not t.has_drawings and t.row_count > 1]
+        candidates = [t for t in report.tables if not t.has_drawings and not t.has_formulas and t.row_count > 1]
     if not candidates:
         return
+    count = len(table.findall('w:tblGrid/w:gridCol', NS))
+    candidates.sort(key=lambda t: (not bool(t.caption_nearby), abs(t.logical_column_count-count)))
     root = etree.fromstring(template_zip.read('word/document.xml'))
     body = root.find('w:body', NS)
     example = body[int(candidates[0].id.removeprefix('block_')) - 1]
     if local_name(example) != 'tbl':
         return
     native = NativeTemplateFormatting(template_zip)
-    source_pr = example.find('w:tblPr', NS)
+    source_pr = native.table_properties(example, 'tblPr')
     target_pr = table.find('w:tblPr', NS)
     if source_pr is not None and target_pr is not None:
         for style in target_pr.findall('w:tblStyle', NS):
@@ -2925,8 +3009,13 @@ def _apply_template_table_evidence(table, template_zip, report):
             if local_name(prop) in {'tblBorders', 'tblCellMar', 'shd'}:
                 _replace_child_by_local_name(target_pr, _clone(prop))
     sample_rows = example.findall('w:tr', NS)
+    # Repeated body formatting comes from an interior row, not the first
+    # post-header/group boundary of a merged template table.
+    interior = sample_rows[1:-1] or sample_rows[1:] or sample_rows
+    body_sample = min(interior, key=lambda row: len(row.xpath(
+        './w:tc/w:tcPr/w:tcBorders/*[not(@w:val="nil" or @w:val="none")]', namespaces=NS)))
     for row_index, row in enumerate(table.findall('w:tr', NS)):
-        sample = sample_rows[0 if row_index == 0 else min(1, len(sample_rows)-1)]
+        sample = sample_rows[0] if row_index == 0 else body_sample
         sample_cells = sample.findall('w:tc', NS)
         for index, cell in enumerate(row.findall('w:tc', NS)):
             sample_cell = sample_cells[min(index, len(sample_cells)-1)]
@@ -2937,9 +3026,27 @@ def _apply_template_table_evidence(table, template_zip, report):
             if old_borders is not None:
                 tcpr.remove(old_borders)
             borders = etree.SubElement(tcpr, qn('w:tcBorders'))
+            inherited_cell = native.table_properties(example, 'tcPr', first_row=row_index==0,
+                                                      last_row=row_index==len(table.findall('w:tr', NS))-1)
             reference_borders = sample_cell.find('w:tcPr/w:tcBorders', NS)
+            if reference_borders is None:
+                reference_borders = inherited_cell.find('w:tcBorders', NS)
+            valign = sample_cell.find('w:tcPr/w:vAlign', NS)
+            if valign is None:
+                valign = inherited_cell.find('w:vAlign', NS)
+            if valign is not None:
+                _replace_child_by_local_name(tcpr, _clone(valign))
             for side in ('top','left','bottom','right','insideH','insideV'):
                 reference_side = reference_borders.find('w:'+side, NS) if reference_borders is not None else None
+                if (row_index > 0 and side == 'bottom' and sample is sample_rows[-1]
+                        and row_index < len(table.findall('w:tr', NS))-1):
+                    # The bottom edge of a two-row example is not an instruction
+                    # to underline every body row of a longer article table.
+                    reference_side = None
+                if side == 'bottom' and row_index == len(table.findall('w:tr', NS))-1:
+                    outer_bottom = source_pr.find('w:tblBorders/w:bottom', NS)
+                    if outer_bottom is not None and (reference_side is None or reference_side.get(qn('w:val')) in {'nil','none'}):
+                        reference_side = outer_bottom
                 if reference_side is not None:
                     borders.append(_clone(reference_side))
                 else:
@@ -3071,7 +3178,10 @@ def _merge_template_header_footer(
     for ref, rel, story_part in valid_refs:
         def transform_story(payload):
             root = etree.fromstring(payload)
-            native.materialise(root)
+            # Legacy footer PAGE frames are positioned relative to adjacent text;
+            # their working frame rhythm must not be changed with the header fix.
+            story_native = NativeTemplateFormatting(template_zip, seal_spacing=not story_part.startswith('word/footer'))
+            story_native.materialise(root)
             for p in root.xpath('.//w:p', namespaces=NS):
                 value = normalize_text(element_text(p))
                 # Only a pure author shortline is article-specific footer text.

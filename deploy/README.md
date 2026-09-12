@@ -98,12 +98,23 @@ TEMPLATE_V2_QWEN_ENABLED=1
 TEMPLATE_V2_QWEN_BASE_URL=http://192.168.92.20:8088/v1
 TEMPLATE_V2_QWEN_MODEL=qwen3.8-27b-vision
 TEMPLATE_V2_QWEN_TIMEOUT=120
+TEMPLATE_V2_VISUAL_REVIEW_ENABLED=1
+TEMPLATE_V2_VISUAL_REVIEW_MAX_PAGES=8
+TEMPLATE_V2_VISUAL_REVIEW_BUDGET=180
 ```
 
 Перед изменением `.env` сохранить резервную копию. Проверять оба `/v1/models`
 и реальный `/v1/chat/completions` с production через `tun0`: список моделей сам
 по себе не гарантирует, что модель загружена. Не менять общий `AI_BASE_URL`
 ради одного форматтера. История подключения — `docs/CODEX_PROJECT_ORIENTATION.md`.
+
+С 2026-09-13 V2 умеет проверять PDF-render через vision-модель после сохранения
+DOCX. Проверка выбирает до 8 наиболее насыщенных страниц и отправляет их
+перекрывающимися частями; охват и замечания доступны в `readability_report.json`.
+180 секунд — общий бюджет запросов после конвертации. При недоступности модели
+DOCX остаётся доступен, отчёт показывает неполную/невыполненную проверку.
+Этот этап не переписывает текст, код или формулы. Для отключения только vision
+установить `TEMPLATE_V2_VISUAL_REVIEW_ENABLED=0`, не менять общий AI endpoint.
 
 ## HTTPS
 

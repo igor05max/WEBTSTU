@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods
 
-from apps.checks.ai_client import get_api_base_url, get_provider_label, is_ai_configured
+from apps.checks.ai_client import get_api_base_url
 from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.v2.forms import TemplateV2JobForm
 from apps.template_workspace.v2.services import analysis_directory, expire_v2_jobs, launch_v2_job
@@ -21,14 +22,16 @@ FILES = {
     "profile": ("template_profile.json", "application/json", "template_profile.json"),
     "mapping": ("mapping_preview.json", "application/json", "mapping_preview.json"),
     "editor": ("editor_report.json", "application/json", "editor_report.json"),
+    "readability": ("readability_report.json", "application/json", "readability_report.json"),
 }
 
 
 def ai_status():
+    endpoint = get_api_base_url(settings.TEMPLATE_V2_QWEN_BASE_URL or None)
     return {
-        "configured": is_ai_configured(),
-        "provider_label": get_provider_label(),
-        "endpoint": get_api_base_url(),
+        "configured": bool(settings.TEMPLATE_V2_QWEN_ENABLED and endpoint),
+        "provider_label": settings.TEMPLATE_V2_QWEN_MODEL,
+        "endpoint": endpoint,
     }
 
 

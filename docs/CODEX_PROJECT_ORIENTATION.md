@@ -197,8 +197,8 @@ unavailable. An AI outage should normally be reported as a partial or
 not-performed check instead of blocking a submission.
 
 Template V2 can also use real Qwen through a feature-gated constrained planning
-provider. It never gives Qwen direct access to document mutation; see the V2
-boundary below.
+provider and a separate bounded page-crop readability review. Neither gives Qwen
+direct access to document mutation; see the V2 boundary below.
 
 ## Template Workspace V1
 
@@ -306,6 +306,15 @@ front-matter merges preserve superscripts and hyperlinks. Imported header logos
 use collision-free package names. The final editor gate detects missing text
 tokens/math/native objects and changed source binary parts before writing DOCX.
 See `docs/template_v2_analysis.md` for the corpus and remaining limitations.
+
+The 2026-09-13 readability pass protects multiline JSON/code from justification,
+preserves exact code whitespace, centres display equations and bounds number
+tabs, and allocates table width using both headers and data. Hidden MathType
+section controls stay hidden in LibreOffice. Post-render Qwen vision is separate
+from the planner: `TEMPLATE_V2_VISUAL_REVIEW_ENABLED=1`, default 8 selected pages,
+180-second request budget. It emits advisory `readability_report.json`, with
+explicit checked/not-checked pages; it never rewrites research. Both stages use
+the independent V2 endpoint (8088), leaving shared site AI (1234) unchanged.
 
 `DocumentDiffBuilder` is not the normal ARTICLE+TEMPLATE path. Use it only for
 reference pairs where the source and formatted file are the same article, e.g.

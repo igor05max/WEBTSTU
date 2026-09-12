@@ -12,7 +12,7 @@ from typing import Any
 from django.conf import settings
 from django.utils import timezone
 
-from apps.checks.ai_client import get_api_base_url, is_ai_configured
+from apps.checks.ai_client import get_api_base_url
 from apps.submissions.document_conversion import LegacyDocConversionError, convert_legacy_doc_to_docx
 from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.services import output_directory
@@ -23,6 +23,7 @@ from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.word_inputs import prepare_word_file
+from apps.template_workspace.v2.readability import run_readability_review, review_summary
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,7 @@ def run_v2_job(job_id: str) -> None:
             planner.last_result.to_dict() if planner.last_result else {},
         )
         write_json(output / "editor_report.json", editor_result.to_dict())
+        readability = run_readability_review(result_docx_path(job), output)
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
@@ -136,12 +138,19 @@ def run_v2_job(job_id: str) -> None:
         warnings.extend(template_profile.warnings)
         warnings.extend(mapping_preview.warnings)
         warnings.extend(editor_result.warnings)
+        warnings.extend(readability['warnings'])
+        warnings.extend(
+            f"Стр. {issue['page']}: {issue['description']} "
+            f"({'Qwen, требует проверки' if issue['source'] == 'qwen-vision' else 'геометрический контроль'})"
+            for issue in readability['issues']
+        )
+        plan.append({'kind':'Читаемость', 'text':review_summary(readability)})
         if not getattr(settings, "TEMPLATE_V2_QWEN_ENABLED", False):
             warnings.append("Qwen/VPN: планировщик Template V2 выключен; применён детерминированный локальный план.")
-        elif not is_ai_configured():
+        elif not get_api_base_url(settings.TEMPLATE_V2_QWEN_BASE_URL or None):
             warnings.append("Qwen/VPN: AI_BASE_URL не задан; Template V2 применил детерминированный локальный fallback.")
         else:
-            warnings.append(f"Qwen/VPN: планировщик Template V2 настроен через {get_api_base_url()}; ответ проходит whitelist-валидацию, при сбое используется локальный fallback.")
+            warnings.append(f"Qwen/VPN: планировщик Template V2 настроен через {get_api_base_url(settings.TEMPLATE_V2_QWEN_BASE_URL or None)}; ответ проходит whitelist-валидацию, при сбое используется локальный fallback.")
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
             status="completed",
             message="V2 RESULT.docx, отчёты, TemplateProfile и MappingPreview готовы.",
