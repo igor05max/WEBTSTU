@@ -1,14 +1,12 @@
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.contrib import messages
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
-from .forms import TemplateJobForm
 from .models import TemplateJob
-from .services import expire_jobs, launch_job, output_directory
+from .services import expire_jobs, output_directory
 
 FILES = {"pdf": ("result/result.pdf", "application/pdf", "article.pdf"),
          "docx": ("result/result.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "article.docx"),
@@ -20,22 +18,10 @@ FILES = {"pdf": ("result/result.pdf", "application/pdf", "article.pdf"),
 @login_required
 @require_http_methods(["GET", "POST"])
 def workspace(request):
-    expire_jobs(request.user)
-    form = TemplateJobForm(request.POST or None, request.FILES or None)
-    if request.method == "POST" and form.is_valid():
-        with transaction.atomic():
-            # Serialize submissions from the same account, including concurrent tabs.
-            get_user_model().objects.select_for_update().get(pk=request.user.pk)
-            if TemplateJob.objects.filter(owner=request.user, status__in=["queued", "running"]).exists():
-                form.add_error(None, "Дождитесь завершения текущей сборки.")
-            else:
-                job = TemplateJob.objects.create(owner=request.user, **form.cleaned_data,
-                    article_name=form.cleaned_data["article"].name,
-                    template_name=form.cleaned_data["template"].name)
-                transaction.on_commit(lambda: launch_job(job))
-                return redirect("template_workspace:detail", job_id=job.pk)
-    return render(request, "template_workspace/workspace.html", {
-        "form": form, "jobs": TemplateJob.objects.filter(owner=request.user, kind="v1")[:20]})
+    """Retired entry point: never create or launch another V1 job."""
+    if request.method == "POST":
+        messages.info(request, 'Старая версия отключена. Выберите файлы заново в «Шаблон V2».')
+    return redirect("template_workspace:v2_workspace")
 
 
 def owned_job(request, job_id):

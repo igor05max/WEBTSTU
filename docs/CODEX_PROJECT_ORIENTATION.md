@@ -32,7 +32,7 @@ publications and staff research activity. The main application modules are:
 - `conclusions`: final DOCX/PDF conclusions, signatures and hashes;
 - `activities`: publication plans and scientific results;
 - `citations`: local eLibrary RAG/retrieval and optional LLM reranking;
-- `template_workspace`: V1 and V2 article-formatting workspaces.
+- `template_workspace`: the active "Шаблон V2" article editor and archived V1 results.
 
 The shortest accurate production request flow is:
 
@@ -229,9 +229,11 @@ Module:
 apps/template_workspace/
 ```
 
-This is the existing converter workspace. It uses the old flow around
-`ConversionPipeline`, `ArticleIR`, `TemplateProfile`, LaTeX generation and PDF
-preview. Keep it working unless the user explicitly asks to change V1.
+Retired from the UI by explicit user request on 2026-09-16. GET and POST to
+`/template/` redirect to `/template/v2/`; the old entry point never creates a job.
+The sidebar has only "Шаблон V2" and no link back to the old upload form.
+Keep old owner-only detail/progress/download links and stored files as an archive.
+Legacy `ConversionPipeline`/`ArticleIR` code is not the active V2 editor.
 
 V1 jobs are `TemplateJob.kind = "v1"`.
 
@@ -379,8 +381,8 @@ V2 may reuse shared infrastructure:
 V2 must not use the legacy `ConversionPipeline`, `ArticleIR`, or old DOCX
 generator as its architectural core.
 
-V2 jobs are `TemplateJob.kind = "v2"`, so old `/template/` history and new
-`/template/v2/` history stay separate.
+V2 jobs are `TemplateJob.kind = "v2"`; the active history at `/template/v2/`
+contains only V2 results. Archived V1 records are not migrated or deleted.
 
 ## V2 Files
 

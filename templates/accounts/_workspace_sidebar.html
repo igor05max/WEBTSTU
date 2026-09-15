@@ -23,14 +23,9 @@
                 {% if workspace_submission_count %}<span class="dashboard-nav-count">{{ workspace_submission_count }}</span>{% endif %}
             </a>
 
-            <a class="dashboard-nav-link{% if active_section == 'template' %} is-active{% endif %}" href="{% url 'template_workspace:workspace' %}"{% if active_section == 'template' %} aria-current="page"{% endif %}>
-                <span class="dashboard-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h3M14 15h2M8 18h8"/></svg></span>
-                <span>Шаблон</span>
-            </a>
-
             <a class="dashboard-nav-link{% if active_section == 'template_v2' %} is-active{% endif %}" href="{% url 'template_workspace:v2_workspace' %}"{% if active_section == 'template_v2' %} aria-current="page"{% endif %}>
                 <span class="dashboard-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM7 8h10M7 12h10M7 16h5"/><path d="m14 15 2 2 4-5"/></svg></span>
-                <span>Шаблон два</span>
+                <span>Шаблон V2</span>
             </a>
 
             <a class="dashboard-nav-link{% if active_section == 'citations' %} is-active{% endif %}" href="{% url 'citations:workspace' %}"{% if active_section == 'citations' %} aria-current="page"{% endif %}>

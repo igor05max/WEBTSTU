@@ -1,6 +1,7 @@
 {% extends "template_workspace/base.html" %}
 {% block workspace_content %}
-<a href="{% url 'template_workspace:workspace' %}">← Все сборки</a>
+<a href="{% url 'template_workspace:v2_workspace' %}">← Шаблон V2</a>
+<p class="tw-muted">Архивный результат прежней версии. Новые статьи оформляются только в «Шаблон V2».</p>
 <h1 style="margin-top:22px">{{ job.article_name }}</h1><p class="tw-muted">Шаблон: {{ job.template_name }}</p>
 <section class="tw-card" aria-live="polite">
 {% if job.pending %}<div class="tw-state"><span class="tw-pulse"></span>Готовим вашу статью</div><p>Разбираем структуру, применяем шаблон и собираем PDF, Word и LaTeX-проект. Это может занять несколько минут. Можно закрыть страницу — результат сохранится в «Моих сборках».</p><p id="tw-connection" class="tw-muted"></p>

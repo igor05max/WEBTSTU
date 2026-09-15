@@ -506,12 +506,31 @@ class TemplateV2ViewTests(TestCase):
         self.user = get_user_model().objects.create_user(username="v2_author")
         self.client.force_login(self.user)
 
-    def test_v2_route_is_separate_from_legacy_route(self):
+    def test_v2_is_the_only_template_navigation_entry(self):
         response = self.client.get(reverse("template_workspace:v2_workspace"))
-        self.assertContains(response, "Word-forensics V2")
-        self.assertContains(response, "Шаблон два")
+        self.assertContains(response, "<h1>Шаблон V2</h1>", html=True)
+        self.assertContains(response, '<span>Шаблон V2</span>', count=1, html=True)
+        self.assertContains(response, 'aria-current="page"')
+        self.assertNotContains(response, 'href="'+reverse("template_workspace:workspace")+'"')
+        self.assertNotContains(response, "Шаблон два")
+        self.assertNotContains(response, "Старая версия")
         legacy = self.client.get(reverse("template_workspace:workspace"))
-        self.assertContains(legacy, "Статья по вашему шаблону")
+        self.assertRedirects(legacy, reverse("template_workspace:v2_workspace"))
+
+    @patch("apps.template_workspace.v2.views.launch_v2_job")
+    def test_upload_uses_only_the_v2_worker(self, launch):
+        source = Path(self.media.name) / "source.docx"
+        make_docx_with_core_objects(source)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("template_workspace:v2_workspace"), {
+                "article": SimpleUploadedFile("source.docx", source.read_bytes()),
+                "template": SimpleUploadedFile("template.docx", source.read_bytes()),
+            })
+        job = TemplateJob.objects.get()
+        self.assertEqual(job.kind, "v2")
+        self.assertEqual(response.url, reverse("template_workspace:v2_detail", args=[job.pk]))
+        self.assertTrue(Path(job.article.path).is_file())
+        launch.assert_called_once_with(job)
 
     def test_run_v2_job_writes_json_reports(self):
         source = Path(self.media.name) / "source.docx"

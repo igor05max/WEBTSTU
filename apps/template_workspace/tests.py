@@ -47,23 +47,21 @@ class WorkspaceTests(TestCase):
 
     def test_login_and_navigation(self):
         response = self.client.get(self.url)
-        self.assertContains(response, "Статья по вашему шаблону")
-        self.assertContains(response, 'aria-current="page"')
+        self.assertRedirects(response, reverse("template_workspace:v2_workspace"))
         self.client.logout()
         self.assertEqual(self.client.get(self.url).status_code, 302)
 
-    @patch("apps.template_workspace.views.launch_job")
-    def test_upload_persists_inputs_and_launches_after_commit(self, launch):
+    @patch("apps.template_workspace.services.launch_job")
+    def test_retired_upload_cannot_create_or_launch_v1(self, launch):
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(self.url, {"article": document_upload(), "template": document_upload("template.docx", True)})
-        self.assertEqual(response.status_code, 302)
-        job = TemplateJob.objects.get()
-        self.assertTrue(Path(job.article.path).is_file())
-        launch.assert_called_once()
+            response = self.client.post(self.url, {"article": document_upload(), "template": document_upload("template.docx", True)}, follow=True)
+        self.assertContains(response, "Выберите файлы заново")
+        self.assertFalse(TemplateJob.objects.exists())
+        launch.assert_not_called()
 
-    def test_rejects_unsupported_input(self):
+    def test_retired_upload_does_not_validate_or_process_old_formats(self):
         response = self.client.post(self.url, {"article": SimpleUploadedFile("bad.exe", b"x"), "template": document_upload()})
-        self.assertContains(response, "Выберите DOCX")
+        self.assertRedirects(response, reverse("template_workspace:v2_workspace"))
         self.assertFalse(TemplateJob.objects.exists())
 
     def test_other_users_cannot_access_job_or_files(self):
@@ -73,12 +71,15 @@ class WorkspaceTests(TestCase):
         for name, args in [("detail", [job.pk]), ("progress", [job.pk]), ("download", [job.pk, "latex"])]:
             self.assertEqual(self.client.get(reverse("template_workspace:" + name, args=args)).status_code, 404)
 
-    @patch("apps.template_workspace.views.launch_job")
-    def test_prevents_duplicate_active_work(self, launch):
-        self.create_job()
+    @patch("apps.template_workspace.services.launch_job")
+    def test_retired_upload_preserves_existing_jobs(self, launch):
+        job = self.create_job()
         response = self.client.post(self.url, {"article": document_upload(), "template": document_upload("template.docx", True)})
-        self.assertContains(response, "Дождитесь завершения")
+        self.assertRedirects(response, reverse("template_workspace:v2_workspace"))
         self.assertEqual(TemplateJob.objects.count(), 1)
+        job.refresh_from_db()
+        self.assertEqual(job.kind, "v1")
+        self.assertTrue(Path(job.article.path).is_file())
         launch.assert_not_called()
 
     @patch.object(LatexCompiler, "_select_engine", return_value=None)
