@@ -24,7 +24,8 @@ from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.word_inputs import prepare_word_file
-from apps.template_workspace.v2.readability import run_readability_review, review_summary, template_title_text
+from apps.template_workspace.v2.readability import review_summary, template_title_text
+from apps.template_workspace.v2.quality_cycle import run_quality_cycle, cycle_summary
 from apps.template_workspace.v2.timeouts import stale_job_seconds
 
 logger = logging.getLogger(__name__)
@@ -123,12 +124,14 @@ def run_v2_job(job_id: str) -> None:
             planner.last_result.to_dict() if planner.last_result else {},
         )
         write_json(output / "editor_report.json", editor_result.to_dict())
-        readability = run_readability_review(result_docx_path(job), output, template_path=template_path,
-                                              template_title=template_title_text(template_report, template_profile))
+        def progress(message):
+            TemplateJob.objects.filter(pk=job_id, kind='v2', status='running').update(message=message, updated_at=timezone.now())
+        readability, quality = run_quality_cycle(result_docx_path(job), output, editor_result=editor_result,
+            template_path=template_path, template_title=template_title_text(template_report, template_profile), progress=progress)
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
-            {"kind": "Mapping preview", "text": f"{mapping_preview.summary['total_mappings']} действий; review: {mapping_preview.summary['needs_review']}"},
+            {"kind": "Соответствие ролей", "text": f"{mapping_preview.summary['total_mappings']} блоков; неуверенных ролей: {mapping_preview.summary['needs_review']}. Это не оценка внешнего вида."},
             {"kind": "Планировщик", "text": str(editor_result.metrics.get("planning_provider") or "local")},
             {"kind": "RESULT.docx", "text": "; ".join(editor_result.changes)},
             {"kind": "Секции", "text": f"ARTICLE: {len(source_report.sections)}; TEMPLATE: {len(template_report.sections)}"},
@@ -143,12 +146,15 @@ def run_v2_job(job_id: str) -> None:
         warnings.extend(mapping_preview.warnings)
         warnings.extend(editor_result.warnings)
         warnings.extend(readability['warnings'])
+        warnings.extend(f"Блок {issue['target_id']}: {issue['description']} (структурная проверка)"
+                        for issue in quality['remaining_structural_issues'])
         warnings.extend(
             f"Стр. {issue['page']}: {issue['description']} "
             f"({'Qwen, требует проверки' if issue['source'] == 'qwen-vision' else 'геометрический контроль'})"
             for issue in readability['issues']
         )
         plan.append({'kind':'Читаемость', 'text':review_summary(readability)})
+        plan.append({'kind':'Цикл редактирования', 'text':cycle_summary(quality)})
         if not getattr(settings, "TEMPLATE_V2_QWEN_ENABLED", False):
             warnings.append("Qwen/VPN: планировщик Template V2 выключен; применён детерминированный локальный план.")
         elif not get_api_base_url(settings.TEMPLATE_V2_QWEN_BASE_URL or None):
@@ -156,7 +162,7 @@ def run_v2_job(job_id: str) -> None:
         else:
             warnings.append(f"Qwen/VPN: планировщик Template V2 настроен через {get_api_base_url(settings.TEMPLATE_V2_QWEN_BASE_URL or None)}; ответ проходит whitelist-валидацию, при сбое используется локальный fallback.")
         recovery_count = editor_result.metrics.get('local_content_recovery_count', 0)
-        message = "V2 RESULT.docx, отчёты, TemplateProfile и MappingPreview готовы."
+        message = cycle_summary(quality)
         if recovery_count:
             message += f" Восстановлено фрагментов: {recovery_count}; см. предупреждения."
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(

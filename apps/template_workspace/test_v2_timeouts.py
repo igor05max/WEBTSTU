@@ -58,7 +58,7 @@ class VisualTimeoutTests(SimpleTestCase):
         self.assertEqual(review.call_args.kwargs['request_timeout'], 420)
         self.assertEqual(review.call_args.kwargs['budget_seconds'], 1500)
 
-    @override_settings(TEMPLATE_V2_QWEN_ENABLED=True, TEMPLATE_V2_QWEN_TIMEOUT=300,
+    @override_settings(TEMPLATE_V2_EDIT_CYCLE_ENABLED=False, TEMPLATE_V2_QWEN_ENABLED=True, TEMPLATE_V2_QWEN_TIMEOUT=300,
                        TEMPLATE_V2_VISUAL_REVIEW_ENABLED=True, TEMPLATE_V2_VISUAL_REVIEW_BUDGET=900)
     def test_outer_worker_deadlines_include_both_ai_phases_and_render_margin(self):
         self.assertEqual(job_timeout_seconds(), 1800)
@@ -70,7 +70,7 @@ class VisualTimeoutTests(SimpleTestCase):
         self.assertEqual(stale_job_seconds(), 20 * 60)
 
 
-@override_settings(TEMPLATE_V2_QWEN_ENABLED=True, TEMPLATE_V2_QWEN_TIMEOUT=300,
+@override_settings(TEMPLATE_V2_EDIT_CYCLE_ENABLED=False, TEMPLATE_V2_QWEN_ENABLED=True, TEMPLATE_V2_QWEN_TIMEOUT=300,
                    TEMPLATE_V2_VISUAL_REVIEW_ENABLED=True, TEMPLATE_V2_VISUAL_REVIEW_BUDGET=900)
 class StaleJobTimeoutTests(TestCase):
     def test_legacy_expirer_does_not_abort_v2_waiting_in_queue(self):

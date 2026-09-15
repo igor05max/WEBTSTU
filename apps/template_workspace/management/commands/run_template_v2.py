@@ -13,7 +13,8 @@ from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.word_inputs import prepare_word_file
-from apps.template_workspace.v2.readability import run_readability_review, template_title_text
+from apps.template_workspace.v2.readability import template_title_text
+from apps.template_workspace.v2.quality_cycle import run_quality_cycle, cycle_summary
 
 
 class Command(BaseCommand):
@@ -65,8 +66,10 @@ class Command(BaseCommand):
             planner.last_result.to_dict() if planner.last_result else {},
         )
         self._write(output / "editor_report.json", editor_result.to_dict())
-        run_readability_review(result_path, output, template_path=template_path,
-                               template_title=template_title_text(template_report, template_profile))
+        _, quality = run_quality_cycle(result_path, output, editor_result=editor_result, template_path=template_path,
+                                      template_title=template_title_text(template_report, template_profile),
+                                      progress=self.stdout.write)
+        self.stdout.write(cycle_summary(quality))
 
         self.stdout.write(self.style.SUCCESS(f"Wrote {result_path}"))
         self.stdout.write(self.style.SUCCESS(f"Wrote reports to {output}"))

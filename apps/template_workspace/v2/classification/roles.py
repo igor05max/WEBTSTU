@@ -318,6 +318,22 @@ class RoleClassifierV2:
             if author_idx is not None:
                 author_indices.add(author_idx)
 
+            title_indices = {title_idx}
+            # A line of the title split into another paragraph is not editorial
+            # metadata. Require both position and matching visual evidence; never
+            # swallow an author/affiliation just because it follows the title.
+            if author_idx is not None and title_idx < author_idx:
+                for j in range(title_idx + 1, min(author_idx, title_idx + 4)):
+                    candidate = paragraphs[j]
+                    text = candidate.normalized_text
+                    if (j in author_indices or not text or len(text) > 180
+                            or text.casefold().strip(': ') in {'authors', 'авторы'}
+                            or _is_front_metadata_marker(text.casefold())
+                            or _looks_like_affiliation(text) or _is_email(text)
+                            or _signature_distance(_format_signature(candidate), _format_signature(paragraphs[title_idx])) > .6):
+                        break
+                    title_indices.add(j)
+
             for i in segment:
                 p = paragraphs[i]
                 text = p.normalized_text
@@ -326,7 +342,7 @@ class RoleClassifierV2:
                     out[p.id] = RoleDecision(p.id, "author", 0.96, "rules", "front-matter author line", zone=FRONT_MATTER, language=lang, group_id=group_id)
                 elif i < title_idx:
                     self._set_front_metadata(paragraphs, i, out)
-                elif i == title_idx:
+                elif i in title_indices:
                     out[p.id] = RoleDecision(p.id, "title", 0.97, "rules", "title immediately precedes author/affiliation block", zone=FRONT_MATTER, language=group_lang, group_id=group_id)
                 elif re.search(r'(?:affiliation|аффилиац)', (p.style_name or '') + ' ' + text, re.I) and not re.match(r'^\*?\s*(?:Correspondence|для переписки)', text, re.I):
                     out[p.id] = RoleDecision(p.id, "affiliation", 0.97, "rules", "affiliation style or label", zone=FRONT_MATTER, language=lang, group_id=group_id)

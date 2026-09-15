@@ -7,6 +7,8 @@ def job_timeout_seconds():
         settings, 'TEMPLATE_V2_QWEN_ENABLED', False) else 0
     vision = max(1, int(getattr(settings, 'TEMPLATE_V2_VISUAL_REVIEW_BUDGET', 900))) if getattr(
         settings, 'TEMPLATE_V2_VISUAL_REVIEW_ENABLED', False) else 0
+    if vision and getattr(settings, 'TEMPLATE_V2_EDIT_CYCLE_ENABLED', True):
+        vision = max(vision, getattr(settings, 'TEMPLATE_V2_EDIT_CYCLE_BUDGET', 2100))
     # Separate margin for DOC/DOTX preparation, inspection and two PDF renders.
     return max(18 * 60, planning + vision + 10 * 60)
 

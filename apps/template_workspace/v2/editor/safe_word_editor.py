@@ -4,6 +4,7 @@ from .layout_fidelity import (front_gap_evidence, apply_front_gaps, align_standa
                              scientific_table_rules, math_typography, descriptions_before_figures,
                              wrap_picture_captions, heading_gap_evidence, apply_heading_gaps)
 from .table_structure import analyze_table_structure
+from .object_flow import detach_display_objects, normalize_display_geometry, display_width_twips
 
 import re
 from dataclasses import dataclass, field
@@ -306,6 +307,7 @@ class SafeWordEditor:
             metrics['display_equations_aligned'] = 0
             display_spacing = equation_spacing(template_zip)
             equation_ids = legacy_equation_ids(article_zip)
+            metrics['display_objects_detached'] = detach_display_objects(body, meta_by_node, equation_ids)
             metrics['existing_editorial_placeholders_marked'] = _mark_existing_editorial_placeholders(body, meta_by_node)
 
             # Canonicalise only the *front-matter flow*.  Native body tables/images
@@ -339,6 +341,7 @@ class SafeWordEditor:
             template_hints = _template_render_hints(template_zip, template_report, self.classifier)
             _split_abstract_labels(body, meta_by_node, template_report)
             content_guard = LocalContentGuard(body, meta_by_node, protected_code)
+            applied_role_formats = {}
 
             # Formatting is applied from effective role profiles directly, rather
             # than copying the TEMPLATE styles.xml wholesale.  That prevents source
@@ -364,6 +367,7 @@ class SafeWordEditor:
                     if variant:
                         pformat, rformat = variant['paragraph'], variant['run']
                 with content_guard.formatting(child):
+                    applied_role_formats[child] = (pformat, rformat)
                     _apply_role_format(child, role or "body", pformat, rformat)
                     metrics["formatted_paragraphs"] += 1
 
@@ -482,6 +486,16 @@ class SafeWordEditor:
                         target = layout.printable_width_twips
                     if _resize_table_to_width(child, target, info):
                         table_evidence = _apply_template_table_evidence(child, template_zip, template_report)
+                        if _parallel_text_layout(child):
+                            # author_information may represent the bold section
+                            # HEADING in TEMPLATE, not the biography prose itself.
+                            # Use body typography and retain the author's name emphasis.
+                            prose = template_profile.roles.get('body')
+                            if prose:
+                                cell_format = {**prose.typical_paragraph_formatting, 'alignment':'left',
+                                               'indentation':{qn('w:left'):'0', qn('w:right'):'0', qn('w:firstLine'):'0'}}
+                                for cell_p in child.xpath('./w:tr/w:tc/w:p', namespaces=NS):
+                                    _apply_role_format(cell_p, 'body', cell_format, prose.typical_run_formatting)
                         if not table_evidence and info and info.classification != 'FIGURE_CONTAINER' and not table_structure.nested:
                             body_profile = template_profile.roles.get('body')
                             if body_profile:
@@ -520,6 +534,7 @@ class SafeWordEditor:
                         _set_object_paragraph_insets(child, layout)
                     metrics['standalone_pictures_aligned'] = metrics.get('standalone_pictures_aligned', 0) + align_standalone_picture(
                         child, layout, full_width=child in full_width_nodes)
+                    metrics['legacy_object_geometry_normalized'] = metrics.get('legacy_object_geometry_normalized', 0) + normalize_display_geometry(child, target, equation_ids)
                     metrics["drawings_resized"] += _resize_top_level_drawings(child, target)
 
             metrics['native_math_typography_aligned'] = math_typography(body, template_zip, template_profile.roles.get('body'))
@@ -571,6 +586,9 @@ class SafeWordEditor:
             if not metrics['code_content_preserved']:
                 raise ContentPreservationError({'losses': ['code_whitespace']})
             _write_package(article_zip, output_path, replacements)
+            from .repair_actions import inventory
+            metrics['layout_targets'] = inventory(document_root, meta_by_node, template_profile, layout, full_width_nodes,
+                                                  equation_ids, applied_role_formats)
 
         changes = [
             f"Applied deterministic role formatting to {metrics['formatted_paragraphs']} ARTICLE paragraphs.",
@@ -631,6 +649,27 @@ def _metadata_for_body(body: etree._Element, decisions: dict[str, dict[str, Any]
 
 
 def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Element, _NodeMeta], profile: TemplateProfile) -> dict[str, int]:
+    # Title fragments can be merged locally even when a floating front object
+    # prevents sorting the entire front. Move native runs, never rebuild text.
+    merged_titles = 0
+    for node in list(body):
+        meta = meta_by_node.get(node)
+        if not meta or meta.role != 'title' or node.getparent() is not body:
+            continue
+        following = node.getnext()
+        other = meta_by_node.get(following)
+        while (other and other.role == 'title' and other.group_id == meta.group_id
+                and not any(p.xpath('.//w:drawing|.//w:pict|.//w:object|.//w:fldChar|.//w:sectPr|.//w:bookmarkStart|.//m:oMath', namespaces=NS)
+                            for p in (node, following))):
+            run = etree.SubElement(node, qn('w:r'))
+            space = etree.SubElement(run, qn('w:t')); space.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve'); space.text = ' '
+            for child in list(following):
+                if child.tag != qn('w:pPr'):
+                    node.append(child)
+            body.remove(following); meta_by_node.pop(following, None)
+            merged_titles += 1
+            following = node.getnext()
+            other = meta_by_node.get(following)
     children = list(body)
     body_start = None
     for i, node in enumerate(children):
@@ -639,14 +678,14 @@ def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Elem
             body_start = i
             break
     if body_start is None:
-        return {"front_blocks_reordered": 0, "front_paragraphs_merged": 0}
+        return {"front_blocks_reordered": 0, "front_paragraphs_merged": merged_titles}
 
     front_nodes = children[:body_start]
     if sum(bool(re.match(r'^(?:ORCID|SPIN|AuthorID)\s*:', normalize_text(element_text(n)), re.I)) for n in front_nodes) >= 2:
-        return {"front_blocks_reordered": 0, "front_paragraphs_merged": 0}
+        return {"front_blocks_reordered": 0, "front_paragraphs_merged": merged_titles}
     if any(local_name(n) == 'tbl' or n.xpath('.//w:drawing|.//w:pict|.//w:object|.//m:oMath', namespaces=NS) for n in front_nodes):
         # A floating/object front needs native anchoring, not paragraph sorting.
-        return {"front_blocks_reordered": 0, "front_paragraphs_merged": 0}
+        return {"front_blocks_reordered": 0, "front_paragraphs_merged": merged_titles}
     # Only operate on front paragraphs; a front table/object is preserved in place.
     front_paragraphs = [n for n in front_nodes if local_name(n) == "p"]
     if not front_paragraphs:
@@ -674,7 +713,7 @@ def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Elem
             loose.append(node)
 
     canonical: list[etree._Element] = []
-    merged = 0
+    merged = merged_titles
 
     # Journal metadata order is: article type/rubric -> bibliographic IDs.  Labels
     # such as "Рубрика журнала:" are UI-like metadata and need not occupy a line.
@@ -1444,7 +1483,10 @@ def _apply_paragraph_profile(paragraph: etree._Element, role: str, profile: dict
 def _apply_run_profile(paragraph: etree._Element, role: str, profile: dict[str, Any]) -> None:
     defaults = _role_run_defaults(role, profile)
     for run in paragraph.xpath(".//w:r[not(ancestor::m:oMath) and not(ancestor::m:oMathPara)]", namespaces=NS):
-        if run.xpath(".//w:drawing|.//w:pict|.//w:object|.//o:OLEObject", namespaces=NS):
+        # An image and ordinary prose can share a run after DOC conversion.
+        # Its direct text still needs typography; don't style a drawing's caption
+        # merely because its descendant text makes element_text(run) nonempty.
+        if not run.findall('w:t', NS):
             continue
         if not element_text(run):
             continue
@@ -2549,6 +2591,18 @@ def _wide_object_spans(
     children = list(body)
     spans: list[list[etree._Element]] = []
     for i, node in enumerate(children):
+        meta = meta_by_node.get(node)
+        if (local_name(node) == 'p' and meta and meta.role == 'figure'
+                and display_width_twips(node) > layout.column_width_twips * 1.55):
+            span = [node]
+            for following in children[i+1:]:
+                following_meta = meta_by_node.get(following)
+                if following_meta and following_meta.role == 'figure_caption' and following_meta.group_id == meta.group_id:
+                    span.append(following)
+                else:
+                    break
+            spans.append(span)
+            continue
         if local_name(node) != "tbl":
             continue
         meta = meta_by_node.get(node)
@@ -2600,6 +2654,12 @@ def _table_needs_full_width(table: etree._Element, info: TableInfo, layout: _Lay
         # Fig.1 in the regression fixture is ~1.16 columns and can be safely scaled;
         # the 2-panel thermal-analysis figure is ~2 columns and should stay wide.
         return source_width > int(layout.column_width_twips * 1.55)
+    # Long parallel biographical/affiliation cells are layout, not compact data.
+    # Respect their native full-page intent without making every two-column table wide.
+    if (source_width > layout.column_width_twips * 1.55 and info.logical_column_count <= 3
+            and len(table.findall('w:tr', NS)) <= 3
+            and sum(len(normalize_text(element_text(c))) > 120 for c in table.xpath('./w:tr/w:tc', namespaces=NS)) >= 2):
+        return True
     return False
 
 
@@ -2653,6 +2713,15 @@ def _balance_terminal_two_column_section(
     return True
 
 
+def _parallel_text_layout(table):
+    rows = table.findall('w:tr', NS)
+    if len(rows) != 1 or table.xpath('.//w:tbl|.//w:gridSpan|.//w:vMerge', namespaces=NS):
+        return False
+    cells = rows[0].findall('w:tc', NS)
+    return len(cells) == 3 and not normalize_text(element_text(cells[1])) and all(
+        len(normalize_text(element_text(c))) > 120 for c in (cells[0], cells[2]))
+
+
 def _resize_table_to_width(table: etree._Element, target_twips: int, info: TableInfo | None) -> bool:
     grid_cols = table.xpath("./w:tblGrid/w:gridCol", namespaces=NS)
     widths = [_safe_int(col.get(qn("w:w"))) for col in grid_cols]
@@ -2665,7 +2734,7 @@ def _resize_table_to_width(table: etree._Element, target_twips: int, info: Table
     # Avoid pathological enlargement of small intentionally narrow tables.
     factor = min(factor, 1.35)
     new_widths = [max(120, int(width * factor)) for width in widths]
-    if info is not None and info.classification != "FIGURE_CONTAINER":
+    if info is not None and info.classification != "FIGURE_CONTAINER" and not _parallel_text_layout(table):
         new_widths = _rebalance_data_column_widths(new_widths, int(sum(new_widths)), table)
     new_total = int(sum(new_widths))
     for col, nw in zip(grid_cols, new_widths):
@@ -3006,6 +3075,10 @@ def _compact_blank_body_paragraphs(body, metadata):
 
 
 def _apply_template_table_evidence(table, template_zip, report):
+    if _parallel_text_layout(table):
+        # A narrow empty gutter is deliberate layout, not a data column in need
+        # of minimum width. Do not import scientific-data table rules here.
+        return True
     if table.xpath('.//w:drawing|.//w:pict|.//w:object|.//w:tbl', namespaces=NS):
         return
     structure = analyze_table_structure(table)

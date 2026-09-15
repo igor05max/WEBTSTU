@@ -253,6 +253,10 @@ TEMPLATE_V2_VISUAL_REVIEW_MAX_PAGES = int(os.getenv("TEMPLATE_V2_VISUAL_REVIEW_M
 # Includes time queued behind other jobs on the shared single-slot Qwen server.
 TEMPLATE_V2_VISUAL_REVIEW_BUDGET = max(1, int(os.getenv("TEMPLATE_V2_VISUAL_REVIEW_BUDGET", "900")))
 TEMPLATE_V2_VISUAL_REVIEW_PAGE_TIMEOUT = max(1, int(os.getenv("TEMPLATE_V2_VISUAL_REVIEW_PAGE_TIMEOUT", "300")))
+TEMPLATE_V2_EDIT_CYCLE_ENABLED = os.getenv('TEMPLATE_V2_EDIT_CYCLE_ENABLED', '1') == '1'
+TEMPLATE_V2_EDIT_CYCLE_MAX_PASSES = max(1, min(3, int(os.getenv('TEMPLATE_V2_EDIT_CYCLE_MAX_PASSES', '3'))))
+# Shared by ALL visual passes, including time in the single-slot model queue.
+TEMPLATE_V2_EDIT_CYCLE_BUDGET = max(1, int(os.getenv('TEMPLATE_V2_EDIT_CYCLE_BUDGET', '2100')))
 TEMPLATE_V2_QWEN_BASE_URL = os.getenv("TEMPLATE_V2_QWEN_BASE_URL", "").strip().rstrip("/")
 TEMPLATE_V2_QWEN_MODEL = os.getenv("TEMPLATE_V2_QWEN_MODEL", AI_MODEL).strip()
 TEMPLATE_V2_QWEN_TIMEOUT = int(

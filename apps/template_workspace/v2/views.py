@@ -23,6 +23,8 @@ FILES = {
     "mapping": ("mapping_preview.json", "application/json", "mapping_preview.json"),
     "editor": ("editor_report.json", "application/json", "editor_report.json"),
     "readability": ("readability_report.json", "application/json", "readability_report.json"),
+    "quality": ("quality_cycle_report.json", "application/json", "quality_cycle_report.json"),
+    "preview": ("readability-preview.pdf", "application/pdf", "result-preview.pdf"),
 }
 
 
@@ -91,7 +93,7 @@ def detail(request, job_id):
 def progress(request, job_id):
     expire_v2_jobs(request.user)
     job = owned_job(request, job_id)
-    return JsonResponse({"pending": job.pending, "status": job.status})
+    return JsonResponse({"pending": job.pending, "status": job.status, "message": job.message})
 
 
 @login_required
