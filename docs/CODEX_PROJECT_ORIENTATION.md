@@ -329,7 +329,7 @@ Word's column balancing can ignore paragraph keep-next. Dense paired plots may
 remain full-width; legible small a/b panels stay together in a column.
 
 Vision always schedules the first two pages before risk-ranked body pages and
-compares each front half separately with a labelled TEMPLATE first-page crop
+compares each front half separately with a labelled TEMPLATE sample-front crop
 (max two images per request). Both chunks must succeed to count the page. New findings
 cover spacing, math typography, picture/table/header alignment. Per-page timeout
 is 60 seconds within the unchanged total vision budget; all uncovered pages and
@@ -339,7 +339,11 @@ Malformed/truncated page responses leave that page unchecked but do not abort
 the other pages; transport errors stop requests. Qwen sometimes hallucinates
 header alignment/table rules: verify against actual rendered edges and OOXML,
 never treat the advisory list as authority to rewrite the document.
-Regression 2026-09-15: 83 local tests, five Word corpora / 99 rendered pages,
+The reference page is located by the profile's actual title, not guessed as page
+one: legacy's sample begins on page two after instructions. Unmatched titles
+skip reference comparison with an explicit warning; `template_reference_page`
+records the selected page. Short generic titles must match a whole rendered line.
+Regression 2026-09-15: 86 local tests, five Word corpora / 99 rendered pages,
 453 original media/embedding parts unchanged. QA stage `layout6` locally and
 `layout-server4` under the server corpus directory; new candidate worktree at
 `/opt/webtstu/var/layout-20260915/candidate`. Do not deploy the unrelated dirty

@@ -15,7 +15,7 @@ from apps.template_workspace.v2.editor.layout_fidelity import (
 )
 from apps.template_workspace.v2.editor.safe_word_editor import _guard_inline_figure_captions
 from apps.template_workspace.v2.editor.integrity import native_integrity
-from apps.template_workspace.v2.readability import QwenReadabilityProvider, review_pdf, validate_issues
+from apps.template_workspace.v2.readability import QwenReadabilityProvider, review_pdf, validate_issues, reference_page_index
 
 
 def xml(node):
@@ -32,6 +32,21 @@ def meta(role):
 
 
 class LayoutFidelityTests(SimpleTestCase):
+    def test_reference_skips_instructions_before_sample_title(self):
+        pages=[SimpleNamespace(get_text=lambda:'Instructions: formatting requirements'),
+               SimpleNamespace(get_text=lambda:'A scientific\nsample title\nAuthors')]
+        self.assertEqual(reference_page_index(pages,'A scientific sample title'),1)
+
+    def test_short_template_placeholder_must_be_its_own_line(self):
+        pages=[SimpleNamespace(get_text=lambda:'Put the Title here'),
+               SimpleNamespace(get_text=lambda:'Title\nFirstname Lastname')]
+        self.assertEqual(reference_page_index(pages,'Title'),1)
+
+    def test_unmatched_reference_title_does_not_guess_page_one(self):
+        pages=[SimpleNamespace(get_text=lambda:'Submission instructions')]
+        self.assertIsNone(reference_page_index(pages,'Missing title'))
+        self.assertIsNone(reference_page_index(pages,''))
+
     def test_front_blank_line_geometry_is_role_specific_and_idempotent(self):
         doc = Document()
         doc.styles['Normal'].font.size = Pt(10)

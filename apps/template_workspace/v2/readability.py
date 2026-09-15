@@ -32,6 +32,34 @@ KINDS = {'code_spacing','table_wrapping','equation_clipping','overlap','caption_
          'equation_typography','front_spacing','figure_alignment','table_rules','header_alignment','figure_order'}
 
 
+def template_title_text(report, profile):
+    title = profile.roles.get('title')
+    if title is None:
+        return ''
+    return next((p.text for p in report.paragraphs if p.id == title.representative_block_id), '')
+
+
+def reference_page_index(pdf, title):
+    """Find the actual sample front matter, not a preceding instructions page."""
+    def normalize(value):
+        return ''.join(re.findall(r'\w+', value.replace('\u00ad','').casefold()))
+    needle = normalize(title)
+    if not needle:
+        return None
+    candidates = []
+    for index in range(min(len(pdf), 12)):
+        page_text = pdf[index].get_text()
+        # A short placeholder such as 'Title' must occupy its own line; a mere
+        # mention of the word in formatting instructions is not a sample title.
+        if len(needle) < 12:
+            matched = any(normalize(line) == needle for line in page_text.splitlines())
+        else:
+            matched = needle in normalize(page_text)
+        if matched:
+            candidates.append(index)
+    return candidates[0] if candidates else None
+
+
 def validate_issues(payload, page):
     if not isinstance(payload, dict) or not isinstance(payload.get('issues'), list):
         raise ValueError('Invalid readability JSON schema')
@@ -77,7 +105,7 @@ class QwenReadabilityProvider:
         for data in images:
             content.append({'type':'image_url', 'image_url':{'url':'data:image/png;base64,'+base64.b64encode(data).decode('ascii')}})
         if reference:
-            content.append({'type':'text','text':'TEMPLATE first-page design reference. Compare spacing and typography only, not content or pagination.'})
+            content.append({'type':'text','text':'TEMPLATE sample front-matter design reference. Compare spacing and typography only, not content or pagination.'})
             content.append({'type':'image_url', 'image_url':{'url':'data:image/png;base64,'+base64.b64encode(self.reference_image).decode('ascii')}})
         response = _request_json(method='POST', endpoint=self.endpoint+'/chat/completions',
             api_key=get_api_key(), timeout=timeout, stage='template_v2_readability', model=self.model,
@@ -160,7 +188,7 @@ def review_pdf(pdf_path, *, provider, max_pages=8, budget_seconds=180, request_t
     return report
 
 
-def run_readability_review(result_path, output_directory, *, template_path=None):
+def run_readability_review(result_path, output_directory, *, template_path=None, template_title=''):
     output = Path(output_directory)
     if not getattr(settings, 'TEMPLATE_V2_VISUAL_REVIEW_ENABLED', False):
         report = {'status':'disabled', 'pages_checked':[], 'issues':[], 'warnings':[], 'automatic_content_changes':False}
@@ -169,23 +197,28 @@ def run_readability_review(result_path, output_directory, *, template_path=None)
             from apps.submissions.document_preview import convert_word_path_to_pdf
             pdf = output/'readability-preview.pdf'
             convert_word_path_to_pdf(result_path, pdf)
-            reference_image, reference_warning = None, None
+            reference_image, reference_warning, reference_page = None, None, None
             if template_path:
                 try:
                     import pymupdf
                     reference_pdf = output/'readability-template.pdf'
                     convert_word_path_to_pdf(template_path, reference_pdf)
                     with pymupdf.open(reference_pdf) as reference:
-                        if len(reference):
-                            page = reference[0]
+                        selected_page = reference_page_index(reference, template_title)
+                        if selected_page is not None:
+                            reference_page = selected_page+1
+                            page = reference[selected_page]
                             reference_image = page.get_pixmap(matrix=pymupdf.Matrix(1.5,1.5),
                                 clip=pymupdf.Rect(0,0,page.rect.width,page.rect.height*.65),alpha=False).tobytes('png')
+                        else:
+                            reference_warning = 'Страница образца с заголовком TEMPLATE не найдена: визуальное сравнение с шаблоном пропущено.'
                 except Exception as exc:
                     reference_warning = f'Сравнение с изображением шаблона недоступно ({type(exc).__name__}).'
             report = review_pdf(pdf, provider=QwenReadabilityProvider(reference_image),
                 max_pages=getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_MAX_PAGES',8),
                 budget_seconds=getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_BUDGET',180))
             report['template_front_reference_available'] = reference_image is not None
+            report['template_reference_page'] = reference_page
             report['template_comparison_pages'] = [p for p in report['pages_checked'] if p <= 2 and reference_image is not None]
             if reference_warning:
                 report['warnings'].append(reference_warning)
