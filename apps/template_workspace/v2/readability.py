@@ -122,12 +122,14 @@ class QwenReadabilityProvider:
         return validate_issues(json.loads(text), page)
 
 
-def review_pdf(pdf_path, *, provider, max_pages=8, budget_seconds=180, request_timeout=60):
+def review_pdf(pdf_path, *, provider, max_pages=8, budget_seconds=900, request_timeout=300):
     import pymupdf
     started = time.monotonic()
     report = {'status':'partial', 'provider':getattr(provider, 'model', 'injected'),
               'pages_total':0, 'pages_checked':[], 'pages_not_checked':[], 'issues':[],
-              'geometry_pages_checked':[], 'warnings':[], 'automatic_content_changes':False}
+              'geometry_pages_checked':[], 'warnings':[], 'automatic_content_changes':False,
+              'page_timeout_seconds':request_timeout, 'budget_seconds':budget_seconds,
+              'queue_wait_included_in_limits':True}
     with pymupdf.open(pdf_path) as pdf:
         report['pages_total'] = len(pdf)
         priority = []
@@ -172,10 +174,13 @@ def review_pdf(pdf_path, *, provider, max_pages=8, budget_seconds=180, request_t
             except Exception as exc:
                 # No raw provider response/credentials in user-visible reports.
                 kind = getattr(exc, 'kind', '')
-                reason = {'timeout':'тайм-аут','network_error':'соединение через VPN',
+                if isinstance(exc, TimeoutError):
+                    kind = 'timeout'
+                reason = {'timeout':'превышен лимит ожидания ответа; возможна очередь модели',
+                          'network_error':'соединение через VPN',
                           'http_error':'ошибка HTTP','invalid_response':'неверный ответ',
                           'dns_error':'DNS'}.get(kind, type(exc).__name__)
-                report['warnings'].append(f'Страница {i+1}: Qwen-проверка недоступна ({reason}).')
+                report['warnings'].append(f'Страница {i+1}: Qwen-проверка не завершена ({reason}).')
                 if isinstance(exc, (ValueError, KeyError, IndexError, TypeError)) or kind == 'invalid_response':
                     # A malformed answer for ONE page is not an offline endpoint.
                     # Keep it explicitly unchecked and inspect remaining pages.
@@ -216,7 +221,8 @@ def run_readability_review(result_path, output_directory, *, template_path=None,
                     reference_warning = f'Сравнение с изображением шаблона недоступно ({type(exc).__name__}).'
             report = review_pdf(pdf, provider=QwenReadabilityProvider(reference_image),
                 max_pages=getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_MAX_PAGES',8),
-                budget_seconds=getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_BUDGET',180))
+                budget_seconds=getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_BUDGET',900),
+                request_timeout=getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_PAGE_TIMEOUT',300))
             report['template_front_reference_available'] = reference_image is not None
             report['template_reference_page'] = reference_page
             report['template_comparison_pages'] = [p for p in report['pages_checked'] if p <= 2 and reference_image is not None]

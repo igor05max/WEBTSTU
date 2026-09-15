@@ -24,6 +24,7 @@ from apps.template_workspace.v2.planning.qwen_provider import build_planning_eng
 from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.word_inputs import prepare_word_file
 from apps.template_workspace.v2.readability import run_readability_review, review_summary, template_title_text
+from apps.template_workspace.v2.timeouts import stale_job_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +57,13 @@ def _working_docx_path(job: TemplateJob, field, label: str) -> tuple[Path, list[
 
 
 def expire_v2_jobs(owner) -> None:
+    deadline = stale_job_seconds()
     TemplateJob.objects.filter(
         owner=owner,
         kind="v2",
         status__in=["queued", "running"],
-        updated_at__lt=timezone.now() - timedelta(minutes=20),
-    ).update(status="failed", message="V2-анализ прервался или превысил 20 минут. Создайте новый отчёт.")
+        updated_at__lt=timezone.now() - timedelta(seconds=deadline),
+    ).update(status="failed", message=f"V2-анализ прервался или превысил лимит {(deadline+59)//60} мин. Создайте новый отчёт.")
 
 
 def launch_v2_job(job: TemplateJob) -> None:

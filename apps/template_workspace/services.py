@@ -23,7 +23,7 @@ def output_directory(job):
 
 def expire_jobs(owner):
     # A killed worker must not leave the page polling indefinitely.
-    TemplateJob.objects.filter(owner=owner, status__in=["queued", "running"],
+    TemplateJob.objects.filter(owner=owner, kind="v1", status__in=["queued", "running"],
         updated_at__lt=timezone.now() - timedelta(minutes=20)).update(
         status="failed", message="Обработка прервалась или превысила 20 минут. Создайте новую сборку.")
 

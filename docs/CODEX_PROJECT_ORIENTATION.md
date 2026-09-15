@@ -143,6 +143,21 @@ Endpoint verification on 2026-09-12 at 20:34–20:45 UTC, reconfirmed 2026-09-15
   the runtime for `torchSafetensors` was missing.
 - Heavy 35B models may be slow or temporarily unloaded.
 
+Queue clarification (2026-09-15, user-confirmed): Vision has a single slot shared
+with other processing. A healthy request waited about 68 seconds in that queue
+before generating at roughly 71 tokens/s. The old 60-second visual page deadline
+could therefore expire before generation started; timeout alone is not evidence
+that the VPN/model is down. Never cancel another job or restart Qwen to clear it.
+V2 now defaults to `TEMPLATE_V2_QWEN_TIMEOUT=300` for planning,
+`TEMPLATE_V2_VISUAL_REVIEW_PAGE_TIMEOUT=300` (both front chunks combined) and
+`TEMPLATE_V2_VISUAL_REVIEW_BUDGET=900`, still 8 selected pages. These are total
+HTTP/phase limits including queue time, not separately measured queue/generation
+budgets. Keep shared site `AI_REQUEST_TIMEOUT` and endpoints unchanged.
+`v2/timeouts.py` also derives the worker deadline from planning + vision budgets
+plus 10 minutes for local processing, with the original 18-minute floor. Current
+V2 wall limit is 30 minutes; stale-job expiry is 32 minutes. The V1 20-minute
+expirer must never expire V2 jobs. CPU/resource limits remain unchanged.
+
 The web service unit currently has only `After=network.target`; it does not
 declare `After=`/`Wants=` for `openvpn-client@vrlab`. A short boot-time race is
 therefore possible. Diagnose routing and VPN state before changing application
@@ -313,7 +328,7 @@ preserves exact code whitespace, centres display equations and bounds number
 tabs, and allocates table width using both headers and data. Hidden MathType
 section controls stay hidden in LibreOffice. Post-render Qwen vision is separate
 from the planner: `TEMPLATE_V2_VISUAL_REVIEW_ENABLED=1`, default 8 selected pages,
-180-second request budget. It emits advisory `readability_report.json`, with
+900-second vision budget including queue wait. It emits advisory `readability_report.json`, with
 explicit checked/not-checked pages; it never rewrites research. Both stages use
 the independent V2 endpoint (8088), leaving shared site AI (1234) unchanged.
 
@@ -332,7 +347,7 @@ Vision always schedules the first two pages before risk-ranked body pages and
 compares each front half separately with a labelled TEMPLATE sample-front crop
 (max two images per request). Both chunks must succeed to count the page. New findings
 cover spacing, math typography, picture/table/header alignment. Per-page timeout
-is 60 seconds within the unchanged total vision budget; all uncovered pages and
+is configurable (300 seconds) within the 900-second vision budget; all uncovered pages and
 template-render failures are explicit. MDPI table line wrapping alone is not
 proof of a defect: inspect advisories before changing widths or scientific text.
 Malformed/truncated page responses leave that page unchecked but do not abort

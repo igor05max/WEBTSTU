@@ -31,7 +31,7 @@ class QwenPlanningProvider:
         self.timeout = int(
             timeout
             if timeout is not None
-            else getattr(settings, "TEMPLATE_V2_QWEN_TIMEOUT", 120)
+            else getattr(settings, "TEMPLATE_V2_QWEN_TIMEOUT", 300)
         )
 
     def __call__(self, snapshot: dict[str, Any]) -> dict[str, Any]:

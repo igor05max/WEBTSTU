@@ -6,6 +6,7 @@ import signal
 from django.core.management.base import BaseCommand
 
 from apps.template_workspace.v2.services import run_v2_job
+from apps.template_workspace.v2.timeouts import job_timeout_seconds
 
 
 class Command(BaseCommand):
@@ -21,7 +22,7 @@ class Command(BaseCommand):
             resource.setrlimit(resource.RLIMIT_CPU, (900, 900))
             resource.setrlimit(resource.RLIMIT_FSIZE, (250 * 1024 * 1024, 250 * 1024 * 1024))
             signal.signal(signal.SIGALRM, self.timeout)
-            signal.alarm(18 * 60)
+            signal.alarm(job_timeout_seconds())
         try:
             run_v2_job(options["job_id"])
         finally:
