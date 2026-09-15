@@ -13,13 +13,15 @@ from lxml import etree
 import pymupdf
 
 from .v2.editor.safe_word_editor import (SafeWordEditorResult, _apply_run_profile, _NodeMeta,
-                                       _normalise_front_matter, _resize_table_to_width)
+                                       _normalise_front_matter, _resize_table_to_width, _wide_object_spans)
 from .v2.editor.object_flow import detach_display_objects, normalize_display_geometry
-from .v2.editor.repair_actions import apply_actions, ground_targets, select_actions, structural_issues, inventory
+from .v2.editor.repair_actions import (apply_actions, ground_targets, select_actions,
+                                     structural_issues, inventory, rendered_target_ids)
 from .v2.ooxml.namespaces import NS, qn
 from .v2.quality_cycle import run_quality_cycle, improvement, quality_status, repairs_covered
 from .v2.readability import validate_issues
 from .v2.timeouts import job_timeout_seconds
+from .v2.editor.layout_fidelity import wrap_picture_captions
 
 
 def reviewed(issues=(), **kwargs):
@@ -34,6 +36,18 @@ ISSUE = dict(page=1, kind='text_typography', severity='medium', description='Mix
 @override_settings(TEMPLATE_V2_EDIT_CYCLE_ENABLED=True, TEMPLATE_V2_EDIT_CYCLE_MAX_PASSES=3,
                    TEMPLATE_V2_EDIT_CYCLE_BUDGET=2100)
 class QualityCycleTests(SimpleTestCase):
+    def test_missing_rendered_caption_rejects_apparent_visual_improvement(self):
+        before = reviewed([ISSUE], rendered_target_ids=['body', 'caption'])
+        after = reviewed([], rendered_target_ids=['body'])
+        self.assertEqual(improvement(before, after, [], []), (False, 'rendered_content_regression'))
+
+    def test_rendered_text_across_pages_is_not_a_loss(self):
+        pdf = [SimpleNamespace(get_text=lambda:'Figure 6. Several original '),
+               SimpleNamespace(get_text=lambda:'panels and their common caption.')]
+        targets = [{'id':'caption', 'text':'Figure 6. Several original panels and their common caption.'},
+                   {'id':'missing', 'text':'Another caption absent from this rendered document.'}]
+        self.assertEqual(rendered_target_ids(pdf, targets), ['caption'])
+
     def setUp(self):
         self.tmp = TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
@@ -162,6 +176,36 @@ class QualityCycleTests(SimpleTestCase):
 
 
 class NativeObjectFlowTests(SimpleTestCase):
+    def test_three_inline_panels_use_full_width_with_their_native_caption(self):
+        body = etree.Element(qn('w:body')); p = etree.SubElement(body,qn('w:p'))
+        for _ in range(3):
+            inline = etree.SubElement(etree.SubElement(etree.SubElement(p,qn('w:r')),qn('w:drawing')),qn('wp:inline'))
+            etree.SubElement(inline,qn('wp:extent'),cx='2000000',cy=str(150*12700))
+        caption = etree.SubElement(body,qn('w:p'))
+        etree.SubElement(etree.SubElement(caption,qn('w:r')),qn('w:t')).text='Figure 6. Native panel group.'
+        metadata={caption:_NodeMeta(None,'figure_caption',group_id='fig6')}
+        section = etree.Element(qn('w:sectPr'))
+        etree.SubElement(section,qn('w:cols')).set(qn('w:num'),'2')
+        layout = SimpleNamespace(column_width_twips=4500,printable_width_twips=10000,body_left_twips=0,body_section=section)
+        self.assertEqual(_wide_object_spans(body,metadata,{},layout), [[p,caption]])
+        self.assertEqual(wrap_picture_captions(body,metadata,layout,{p,caption}),1)
+        self.assertIs(p.getparent(),caption.getparent())
+        self.assertIsNotNone(body.find('.//w:cantSplit',NS))
+
+    def test_tall_panel_stack_in_narrow_column_is_not_wrapped_in_atomic_row(self):
+        body = etree.Element(qn('w:body')); metadata = {}
+        p = etree.SubElement(body,qn('w:p'))
+        for _ in range(3):
+            inline = etree.SubElement(etree.SubElement(etree.SubElement(p,qn('w:r')),qn('w:drawing')),qn('wp:inline'))
+            etree.SubElement(inline,qn('wp:extent'),cx='2000000',cy=str(130*12700))
+        p = etree.SubElement(body,qn('w:p'))
+        etree.SubElement(etree.SubElement(p,qn('w:r')),qn('w:t')).text='Fig. 6. Three related panels.'
+        metadata[p] = _NodeMeta(None,'figure_caption',group_id='fig6')
+        layout = SimpleNamespace(column_width_twips=4500,body_left_twips=0)
+        self.assertEqual(wrap_picture_captions(body,metadata,layout,set()),0)
+        self.assertEqual(len(body.findall('w:tbl',NS)),0)
+        self.assertEqual(len(body.xpath('.//w:drawing',namespaces=NS)),3)
+
     def test_front_shell_is_not_a_column_sized_article_figure(self):
         root = etree.Element(qn('w:document')); body = etree.SubElement(root, qn('w:body'))
         p = etree.SubElement(body, qn('w:p')); r = etree.SubElement(p, qn('w:r'))

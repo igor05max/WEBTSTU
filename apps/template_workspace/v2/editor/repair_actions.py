@@ -102,6 +102,17 @@ def ground_targets(pdf, targets):
     return grounded
 
 
+def rendered_target_ids(pdf, targets):
+    """Track text that actually survives PDF export, including page-spanning text.
+
+    Unlike page grounding, duplicates need not resolve to one page. This is a
+    conservative regression gate, not a claim that every pixel is visible.
+    """
+    text = _normalize(''.join(page.get_text() for page in pdf))
+    return [t['id'] for t in targets if len(_normalize(t['text'])) >= 20
+            and _normalize(t['text']) in text]
+
+
 def structural_issues(path, targets):
     from .safe_word_editor import _role_run_defaults
     issues = []

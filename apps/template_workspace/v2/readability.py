@@ -153,9 +153,10 @@ def review_pdf(pdf_path, *, provider, max_pages=8, budget_seconds=900, request_t
               'queue_wait_included_in_limits':True}
     with pymupdf.open(pdf_path) as pdf:
         if targets:
-            from .editor.repair_actions import ground_targets
+            from .editor.repair_actions import ground_targets, rendered_target_ids
             provider.page_targets = ground_targets(pdf, targets)
             report['grounded_targets'] = provider.page_targets
+            report['rendered_target_ids'] = rendered_target_ids(pdf, targets)
         report['pages_total'] = len(pdf)
         priority = []
         # All pages are considered for scheduling; code, numeric tables and

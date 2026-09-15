@@ -353,10 +353,15 @@ def wrap_picture_captions(body, metadata, layout, full_width_nodes):
         if p.tag != qn('w:p') or text(p) or p.xpath('.//w:object|.//m:oMath', namespaces=NS):
             continue
         holders = p.xpath('.//wp:inline', namespaces=NS)
-        if len(holders) != 1:
+        if not 1 <= len(holders) <= 3:
             continue
-        extent = holders[0].find('wp:extent', NS)
-        if extent is None or int(extent.get('cy','0')) > 480*12700:
+        if len(holders) > 1 and p not in full_width_nodes:
+            continue  # tall unsplittable rows can clip in LO's short columns
+        extents = [h.find('wp:extent', NS) for h in holders]
+        if any(e is None or int(e.get('cy','0')) <= 0 for e in extents):
+            continue
+        height = sum(int(e.get('cy','0')) for e in extents)
+        if height > 480*12700:
             continue
         children = list(body); i = children.index(p); j = i+1
         while j < len(children) and blank(children[j]): j += 1

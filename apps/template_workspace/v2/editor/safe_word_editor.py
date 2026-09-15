@@ -2592,12 +2592,24 @@ def _wide_object_spans(
     spans: list[list[etree._Element]] = []
     for i, node in enumerate(children):
         meta = meta_by_node.get(node)
-        if (local_name(node) == 'p' and meta and meta.role == 'figure'
-                and display_width_twips(node) > layout.column_width_twips * 1.55):
+        inline_panels = node.xpath('./w:r/w:drawing/wp:inline/wp:extent', namespaces=NS) if local_name(node) == 'p' else []
+        panel_width = sum(_safe_int(e.get('cx')) / EMU_PER_TWIP for e in inline_panels)
+        # A source row of native panels should not become a tall stack merely
+        # because the target body has two columns. Keep their shared caption in
+        # a full-width span only when the intact row fits the printable area.
+        panel_row = (2 <= len(inline_panels) <= 3 and not normalize_text(element_text(node))
+                     and not node.xpath('.//w:br|.//w:object|.//m:oMath', namespaces=NS)
+                     and all(_safe_int(e.get('cx')) >= 1800 * EMU_PER_TWIP for e in inline_panels)
+                     and layout.column_width_twips * 1.55 < panel_width <= layout.printable_width_twips * .96
+                     and i+1 < len(children) and meta_by_node.get(children[i+1])
+                     and meta_by_node[children[i+1]].role == 'figure_caption')
+        if panel_row or (local_name(node) == 'p' and meta and meta.role == 'figure'
+                         and display_width_twips(node) > layout.column_width_twips * 1.55):
             span = [node]
             for following in children[i+1:]:
                 following_meta = meta_by_node.get(following)
-                if following_meta and following_meta.role == 'figure_caption' and following_meta.group_id == meta.group_id:
+                if following_meta and following_meta.role == 'figure_caption' and (
+                        panel_row or following_meta.group_id == meta.group_id):
                     span.append(following)
                 else:
                     break

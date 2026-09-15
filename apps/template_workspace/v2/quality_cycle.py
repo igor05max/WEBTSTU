@@ -38,6 +38,8 @@ def improvement(before, after, structural_before, structural_after):
             return False, 'pagination_changed_with_partial_coverage'
     elif not set(before.get('pages_checked', ())).issubset(after['pages_checked']):
         return False, 'coverage_regression'
+    if set(before.get('rendered_target_ids', ())) - set(after.get('rendered_target_ids', ())):
+        return False, 'rendered_content_regression'
     def score(items):
         return sum({'high':9, 'medium':3, 'low':1}.get(x['severity'], 1) for x in items)
     def hard(review):
