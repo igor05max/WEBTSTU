@@ -495,6 +495,7 @@ class TemplateV2InspectorTests(TestCase):
 
 
 @skipUnlessDBFeature("supports_transactions")
+@override_settings(TEMPLATE_V2_QWEN_ENABLED=False, TEMPLATE_V2_VISUAL_REVIEW_ENABLED=False)
 class TemplateV2ViewTests(TestCase):
     def setUp(self):
         self.media = tempfile.TemporaryDirectory()
@@ -537,6 +538,48 @@ class TemplateV2ViewTests(TestCase):
         self.assertTrue((analysis_directory(job) / "editor_report.json").exists())
         self.assertTrue(result_docx_path(job).exists())
         self.assertFalse((analysis_directory(job) / "document_diff.json").exists())
+
+    def test_v2_unrecoverable_content_has_specific_message_and_diagnostic(self):
+        from apps.template_workspace.v2.editor.content_recovery import ContentPreservationError
+        source = Path(self.media.name) / 'source.docx'
+        make_docx_with_core_objects(source)
+        job = TemplateJob.objects.create(owner=self.user, kind='v2',
+            article=SimpleUploadedFile('source.docx', source.read_bytes()),
+            template=SimpleUploadedFile('template.docx', source.read_bytes()),
+            article_name='source.docx', template_name='template.docx')
+        with patch('apps.template_workspace.v2.services.SafeWordEditor.render',
+                   side_effect=ContentPreservationError({'losses': ['source_binary_parts']})):
+            run_v2_job(str(job.pk))
+        job.refresh_from_db()
+        self.assertEqual(job.status, 'failed')
+        self.assertIn('после локального восстановления', job.message)
+        self.assertNotIn('корректными DOCX', job.message)
+        self.assertTrue((analysis_directory(job) / 'preservation_failure.json').exists())
+        self.assertFalse(result_docx_path(job).exists())
+
+    def test_v2_recovered_fragment_completes_with_warning_and_download(self):
+        source = Path(self.media.name) / 'source.docx'
+        doc = Document(); p = doc.add_paragraph('Scientific 130')
+        p.add_run('th').font.superscript = True
+        doc.add_paragraph('A. Author'); doc.add_paragraph('Introduction')
+        doc.add_paragraph('Reliable measurements of 42 samples are retained.')
+        doc.save(source)
+        job = TemplateJob.objects.create(owner=self.user, kind='v2',
+            article=SimpleUploadedFile('source.docx', source.read_bytes()),
+            template=SimpleUploadedFile('template.docx', source.read_bytes()),
+            article_name='source.docx', template_name='template.docx')
+        from apps.template_workspace.v2.editor import safe_word_editor as editor
+        original = editor._apply_role_format
+        def damage(p, *args, **kwargs):
+            original(p, *args, **kwargs)
+            for node in p.xpath('.//w:vertAlign', namespaces=editor.NS): node.getparent().remove(node)
+        with patch.object(editor, '_apply_role_format', side_effect=damage):
+            run_v2_job(str(job.pk))
+        job.refresh_from_db()
+        self.assertEqual(job.status, 'completed')
+        self.assertIn('Восстановлено фрагментов:', job.message)
+        self.assertTrue(any('восстановлено' in warning for warning in job.warnings))
+        self.assertTrue(result_docx_path(job).exists())
 
     def test_run_v2_job_converts_legacy_doc_uploads(self):
         source = Path(self.media.name) / "source.docx"

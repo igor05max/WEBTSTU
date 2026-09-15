@@ -18,6 +18,7 @@ from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.services import output_directory
 from apps.template_workspace.v2.classification.roles import RoleClassifierV2
 from apps.template_workspace.v2.editor.safe_word_editor import SafeWordEditor
+from apps.template_workspace.v2.editor.content_recovery import ContentPreservationError
 from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.mapping.preview import RoleMatcher
 from apps.template_workspace.v2.planning.qwen_provider import build_planning_engine
@@ -154,11 +155,24 @@ def run_v2_job(job_id: str) -> None:
             warnings.append("Qwen/VPN: AI_BASE_URL не задан; Template V2 применил детерминированный локальный fallback.")
         else:
             warnings.append(f"Qwen/VPN: планировщик Template V2 настроен через {get_api_base_url(settings.TEMPLATE_V2_QWEN_BASE_URL or None)}; ответ проходит whitelist-валидацию, при сбое используется локальный fallback.")
+        recovery_count = editor_result.metrics.get('local_content_recovery_count', 0)
+        message = "V2 RESULT.docx, отчёты, TemplateProfile и MappingPreview готовы."
+        if recovery_count:
+            message += f" Восстановлено фрагментов: {recovery_count}; см. предупреждения."
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
             status="completed",
-            message="V2 RESULT.docx, отчёты, TemplateProfile и MappingPreview готовы.",
+            message=message,
             plan=plan,
             warnings=warnings,
+            updated_at=timezone.now(),
+        )
+    except ContentPreservationError as exc:
+        logger.exception("Template V2 could not safely restore content: %s", job_id)
+        write_json(analysis_directory(job) / "preservation_failure.json", exc.report)
+        TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
+            status="failed",
+            message="Не удалось безопасно сохранить содержимое документа даже после локального восстановления. "
+                    "Исходные файлы не изменены; диагностика записана в preservation_failure.json.",
             updated_at=timezone.now(),
         )
     except LegacyDocConversionError as exc:
@@ -172,6 +186,6 @@ def run_v2_job(job_id: str) -> None:
         logger.exception("Template V2 analysis failed: %s", job_id)
         TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
             status="failed",
-            message="Не удалось выполнить V2-анализ DOCX. Проверьте, что оба файла являются корректными DOCX.",
+            message="Внутренняя ошибка обработки V2. Исходные файлы не изменены; подробности записаны в журнал обработки.",
             updated_at=timezone.now(),
         )

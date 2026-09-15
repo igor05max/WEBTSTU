@@ -22,6 +22,7 @@ from apps.template_workspace.v2.profile.template import TemplateProfileBuilder
 from apps.template_workspace.v2.planning.qwen_like import QwenLikePlanningEngine, PlanningResult
 from apps.template_workspace.v2.editor.template_evidence import NativeTemplateFormatting, StoryImporter
 from apps.template_workspace.v2.editor.integrity import native_integrity
+from .content_recovery import ContentPreservationError, LocalContentGuard, insert_rich_line_breaks
 from apps.template_workspace.v2.editor.protected_blocks import (
     code_nodes, visible_code_text, is_display_equation, format_code,
     format_display_equation, equation_spacing, hide_equation_control_fields, legacy_equation_ids,
@@ -337,6 +338,7 @@ class SafeWordEditor:
 
             template_hints = _template_render_hints(template_zip, template_report, self.classifier)
             _split_abstract_labels(body, meta_by_node, template_report)
+            content_guard = LocalContentGuard(body, meta_by_node, protected_code)
 
             # Formatting is applied from effective role profiles directly, rather
             # than copying the TEMPLATE styles.xml wholesale.  That prevents source
@@ -347,7 +349,8 @@ class SafeWordEditor:
                 meta = meta_by_node.get(child)
                 role = meta.role if meta else None
                 if child in protected_code:
-                    format_code(child, template_profile.roles.get('body'), _apply_role_format)
+                    with content_guard.formatting(child):
+                        format_code(child, template_profile.roles.get('body'), _apply_role_format)
                     continue
                 if not normalize_text(element_text(child)):
                     continue
@@ -360,19 +363,20 @@ class SafeWordEditor:
                     variant = next((v for v in profile.observed_variants if any(p.id == v['block_id'] and p.normalized_text.casefold().strip(' .:') in {'abstract','аннотация','резюме'} for p in template_report.paragraphs)), None)
                     if variant:
                         pformat, rformat = variant['paragraph'], variant['run']
-                _apply_role_format(child, role or "body", pformat, rformat)
-                metrics["formatted_paragraphs"] += 1
+                with content_guard.formatting(child):
+                    _apply_role_format(child, role or "body", pformat, rformat)
+                    metrics["formatted_paragraphs"] += 1
 
-                if role == "rubric":
-                    metrics["captions_normalized"] += _normalise_rubric_translation(child, template_hints["rubric_has_cyrillic"])
-                elif role == "keywords" and template_hints["keywords_use_semicolon"]:
-                    metrics["captions_normalized"] += _normalise_keywords_delimiter(child)
-                elif role == "title" and template_hints["title_uses_manual_breaks"]:
-                    metrics["title_breaks_inserted"] += _balance_title_lines(child)
-                elif role == "figure_caption" and template_hints["figure_caption_prefix"]:
-                    metrics["captions_normalized"] += _normalise_figure_caption_prefix(
-                        child, template_hints["figure_caption_prefix"]
-                    )
+                    if role == "rubric":
+                        metrics["captions_normalized"] += _normalise_rubric_translation(child, template_hints["rubric_has_cyrillic"])
+                    elif role == "keywords" and template_hints["keywords_use_semicolon"]:
+                        metrics["captions_normalized"] += _normalise_keywords_delimiter(child)
+                    elif role == "title" and template_hints["title_uses_manual_breaks"]:
+                        metrics["title_breaks_inserted"] += _balance_title_lines(child)
+                    elif role == "figure_caption" and template_hints["figure_caption_prefix"]:
+                        metrics["captions_normalized"] += _normalise_figure_caption_prefix(
+                            child, template_hints["figure_caption_prefix"]
+                        )
 
             metrics["front_spacing_adjustments"] += _apply_front_matter_spacing(
                 body=body,
@@ -521,6 +525,14 @@ class SafeWordEditor:
             metrics['native_math_typography_aligned'] = math_typography(body, template_zip, template_profile.roles.get('body'))
             metrics['picture_caption_atomic_rows'] = wrap_picture_captions(body, meta_by_node, layout, full_width_nodes)
             metrics['hidden_equation_controls_guarded'] = hide_equation_control_fields(body)
+            recoveries = content_guard.recover()
+            metrics['local_content_recoveries'] = recoveries
+            metrics['local_content_recovery_count'] = len(recoveries)
+            warnings.extend(
+                f"Абзац {event['paragraph']} ({event['block_id'] or event['role'] or 'текст/ячейка'}): "
+                f"отменено небезопасное изменение ({', '.join(event['losses'])}); "
+                "исходное содержимое фрагмента восстановлено. Остальное оформление сохранено."
+                for event in recoveries)
             replacements: dict[str, bytes] = {"word/document.xml": _serialize_xml(document_root)}
             if copy_template_headers:
                 author_short = _article_author_shortline(article_structure, article_report)
@@ -554,10 +566,10 @@ class SafeWordEditor:
                 correspondence_symbols=metrics['journal_symbols_installed'],
                 excluded_metadata_ids=[b['id'] for b in article_structure.blocks if b.get('detected_role') in {'editorial_metadata','article_type','rubric'}])
             if not metrics['native_integrity']['passed']:
-                raise ValueError('Native content preservation failed: ' + repr(metrics['native_integrity']))
+                raise ContentPreservationError(metrics['native_integrity'])
             metrics['code_content_preserved'] = all(visible_code_text(p) == text for p, text in code_before.items())
             if not metrics['code_content_preserved']:
-                raise ValueError('Code whitespace or content changed during formatting')
+                raise ContentPreservationError({'losses': ['code_whitespace']})
             _write_package(article_zip, output_path, replacements)
 
         changes = [
@@ -1158,8 +1170,7 @@ def _balance_title_lines(paragraph: etree._Element) -> int:
     lines = _balanced_word_lines(text, line_count)
     if len(lines) <= 1:
         return 0
-    _replace_paragraph_with_lines_preserve_rpr(paragraph, lines)
-    return 1
+    return int(_replace_paragraph_with_lines_preserve_rpr(paragraph, lines))
 
 
 def _balanced_word_lines(text: str, line_count: int) -> list[str]:
@@ -1210,20 +1221,8 @@ def _balanced_word_lines(text: str, line_count: int) -> list[str]:
     return [x for x in result if x]
 
 
-def _replace_paragraph_with_lines_preserve_rpr(paragraph: etree._Element, lines: list[str]) -> None:
-    ppr = paragraph.find("w:pPr", namespaces=NS)
-    first_rpr = paragraph.find(".//w:r/w:rPr", namespaces=NS)
-    for child in list(paragraph):
-        if child is not ppr:
-            paragraph.remove(child)
-    run = etree.SubElement(paragraph, qn("w:r"))
-    if first_rpr is not None:
-        run.append(_clone(first_rpr))
-    for i, line in enumerate(lines):
-        if i:
-            etree.SubElement(run, qn("w:br"))
-        t = etree.SubElement(run, qn("w:t"))
-        t.text = line
+def _replace_paragraph_with_lines_preserve_rpr(paragraph: etree._Element, lines: list[str]) -> bool:
+    return insert_rich_line_breaks(paragraph, lines)
 
 
 def _replace_paragraph_text_preserve_rpr(paragraph: etree._Element, text: str) -> None:

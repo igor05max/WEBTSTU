@@ -6,6 +6,16 @@ from lxml import etree
 from apps.template_workspace.v2.ooxml.namespaces import NS, qn
 
 
+def math_structure(node):
+    """Typography may change, but native equation operators/order may not."""
+    if node.tag in {qn('w:rFonts'), qn('w:sz'), qn('w:szCs')}:
+        return None
+    children = tuple(value for child in node if (value := math_structure(child)) is not None)
+    if node.tag == qn('w:rPr') and not children and not node.attrib:
+        return None
+    return (node.tag, tuple(sorted(node.attrib.items())), node.text or '', children)
+
+
 def native_integrity(source_zip, result_root, replacements, *, source_author_ids=(), correspondence_symbols=0, excluded_metadata_ids=()):
     source = etree.fromstring(source_zip.read('word/document.xml'))
     def facts(root):
@@ -18,15 +28,6 @@ def native_integrity(source_zip, result_root, replacements, *, source_author_ids
         }.items():
             result[label] = len(root.xpath(query, namespaces=NS))
         result['math_tokens'] = Counter(root.xpath('//m:t/text()', namespaces=NS))
-        def math_structure(node):
-            # Typography is editable; operators, fractions, indices and their
-            # order are not. Reject corruption even when token counts match.
-            if node.tag in {qn('w:rFonts'), qn('w:sz'), qn('w:szCs')}:
-                return None
-            children = tuple(value for child in node if (value := math_structure(child)) is not None)
-            if node.tag == qn('w:rPr') and not children and not node.attrib:
-                return None
-            return (node.tag, tuple(sorted(node.attrib.items())), node.text or '', children)
         result['math_structures'] = Counter(math_structure(n) for n in root.xpath('//m:oMath', namespaces=NS))
         result['positioned_text'] = Counter(
             (p.get(qn('w:val')), character)
