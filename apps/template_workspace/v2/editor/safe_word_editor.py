@@ -3,6 +3,7 @@ from __future__ import annotations
 from .layout_fidelity import (front_gap_evidence, apply_front_gaps, align_standalone_picture,
                              scientific_table_rules, math_typography, descriptions_before_figures,
                              wrap_picture_captions, heading_gap_evidence, apply_heading_gaps)
+from .table_structure import analyze_table_structure
 
 import re
 from dataclasses import dataclass, field
@@ -466,6 +467,7 @@ class SafeWordEditor:
                 if local_name(child) == "tbl":
                     meta = meta_by_node.get(child)
                     info = table_info.get(meta.block_id) if meta and meta.block_id else None
+                    table_structure = analyze_table_structure(child)
                     target = layout.printable_width_twips if child in full_width_nodes else layout.column_width_twips
                     use_wide_template = bool(info and layout.body_left_twips and
                         any(3 <= t.logical_column_count <= info.logical_column_count and t.caption_nearby and
@@ -476,13 +478,14 @@ class SafeWordEditor:
                         target = layout.printable_width_twips
                     if _resize_table_to_width(child, target, info):
                         table_evidence = _apply_template_table_evidence(child, template_zip, template_report)
-                        if not table_evidence and info and info.classification != 'FIGURE_CONTAINER':
+                        if not table_evidence and info and info.classification != 'FIGURE_CONTAINER' and not table_structure.nested:
                             body_profile = template_profile.roles.get('body')
                             if body_profile:
                                 for cell_p in child.xpath('./w:tr/w:tc/w:p', namespaces=NS):
                                     _apply_role_format(cell_p, 'body', body_profile.typical_paragraph_formatting,
                                                        body_profile.typical_run_formatting)
-                        metrics['scientific_tables_styled'] = metrics.get('scientific_tables_styled', 0) + scientific_table_rules(child, info)
+                        metrics['scientific_tables_styled'] = metrics.get('scientific_tables_styled', 0) + scientific_table_rules(
+                            child, info, structure=table_structure, audit=metrics.setdefault('table_rule_plans', []))
                         if layout.body_left_twips and child not in full_width_nodes and not use_wide_template:
                             tblpr = child.find("w:tblPr", namespaces=NS)
                             jc = tblpr.find("w:jc", namespaces=NS)
@@ -3004,8 +3007,9 @@ def _compact_blank_body_paragraphs(body, metadata):
 
 
 def _apply_template_table_evidence(table, template_zip, report):
-    if table.xpath('.//w:drawing|.//w:pict|.//w:object', namespaces=NS):
+    if table.xpath('.//w:drawing|.//w:pict|.//w:object|.//w:tbl', namespaces=NS):
         return
+    structure = analyze_table_structure(table)
     metadata_row = len(normalize_text(element_text(table))) < 240 and bool(re.search(r'\b(?:УДК|UDC|DOI)\b', element_text(table), re.I))
     candidates = [t for t in report.tables if t.classification == 'DATA_TABLE']
     if metadata_row:
@@ -3039,13 +3043,15 @@ def _apply_template_table_evidence(table, template_zip, report):
             if local_name(prop) in {'tblBorders', 'tblCellMar', 'shd'}:
                 _replace_child_by_local_name(target_pr, _clone(prop))
     sample_rows = example.findall('w:tr', NS)
+    sample_header = analyze_table_structure(example).header_rows
     # Repeated body formatting comes from an interior row, not the first
     # post-header/group boundary of a merged template table.
-    interior = sample_rows[1:-1] or sample_rows[1:] or sample_rows
+    interior = sample_rows[sample_header:-1] or sample_rows[sample_header:] or sample_rows
     body_sample = min(interior, key=lambda row: len(row.xpath(
         './w:tc/w:tcPr/w:tcBorders/*[not(@w:val="nil" or @w:val="none")]', namespaces=NS)))
     for row_index, row in enumerate(table.findall('w:tr', NS)):
-        sample = sample_rows[0] if row_index == 0 else body_sample
+        is_header = row_index < structure.header_rows
+        sample = sample_rows[min(row_index, max(0, sample_header-1))] if is_header else body_sample
         sample_cells = sample.findall('w:tc', NS)
         for index, cell in enumerate(row.findall('w:tc', NS)):
             sample_cell = sample_cells[min(index, len(sample_cells)-1)]
@@ -3056,7 +3062,7 @@ def _apply_template_table_evidence(table, template_zip, report):
             if old_borders is not None:
                 tcpr.remove(old_borders)
             borders = etree.SubElement(tcpr, qn('w:tcBorders'))
-            inherited_cell = native.table_properties(example, 'tcPr', first_row=row_index==0,
+            inherited_cell = native.table_properties(example, 'tcPr', first_row=is_header,
                                                       last_row=row_index==len(table.findall('w:tr', NS))-1)
             reference_borders = sample_cell.find('w:tcPr/w:tcBorders', NS)
             if reference_borders is None:
@@ -3108,7 +3114,7 @@ def _apply_template_table_evidence(table, template_zip, report):
                 if old is not None:
                     run.remove(old)
                 run.insert(0, rpr)
-        if row_index == 0:
+        if row_index < structure.header_rows:
             trpr = row.find('w:trPr', NS)
             if trpr is None:
                 trpr = etree.Element(qn('w:trPr')); row.insert(0, trpr)

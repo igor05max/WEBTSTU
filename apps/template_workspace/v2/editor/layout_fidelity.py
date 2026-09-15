@@ -5,6 +5,7 @@ from lxml import etree
 from apps.template_workspace.v2.ooxml.namespaces import NS, qn
 from .template_evidence import NativeTemplateFormatting
 from .protected_blocks import prop
+from .table_structure import analyze_table_structure
 
 
 FRONT = {'editorial_metadata', 'title', 'author', 'affiliation', 'email', 'abstract', 'keywords', 'citation'}
@@ -168,13 +169,27 @@ def align_standalone_picture(p, layout, *, full_width=False):
     return 1
 
 
-def scientific_table_rules(table, info):
-    """User policy: horizontal rules, centered values, readable text columns."""
+def scientific_table_rules(table, info, *, structure=None, audit=None):
+    """Horizontal rules follow native headings/groups, not physical row count."""
     if info is None or info.classification == 'FIGURE_CONTAINER':
         return 0
+    structure = structure or analyze_table_structure(table)
+    if structure.nested:
+        # Preserve genuine table-in-table frames, captions and graphics. Only
+        # unambiguous hierarchical data leaves receive rules in their own grid.
+        changed = 0
+        for nested in table.findall('.//w:tbl', NS):
+            child_structure = analyze_table_structure(nested)
+            if child_structure.hierarchical and not nested.xpath('.//w:drawing|.//w:pict|.//w:object', namespaces=NS):
+                changed += scientific_table_rules(nested, info, structure=child_structure, audit=audit)
+        return changed
     rows = table.findall('w:tr', NS)
     if len(rows) < 2 or (len(text(table)) < 240 and re.search(r'\b(?:DOI|УДК|UDC)\b', text(table), re.I)):
         return 0
+    if audit is not None:
+        audit.append(structure.report())
+    if not structure.valid:
+        return 0  # malformed merges: do not guess visible boundaries
     pr = table.find('w:tblPr', NS)
     if pr is None:
         pr = etree.Element(qn('w:tblPr')); table.insert(0, pr)
@@ -192,18 +207,30 @@ def scientific_table_rules(table, info):
         el = prop(borders, side)
         if el.get(qn('w:val')) in {None, 'nil', 'none'}:
             prop(borders, side, val='single', sz=4, color='000000')
+    header = structure.header_rows
+    if structure.hierarchical:
+        # Direct nil overrides prevent table styles/row exceptions from
+        # resurrecting the old grid when no visible cell border exists in XML.
+        for bp in [borders] + table.findall('w:tr/w:tblPrEx/w:tblBorders', NS):
+            for side in ('top', 'bottom', 'left', 'right', 'insideH', 'insideV'):
+                if bp is borders and side in {'top', 'bottom'}:
+                    continue
+                prop(bp, side, val='nil')
+        boundaries = {0, len(rows), *structure.group_boundaries}
+        if header and not structure.crosses_merge(header):
+            boundaries.add(header)
+    else:
+        boundaries = set()
     # Choose by the whole body column; don't alternate alignment on each row.
     columns = defaultdict(list)
-    for row in rows[1:]:
-        col = 0
-        for cell in row.findall('w:tc', NS):
-            columns[col].append(text(cell))
-            span = cell.find('w:tcPr/w:gridSpan', NS)
-            col += int(span.get(qn('w:val'), '1')) if span is not None else 1
+    for row in structure.rows[header:]:
+        for cell in row:
+            if cell.merge != 'continue':
+                columns[cell.start].append(text(cell.node))
     left_columns = {col for col, values in columns.items() if any(len(v)>32 for v in values)
                     or sum(len(v)>18 and bool(re.search(r'[A-Za-zА-Яа-я]{3}', v)) for v in values) > len(values)/2}
     for ri, row in enumerate(rows):
-        col = 0
+        col = structure.rows[ri][0].start if structure.rows[ri] else 0
         for cell in row.findall('w:tc', NS):
             cp = cell.find('w:tcPr', NS)
             if cp is None:
@@ -214,14 +241,36 @@ def scientific_table_rules(table, info):
                 if side in {'start','end'} and cb.find('w:'+side, NS) is None:
                     continue
                 prop(cb, side, val='nil')
-            if ri == 0:
+            if structure.hierarchical:
+                for side in ('top', 'bottom', 'insideH'):
+                    prop(cb, side, val='nil')
+                for side, boundary in [('top', ri), ('bottom', ri+1)]:
+                    if boundary in boundaries:
+                        prop(cb, side, val='single', sz=4, color='000000')
+                # A modest inset separates unruled rows without fixed heights,
+                # blank rows or edits to scientific text.
+                margins = prop(cp, 'tcMar')
+                for side in ('top', 'bottom'):
+                    margin = margins.find('w:'+side, NS)
+                    if margin is None or int(margin.get(qn('w:w'), '0')) < 20:
+                        prop(margins, side, w=20, type='dxa')
+            elif ri == header-1 and not structure.crosses_merge(header):
                 prop(cb, 'bottom', val='single', sz=4, color='000000')
             for p in cell.findall('w:p', NS):
-                prop(pprops(p), 'jc', val='left' if ri and col in left_columns else 'center')
+                prop(pprops(p), 'jc', val='left' if ri >= header and col in left_columns else 'center')
                 ind = prop(pprops(p), 'ind', left=0, right=0, firstLine=0)
                 ind.attrib.pop(qn('w:hanging'), None)
             span = cp.find('w:gridSpan', NS)
             col += int(span.get(qn('w:val'), '1')) if span is not None else 1
+        if structure.hierarchical and ri < header:
+            rp = row.find('w:trPr', NS)
+            if rp is None:
+                rp = etree.Element(qn('w:trPr')); row.insert(0, rp)
+            # CT_OnOffOnly uses the empty element for true (older Word schemas
+            # reject numeric w:val even though Word itself accepts it).
+            prop(rp, 'tblHeader').attrib.pop(qn('w:val'), None)
+            for p in row.xpath('./w:tc/w:p', namespaces=NS):
+                prop(pprops(p), 'keepNext', val=1)
     return 1
 
 

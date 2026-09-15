@@ -24,6 +24,10 @@ Do not infer figure-order errors without the preceding context. JAMT's running j
 aligned (user override); other journals follow their template. Ordinary readable table wrapping is not a defect.
 For header alignment, compare the RIGHT endpoint of the journal text with the rule/text-area edge, not the
 sentence's center. Table vertical rules must be actual strokes BETWEEN CELLS; nearby chart axes are not table rules.
+For hierarchical tables, inspect the COMPLETE multi-row header and merged row-label groups: a rule below the whole
+header and between outer groups is appropriate; rules between each parameter inside one merged group are clutter.
+Do not demand a grid or an underline beneath every subheading. A merged label spanning several rows is not itself
+a nested table or an alignment error. Preserve genuine nested tables and never suggest flattening their structure.
 Return JSON {"issues":[{"kind":"code_spacing|table_wrapping|equation_clipping|equation_typography|overlap|caption_detached|front_spacing|figure_alignment|table_rules|header_alignment|figure_order","severity":"low|medium|high","description":"short concrete visible observation in Russian"}]}.
 Return at most FOUR issues, each description under 140 characters. Empty issues if none visible. Never translate,
 correct research, judge yellow editorial placeholders, invent missing

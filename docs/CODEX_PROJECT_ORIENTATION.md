@@ -484,6 +484,12 @@ As of 2026-09-15:
 - Template V2 optionally uses the real Qwen endpoint through the constrained
   `QwenPlanningProvider`; every response is validated and saved to
   `planning_report.json`, with deterministic fallback on failure.
+- Grouped-table rules live in `v2/editor/table_structure.py` and
+  `layout_fidelity.scientific_table_rules`: complete multi-row headers and
+  outer merged row groups get separators, not every parameter row. Preserve
+  real nested containers and figure tables; never guess groups from repeated
+  text. Inspector descendant table counts must NOT subtract one. See the
+  2026-09-15 hierarchical-table section in `docs/template_v2_analysis.md`.
 - The Balabanov control result opens in desktop Word without repair and renders
   to 11 pages, matching the professional control page count without fabricating
   the author bios/date/license blocks missing from ARTICLE.

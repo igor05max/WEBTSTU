@@ -248,7 +248,8 @@ class DocumentInspector:
         merge_cells: list[dict[str, Any]] = []
         xml_cell_count = 0
         max_columns = len(grid)
-        nested_table_count = len(table.xpath(".//w:tbl", namespaces=NS)) - 1
+        # .// selects descendants, not the current table itself.
+        nested_table_count = len(table.xpath(".//w:tbl", namespaces=NS))
         for row_index, row in enumerate(table.xpath("./w:tr", namespaces=NS), start=1):
             row_cells: list[TableCellInfo] = []
             cursor = 0
@@ -269,7 +270,7 @@ class DocumentInspector:
                     text=text[:500],
                     has_drawing=bool(cell.xpath(".//w:drawing|.//w:pict", namespaces=NS)),
                     has_formula=bool(cell.xpath(".//m:oMath|.//m:oMathPara", namespaces=NS)),
-                    nested_table_count=max(0, len(cell.xpath(".//w:tbl", namespaces=NS)) - 1),
+                    nested_table_count=len(cell.xpath(".//w:tbl", namespaces=NS)),
                 )
                 row_cells.append(cell_info)
                 if grid_span > 1 or v_merge:
