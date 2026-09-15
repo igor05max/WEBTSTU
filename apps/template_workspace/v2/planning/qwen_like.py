@@ -175,9 +175,9 @@ class QwenLikePlanningEngine:
             flow={
                 "page_break_before_large_full_width_figures": bool(large_figure_ids) and multicolumn,
                 "large_figure_block_ids": large_figure_ids if multicolumn else [],
-                "float_lead_after_figure_block_ids": two_panel_ids if multicolumn else [],
+                "float_lead_after_figure_block_ids": [],
                 "keep_figure_containers_atomic": True,
-                "allow_safe_prose_relocation": multicolumn,
+                "allow_safe_prose_relocation": False,
                 "float_compact_tables_forward": multicolumn,
                 "max_float_body_blocks": 2,
                 "max_float_chars": 1800,

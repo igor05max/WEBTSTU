@@ -2,7 +2,7 @@
 {% block workspace_content %}
 <a href="{% url 'template_workspace:v2_workspace' %}">← Все V2 отчёты</a>
 <h1 style="margin-top:22px">{{ job.article_name }}</h1><p class="tw-muted">TEMPLATE: {{ job.template_name }}</p>
-<p class="tw-muted">V2: нативное оформление Word, защищённые блоки кода и формулы. Qwen помогает с планом и, если включено, проверяет читаемость фрагментов страниц. Объём проверки указан в отчёте.</p>
+<p class="tw-muted">V2: нативное оформление Word, защищённые блоки кода и формулы. Если Qwen-проверка включена, она оценивает интервалы, таблицы, формулы и рисунки; первые страницы сравниваются с оформлением шаблона. Фактический охват и недоступные этапы указаны в отчёте.</p>
 <section class="tw-card" aria-live="polite">
 {% if job.pending %}<div class="tw-state"><span class="tw-pulse"></span>Анализируем DOCX</div><p>Читаем OOXML package, document flow, стили, секции, таблицы, рисунки, формулы, ссылки и headers/footers. Исходные файлы не изменяются.</p><p id="tw-connection" class="tw-muted"></p>
 {% else %}<div class="tw-state">{% if job.status == 'completed' %}V2 отчёты готовы{% else %}Анализ не завершён{% endif %}</div><p>{{ job.message }}</p>{% endif %}

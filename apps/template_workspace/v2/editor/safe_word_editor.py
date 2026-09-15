@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from .layout_fidelity import (front_gap_evidence, apply_front_gaps, align_standalone_picture,
+                             scientific_table_rules, math_typography, descriptions_before_figures,
+                             wrap_picture_captions, heading_gap_evidence, apply_heading_gaps)
+
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -374,6 +378,13 @@ class SafeWordEditor:
                 meta_by_node=meta_by_node,
                 gap_twips=int(template_hints["front_role_gap_twips"]),
             )
+            metrics['front_transition_gaps_twips'] = front_gap_evidence(
+                template_zip, self.classifier.article_structure(template_report))
+            metrics['front_spacing_adjustments'] += apply_front_gaps(
+                body, meta_by_node, metrics['front_transition_gaps_twips'])
+            metrics['heading_gaps_twips'] = heading_gap_evidence(
+                template_zip, self.classifier.article_structure(template_report))
+            metrics['heading_spacing_adjustments'] = apply_heading_gaps(body, meta_by_node, metrics['heading_gaps_twips'])
 
             # Convert Word list numbering on semantic headings into visible text.
             # This removes the large list-tab gap that otherwise appears after we
@@ -412,16 +423,9 @@ class SafeWordEditor:
                 body, table_info, meta_by_node
             )
 
-            # Large multi-panel figures in the journal are frequently placed after
-            # one short look-ahead prose paragraph so the preceding two-column area
-            # is filled instead of leaving a large blank.  Move the *existing* XML
-            # node; never reconstruct its contents.
-            metrics["flow_paragraphs_relocated"] += _optimise_large_figure_flow_v2(
-                body=body,
-                meta_by_node=meta_by_node,
-                table_info=table_info,
-                planning=planning,
-            )
+            # User policy: descriptive prose precedes its figure. Do not execute
+            # the older planner's lead-after-figure relocation, even if requested.
+            metrics['figures_moved_after_description'] = descriptions_before_figures(body, meta_by_node)
             metrics["compact_tables_floated"] += _float_compact_tables_forward(
                 body=body,
                 meta_by_node=meta_by_node,
@@ -471,7 +475,14 @@ class SafeWordEditor:
                     if use_wide_template:
                         target = layout.printable_width_twips
                     if _resize_table_to_width(child, target, info):
-                        _apply_template_table_evidence(child, template_zip, template_report)
+                        table_evidence = _apply_template_table_evidence(child, template_zip, template_report)
+                        if not table_evidence and info and info.classification != 'FIGURE_CONTAINER':
+                            body_profile = template_profile.roles.get('body')
+                            if body_profile:
+                                for cell_p in child.xpath('./w:tr/w:tc/w:p', namespaces=NS):
+                                    _apply_role_format(cell_p, 'body', body_profile.typical_paragraph_formatting,
+                                                       body_profile.typical_run_formatting)
+                        metrics['scientific_tables_styled'] = metrics.get('scientific_tables_styled', 0) + scientific_table_rules(child, info)
                         if layout.body_left_twips and child not in full_width_nodes and not use_wide_template:
                             tblpr = child.find("w:tblPr", namespaces=NS)
                             jc = tblpr.find("w:jc", namespaces=NS)
@@ -500,8 +511,12 @@ class SafeWordEditor:
                         # Inline equations in prose retain its first-line indent;
                         # stand-alone objects need the template text-area inset.
                         _set_object_paragraph_insets(child, layout)
+                    metrics['standalone_pictures_aligned'] = metrics.get('standalone_pictures_aligned', 0) + align_standalone_picture(
+                        child, layout, full_width=child in full_width_nodes)
                     metrics["drawings_resized"] += _resize_top_level_drawings(child, target)
 
+            metrics['native_math_typography_aligned'] = math_typography(body, template_zip, template_profile.roles.get('body'))
+            metrics['picture_caption_atomic_rows'] = wrap_picture_captions(body, meta_by_node, layout, full_width_nodes)
             metrics['hidden_equation_controls_guarded'] = hide_equation_control_fields(body)
             replacements: dict[str, bytes] = {"word/document.xml": _serialize_xml(document_root)}
             if copy_template_headers:
@@ -554,6 +569,9 @@ class SafeWordEditor:
             f"Kept {metrics['compact_tables_kept_together']} compact data table(s) together instead of splitting them across columns/pages.",
             f"Created {metrics['wide_object_spans']} temporary full-width spans for wide ARTICLE objects.",
             f"Resized {metrics['tables_resized']} native tables and {metrics['drawings_resized']} native drawings without recreating them.",
+            f"Aligned {metrics.get('standalone_pictures_aligned', 0)} standalone pictures; protected {metrics.get('picture_caption_atomic_rows', 0)} picture/caption groups from column balancing.",
+            f"Applied horizontal-only scientific table rules to {metrics.get('scientific_tables_styled', 0)} tables and template typography to {metrics.get('native_math_typography_aligned', 0)} native equations.",
+            f"Restored {metrics.get('heading_spacing_adjustments', 0)} heading gaps from template evidence; moved {metrics.get('figures_moved_after_description', 0)} intact figure groups after nearby descriptions.",
             "Preserved ARTICLE tables, formulas, media, hyperlinks, numbering and document relationships by default.",
             "Did not copy TEMPLATE styles.xml/numbering.xml/theme wholesale; formatting is explicit and role-scoped.",
         ]
@@ -2402,9 +2420,16 @@ def _guard_inline_figure_captions(
         drawing_ppr = paragraph.find("w:pPr", namespaces=NS)
         if drawing_ppr is None:
             drawing_ppr = etree.Element(qn("w:pPr")); paragraph.insert(0, drawing_ppr)
-        if drawing_ppr.find("w:keepNext", namespaces=NS) is None:
-            etree.SubElement(drawing_ppr, qn("w:keepNext"))
-            changed += 1
+        # Explicit false values and intervening blank paragraphs both break
+        # Word's keep-next chain. Materialize true across the entire gap.
+        for linked in children[index:caption_index]:
+            pp = linked.find('w:pPr', NS)
+            if pp is None:
+                pp = etree.Element(qn('w:pPr')); linked.insert(0, pp)
+            keep = pp.find('w:keepNext', NS)
+            if keep is None:
+                keep = etree.SubElement(pp, qn('w:keepNext'))
+            keep.set(qn('w:val'), '1'); changed += 1
 
         group_id = caption_meta.group_id
         group_index = caption_index
@@ -2418,9 +2443,10 @@ def _guard_inline_figure_captions(
             ppr = item.find("w:pPr", namespaces=NS)
             if ppr is None:
                 ppr = etree.Element(qn("w:pPr")); item.insert(0, ppr)
-            if ppr.find("w:keepLines", namespaces=NS) is None:
-                etree.SubElement(ppr, qn("w:keepLines"))
-                changed += 1
+            keep = ppr.find('w:keepLines', NS)
+            if keep is None:
+                keep = etree.SubElement(ppr, qn('w:keepLines'))
+            keep.set(qn('w:val'), '1'); changed += 1
             next_index = group_index + 1
             if next_index < len(children):
                 next_meta = meta_by_node.get(children[next_index])
@@ -2431,8 +2457,11 @@ def _guard_inline_figure_captions(
                     and bool(group_id)
                     and next_meta.group_id == group_id
                 )
-                if same_group and ppr.find("w:keepNext", namespaces=NS) is None:
-                    etree.SubElement(ppr, qn("w:keepNext"))
+                if same_group:
+                    keep = ppr.find('w:keepNext', NS)
+                    if keep is None:
+                        keep = etree.SubElement(ppr, qn('w:keepNext'))
+                    keep.set(qn('w:val'), '1')
                     changed += 1
             group_index += 1
             if not group_id:
@@ -3085,6 +3114,7 @@ def _apply_template_table_evidence(table, template_zip, report):
                 trpr = etree.Element(qn('w:trPr')); row.insert(0, trpr)
             if trpr.find('w:tblHeader', NS) is None:
                 etree.SubElement(trpr, qn('w:tblHeader'))
+    return True
 
 
 def _scale_drawings(node: etree._Element, *, factor: float, max_width_twips: int) -> None:
@@ -3190,12 +3220,21 @@ def _merge_template_header_footer(
                 if story_part.startswith('word/footer') and _is_footer_author_line(value):
                     _set_plain_text_preserve_ppr(p, author_shortline)
                 # Preserve the user's explicit running-line alignment correction.
-                if story_part.startswith('word/header') and re.match(r'^Journal of .+\bVol\.', value):
+                if story_part.startswith('word/header') and re.match(r'^Journal of Advanced Materials and Technologies\.', value):
                     ppr = p.find('w:pPr', NS)
                     jc = ppr.find('w:jc', NS)
                     if jc is None:
                         jc = etree.SubElement(ppr, qn('w:jc'))
-                    jc.set(qn('w:val'), 'left')
+                    jc.set(qn('w:val'), 'right')
+                    for color in p.xpath('.//w:rPr/w:color|./w:pPr/w:pBdr/*', namespaces=NS):
+                        color.set(qn('w:val') if local_name(color) == 'color' else qn('w:color'), '808080')
+                    for run in p.xpath('.//w:r[w:t]', namespaces=NS):
+                        rpr = run.find('w:rPr', NS)
+                        if rpr is not None:
+                            color = rpr.find('w:color', NS)
+                            if color is None:
+                                color = etree.SubElement(rpr, qn('w:color'))
+                            color.attrib.clear(); color.set(qn('w:val'), '808080')
                 # Unresolved publishing identifiers in a retained shell are
                 # editorial placeholders, not facts about the new ARTICLE.
                 if re.search(r'doi\.org/|\b(?:Received|Accepted|Published):', value, re.I):
@@ -3285,13 +3324,11 @@ def _materialise_header_format(payload: bytes) -> bytes:
         style = ppr.find("w:pStyle", namespaces=NS)
         if style is not None:
             ppr.remove(style)
-        # The publication line sits above the rule and is left-aligned on every
-        # page.  Some retained files carry an inherited even-page right alignment;
-        # materialise the current journal rule instead of propagating that residue.
+        # Latest user override: right-aligned journal publication line.
         alignment = ppr.find("w:jc", namespaces=NS)
         if alignment is None:
             alignment = etree.SubElement(ppr, qn("w:jc"))
-        alignment.set(qn("w:val"), "left")
+        alignment.set(qn("w:val"), "right")
         spacing = ppr.find("w:spacing", namespaces=NS)
         if spacing is None:
             spacing = etree.SubElement(ppr, qn("w:spacing"))

@@ -125,7 +125,7 @@ AI_MODEL=qwen3.5-9b
 SUBMISSION_DOCUMENT_EXTRACTION_AI_ENABLED=1
 ```
 
-Endpoint verification on 2026-09-12 at 20:34–20:45 UTC:
+Endpoint verification on 2026-09-12 at 20:34–20:45 UTC, reconfirmed 2026-09-15:
 
 - Older docs/chats used `AI_BASE_URL=http://192.168.92.20:8088/v1`.
 - **8088 is working again**: `/v1/models` reports `qwen3.8-27b-vision`
@@ -295,9 +295,10 @@ Missing top-row editorial identifiers are the only content exception: UDC/УДК
 and DOI may be copied from TEMPLATE as yellow-highlighted placeholders, are
 reported in `editor_report.json`, and must be replaced before publication. A real
 ARTICLE value is never overwritten. The JAMT running journal line is
-left-aligned above its rule; other stories keep their own template formatting.
-Front-matter paragraph gaps mirror the blank-line
-rhythm between abstract, keywords and citation in TEMPLATE.
+right-aligned and gray above its original rule (user correction 2026-09-15;
+supersedes the earlier left-alignment request). Other journals keep their own
+template formatting. Front-matter gaps now include title, authors, affiliation,
+email, abstract, keywords and citation, measured from TEMPLATE blank paragraphs.
 
 The 2026-09-12 cross-template pass removes the old forced two-column/Times New
 Roman presets. Column count, page size, role fonts and paragraph insets come from
@@ -315,6 +316,34 @@ from the planner: `TEMPLATE_V2_VISUAL_REVIEW_ENABLED=1`, default 8 selected page
 180-second request budget. It emits advisory `readability_report.json`, with
 explicit checked/not-checked pages; it never rewrites research. Both stages use
 the independent V2 endpoint (8088), leaving shared site AI (1234) unchanged.
+
+The 2026-09-15 layout pass adds `editor/layout_fidelity.py`: measured front/heading
+gaps; reset standalone picture paragraph/anchor offsets; horizontal-only rules
+on scientific tables (explicit user policy, not figure containers); centered
+values and left descriptive columns; template-native OMML font/size (body
+typography fallback). OLE binaries remain unchanged. Integrity checks now include
+math structure/order as well as tokens. Descriptions no longer float AFTER a
+figure; a nearby figure/caption can move intact after its first explicit mention.
+Moderate standalone pictures and captions use a borderless atomic row because
+Word's column balancing can ignore paragraph keep-next. Dense paired plots may
+remain full-width; legible small a/b panels stay together in a column.
+
+Vision always schedules the first two pages before risk-ranked body pages and
+compares each front half separately with a labelled TEMPLATE first-page crop
+(max two images per request). Both chunks must succeed to count the page. New findings
+cover spacing, math typography, picture/table/header alignment. Per-page timeout
+is 60 seconds within the unchanged total vision budget; all uncovered pages and
+template-render failures are explicit. MDPI table line wrapping alone is not
+proof of a defect: inspect advisories before changing widths or scientific text.
+Malformed/truncated page responses leave that page unchecked but do not abort
+the other pages; transport errors stop requests. Qwen sometimes hallucinates
+header alignment/table rules: verify against actual rendered edges and OOXML,
+never treat the advisory list as authority to rewrite the document.
+Regression 2026-09-15: 83 local tests, five Word corpora / 99 rendered pages,
+453 original media/embedding parts unchanged. QA stage `layout6` locally and
+`layout-server4` under the server corpus directory; new candidate worktree at
+`/opt/webtstu/var/layout-20260915/candidate`. Do not deploy the unrelated dirty
+`paper_formatter` files while releasing this isolated V2 change.
 
 `DocumentDiffBuilder` is not the normal ARTICLE+TEMPLATE path. Use it only for
 reference pairs where the source and formatted file are the same article, e.g.
@@ -419,13 +448,15 @@ Common unrelated local artifacts include `.codex_*`, `tmp/`, `work/`, `output/`,
 
 ## Current Known Good State
 
-As of 2026-09-12:
+As of 2026-09-15:
 
 - `origin/main` contains isolated Word-first V2 under `/template/v2/`.
 - Production route `/template/` is alive and redirects guests to login.
 - Production route `/template/v2/` is alive and redirects guests to login.
 - Production services `webtstu`, `nginx`, and `openvpn-client@vrlab` are active.
-- Qwen works through `http://192.168.92.20:1234/v1` with model `qwen3.5-9b`.
+- Shared site Qwen works through `http://192.168.92.20:1234/v1` with model
+  `qwen3.5-9b`; V2 uses its independent `http://192.168.92.20:8088/v1` /
+  `qwen3.8-27b-vision`. Both ports work; do not change the shared endpoint.
 - V2 role classification reports `v2-context-rules`; the old `hybrid(...)`
   provider belongs to the legacy paper formatter path, not V2.
 - `SafeWordEditor` keeps ARTICLE as the physical DOCX base, preserves native

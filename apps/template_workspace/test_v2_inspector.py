@@ -436,7 +436,8 @@ class TemplateV2InspectorTests(TestCase):
         self.assertEqual(result.front["language_order"], ["ru", "en"])
         self.assertEqual(result.flow["large_figure_block_ids"], ["block_0042"])
         self.assertEqual(result.flow["float_lead_after_figure_block_ids"], ["block_0042"])
-        self.assertTrue(result.flow["allow_safe_prose_relocation"])
+        # Descriptions must remain before their figures (latest user policy).
+        self.assertFalse(result.flow["allow_safe_prose_relocation"])
         self.assertEqual(result.flow["max_float_body_blocks"], 2)
         self.assertNotIn("arbitrary_xml", result.flow)
         self.assertTrue(result.warnings)

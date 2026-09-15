@@ -65,7 +65,7 @@ class Command(BaseCommand):
             planner.last_result.to_dict() if planner.last_result else {},
         )
         self._write(output / "editor_report.json", editor_result.to_dict())
-        run_readability_review(result_path, output)
+        run_readability_review(result_path, output, template_path=template_path)
 
         self.stdout.write(self.style.SUCCESS(f"Wrote {result_path}"))
         self.stdout.write(self.style.SUCCESS(f"Wrote reports to {output}"))

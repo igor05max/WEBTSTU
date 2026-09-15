@@ -120,7 +120,7 @@ def run_v2_job(job_id: str) -> None:
             planner.last_result.to_dict() if planner.last_result else {},
         )
         write_json(output / "editor_report.json", editor_result.to_dict())
-        readability = run_readability_review(result_docx_path(job), output)
+        readability = run_readability_review(result_docx_path(job), output, template_path=template_path)
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
