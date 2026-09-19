@@ -20,6 +20,48 @@ def vml_dimensions(shape):
     return style, points('width'), points('height')
 
 
+def normalize_vml_canvases(body):
+    """Complete a legacy canvas's missing Y scale from its explicit frame.
+
+    Word tolerates a scalar coordsize; LibreOffice can expand the canvas onto
+    empty pages and lose its text. Infer nothing unless the frame at coordorigin
+    matches the stated width and the physical aspect ratio. All native shapes,
+    text, images and relationships stay in place.
+    """
+    def number(value):
+        return float(value) if re.fullmatch(r'-?\d+(?:\.\d+)?', value or '') else None
+
+    changed = 0
+    for group in body.xpath('.//v:group[@editas="canvas"]', namespaces=NS):
+        width = number(group.get('coordsize'))
+        origin = [number(part) for part in re.split(r'[,\s]+', group.get('coordorigin', '').strip())]
+        _, physical_width, physical_height = vml_dimensions(group)
+        if not width or width <= 0 or len(origin) != 2 or None in origin or min(physical_width, physical_height) <= 0:
+            continue
+        heights = set()
+        for shape in group.findall('v:shape', NS):
+            style, _, _ = vml_dimensions(shape)
+            x, y, w, h = [number(style.get(key, '').strip()) for key in ('left', 'top', 'width', 'height')]
+            if (x, y, w) == (*origin, width) and h and h > 0:
+                heights.add(h)
+        if len(heights) != 1:
+            continue
+        height = heights.pop()
+        if abs(height / width - physical_height / physical_width) > 0.001:
+            continue
+        group.set('coordsize', f'{width:g},{height:g}')
+        # State Word's wrapping default explicitly for LibreOffice's VML importer.
+        # Explicit no-wrap/auto-fit settings remain authoritative.
+        for shape in group.findall('v:shape', NS):
+            box = shape.find('v:textbox', NS)
+            style, _, _ = vml_dimensions(shape)
+            if (box is not None and not {'mso-wrap-style', 'mso-wrap-mode'} & style.keys()
+                    and not re.search(r'mso-fit-shape-to-text\s*:\s*(?:t|true|1)\b', box.get('style', ''), re.I)):
+                shape.set('style', shape.get('style', '').rstrip(';') + ';mso-wrap-style:square')
+        changed += 1
+    return changed
+
+
 def display_width_twips(node):
     widths = [int(e.get('cx', '0')) / 635 for e in node.xpath('.//wp:extent', namespaces=NS)]
     widths += [vml_dimensions(s)[1] * 20 for s in node.xpath('.//v:shape', namespaces=NS)]

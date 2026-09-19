@@ -158,6 +158,34 @@ class QwenReadabilityProvider:
         return validate_issues(json.loads(text), page, targets)
 
 
+def empty_body_pages(pdf):
+    """Flag empty rendered bodies, including pages carrying only journal furniture.
+
+    Images and vector figures count as content. A document containing only text
+    near its edges is ambiguous; do not mistake those pages for journal headers.
+    This is advisory evidence, never permission to delete a page.
+    """
+    import pymupdf
+    candidates, completely_empty = [], []
+    checked = min(len(pdf), 200)
+    for index in range(checked):
+        page = pdf[index]
+        bounds = pymupdf.Rect(0, page.rect.height * .10, page.rect.width, page.rect.height * .90)
+        words = page.get_text('words')
+        images = page.get_image_info()
+        drawings = page.get_drawings()
+        content = (any(bounds.intersects(pymupdf.Rect(word[:4])) for word in words)
+                   or any(bounds.intersects(pymupdf.Rect(item['bbox'])) for item in images)
+                   or any(bounds.intersects(pymupdf.Rect(item['rect'].x0 - .5, item['rect'].y0 - .5,
+                                                        item['rect'].x1 + .5, item['rect'].y1 + .5))
+                          for item in drawings))
+        if not content:
+            candidates.append(index + 1)
+        if not words and not images and not drawings:
+            completely_empty.append(index + 1)
+    return candidates if len(candidates) < checked else completely_empty
+
+
 def review_pdf(pdf_path, *, provider, max_pages=8, budget_seconds=900, request_timeout=300, targets=(), preferred_pages=()):
     import pymupdf
     started = time.monotonic()
@@ -173,6 +201,10 @@ def review_pdf(pdf_path, *, provider, max_pages=8, budget_seconds=900, request_t
             report['grounded_targets'] = provider.page_targets
             report['rendered_target_ids'] = rendered_target_ids(pdf, targets)
         report['pages_total'] = len(pdf)
+        for page_number in empty_body_pages(pdf):
+            report['issues'].append({'page':page_number, 'kind':'empty_page', 'severity':'medium',
+                'description':'Почти пустая страница: основной текст и рисунки не обнаружены. Проверьте разрывы и графические блоки.',
+                'source':'pdf-geometry', 'advisory':True})
         priority = []
         # All pages are considered for scheduling; code, numeric tables and
         # equation images take priority over ordinary prose. No document text is

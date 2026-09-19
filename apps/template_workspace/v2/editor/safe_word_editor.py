@@ -4,7 +4,7 @@ from .layout_fidelity import (front_gap_evidence, apply_front_gaps, align_standa
                              scientific_table_rules, math_typography, descriptions_before_figures,
                              wrap_picture_captions, heading_gap_evidence, apply_heading_gaps, blank)
 from .table_structure import analyze_table_structure
-from .object_flow import detach_display_objects, normalize_display_geometry, display_width_twips
+from .object_flow import detach_display_objects, normalize_display_geometry, display_width_twips, normalize_vml_canvases
 
 import re
 from dataclasses import dataclass, field
@@ -573,6 +573,7 @@ class SafeWordEditor:
             metrics['native_math_typography_aligned'] = math_typography(body, template_zip, template_profile.roles.get('body'))
             metrics['picture_caption_atomic_rows'] = wrap_picture_captions(body, meta_by_node, layout, full_width_nodes)
             metrics['hidden_equation_controls_guarded'] = hide_equation_control_fields(body)
+            metrics['vml_canvases_normalized'] = normalize_vml_canvases(body)
             recoveries = content_guard.recover()
             metrics['local_content_recoveries'] = recoveries
             metrics['local_content_recovery_count'] = len(recoveries)
