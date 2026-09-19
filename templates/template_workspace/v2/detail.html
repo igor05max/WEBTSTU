@@ -1,19 +1,40 @@
 {% extends "template_workspace/base.html" %}
 {% block workspace_content %}
-<a href="{% url 'template_workspace:v2_workspace' %}">← Все V2 отчёты</a>
-<h1 style="margin-top:22px">{{ job.article_name }}</h1><p class="tw-muted">TEMPLATE: {{ job.template_name }}</p>
-<p class="tw-muted">V2: нативное оформление Word, защищённые блоки кода и формулы. Если Qwen-проверка включена, она оценивает интервалы, таблицы, формулы и рисунки; первые страницы сравниваются с оформлением шаблона. Фактический охват и недоступные этапы указаны в отчёте.</p>
+<a href="{% url workspace_route %}">← {% if is_style %}Все результаты JAMT{% else %}Все V2 отчёты{% endif %}</a>
+<h1 style="margin-top:22px">{{ job.article_name }}</h1>
+<p class="tw-muted">{% if is_style %}Оформление по сохранённому стилю JAMT{% else %}Шаблон: {{ job.template_name }}{% endif %}</p>
 <section class="tw-card" aria-live="polite">
-{% if job.pending %}<div class="tw-state"><span class="tw-pulse"></span>Анализируем DOCX</div><p>Читаем OOXML package, document flow, стили, секции, таблицы, рисунки, формулы, ссылки и headers/footers. Исходные файлы не изменяются.</p><p id="tw-connection" class="tw-muted"></p>
-{% else %}<div class="tw-state">{% if job.status == 'completed' %}V2 отчёты готовы{% else %}Анализ не завершён{% endif %}</div><p>{{ job.message }}</p>{% endif %}
-<div class="tw-actions">{% if 'docx' in files %}<a class="tw-btn" href="{% url 'template_workspace:v2_download' job.pk 'docx' %}">RESULT DOCX</a>{% endif %}{% if 'article' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:v2_download' job.pk 'article' %}">ARTICLE JSON</a>{% endif %}{% if 'template' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:v2_download' job.pk 'template' %}">TEMPLATE JSON</a>{% endif %}{% if 'structure' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:v2_download' job.pk 'structure' %}">STRUCTURE JSON</a>{% endif %}{% if 'profile' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:v2_download' job.pk 'profile' %}">PROFILE JSON</a>{% endif %}{% if 'mapping' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:v2_download' job.pk 'mapping' %}">MAPPING JSON</a>{% endif %}{% if 'editor' in files %}<a class="tw-btn tw-secondary" href="{% url 'template_workspace:v2_download' job.pk 'editor' %}">EDITOR JSON</a>{% endif %}</div>
-{% if job.warnings %}<details class="tw-warnings"><summary>Диагностика: {{ job.warnings|length }}</summary><ul>{% for warning in job.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
-{% if 'readability' in files %}<p><a href="{% url 'template_workspace:v2_download' job.pk 'readability' %}">Отчёт проверки читаемости (JSON)</a></p>{% endif %}
-{% if 'quality' in files %}<p><a href="{% url 'template_workspace:v2_download' job.pk 'quality' %}">Цикл исправлений: принятые и отменённые варианты (JSON)</a></p>{% endif %}
-{% if 'preview' in files %}<p><a href="{% url 'template_workspace:v2_download' job.pk 'preview' %}">PDF-предпросмотр выбранного результата</a></p>{% endif %}
+{% if job.pending %}<div class="tw-state"><span class="tw-pulse"></span>Оформляем статью</div><p id="tw-progress">{{ job.message|default:"Готовим Word-документ и PDF." }}</p><p id="tw-connection" class="tw-muted"></p>
+{% else %}<div class="tw-state">{% if job.status == 'completed' and 'pdf' in files %}DOCX и PDF готовы{% elif job.status == 'partial' %}DOCX готов, PDF недоступен{% elif job.status == 'completed' %}DOCX готов{% else %}Оформление не завершено{% endif %}</div><p>{{ job.message }}</p>{% endif %}
+<div class="tw-actions">
+{% if 'docx' in files %}<a class="tw-btn" href="{% url download_route job.pk 'docx' %}">Скачать DOCX</a>{% endif %}
+{% if 'pdf' in files %}<a class="tw-btn" href="{% url download_route job.pk 'pdf' %}">Скачать PDF</a>{% endif %}
+</div>
+{% if job.warnings %}<details class="tw-warnings"><summary>Замечания: {{ job.warnings|length }}</summary><ul>{% for warning in job.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+{% if 'readability' in files %}<p><a href="{% url download_route job.pk 'readability' %}">Отчёт проверки читаемости</a></p>{% endif %}
+{% if 'quality' in files %}<p><a href="{% url download_route job.pk 'quality' %}">Отчёт исправлений</a></p>{% endif %}
+{% if 'preview' in files and 'pdf' not in files %}<p><a href="{% url download_route job.pk 'preview' %}">PDF-предпросмотр выбранного результата</a></p>{% endif %}
+{% if files %}<details><summary>Подробные отчёты (JSON)</summary><ul>
+{% if 'article' in files %}<li><a href="{% url download_route job.pk 'article' %}">Исходный документ</a></li>{% endif %}
+{% if 'template' in files and not is_style %}<li><a href="{% url download_route job.pk 'template' %}">Образец оформления</a></li>{% endif %}
+{% if 'style' in files %}<li><a href="{% url download_route job.pk 'style' %}">Версия и правила стиля JAMT</a></li>{% endif %}
+{% if 'structure' in files %}<li><a href="{% url download_route job.pk 'structure' %}">Структура статьи</a></li>{% endif %}
+{% if 'profile' in files %}<li><a href="{% url download_route job.pk 'profile' %}">Профиль оформления</a></li>{% endif %}
+{% if 'mapping' in files %}<li><a href="{% url download_route job.pk 'mapping' %}">Соответствие блоков</a></li>{% endif %}
+{% if 'editor' in files %}<li><a href="{% url download_route job.pk 'editor' %}">Изменения оформления</a></li>{% endif %}
+{% if 'export' in files %}<li><a href="{% url download_route job.pk 'export' %}">Экспорт PDF</a></li>{% endif %}
+</ul></details>{% endif %}
 </section>
+{% if ai_review %}<section class="tw-card">
+<h2>AI-проверка оформления{% if is_style %} JAMT{% endif %}</h2>
+<p><strong>{{ ai_review.label }}</strong>{% if ai_review.total %} · Проверено страниц: {{ ai_review.checked_count }} из {{ ai_review.total }}{% endif %}</p>
+{% if ai_review.unchecked %}<p class="tw-muted">Не проверены AI: {{ ai_review.unchecked|join:", " }}.</p>{% endif %}
+{% if ai_review.issues %}<p>AI отметил возможные проблемы. Проверьте их в готовом документе:</p><ul>{% for issue in ai_review.issues %}<li>Стр. {{ issue.page }}: {{ issue.description }}</li>{% endfor %}</ul>
+{% elif ai_review.has_findings %}<p>На проверенных страницах AI не отметил замечаний.</p>{% endif %}
+<p class="tw-muted">Проверка касается оформления. Содержание исследования и достоверность выводов не оцениваются.</p>
+</section>{% endif %}
 {% if job.plan %}<section class="tw-card"><h2>Сводка</h2><ol class="tw-plan">{% for item in job.plan %}<li><strong>{{ item.kind }}:</strong> {{ item.text }}</li>{% endfor %}</ol></section>{% endif %}
 {% endblock %}
 {% block extra_scripts %}{% if job.pending %}<script>
-(function poll(){setTimeout(async()=>{try{const r=await fetch('{% url "template_workspace:v2_progress" job.pk %}',{headers:{'Accept':'application/json'}});if(!r.ok||r.redirected)throw Error();const data=await r.json();if(!data.pending){location.reload();return;}document.getElementById('tw-connection').textContent=data.message||'';}catch(e){document.getElementById('tw-connection').textContent='Не удалось обновить статус. Повторяем подключение…';}poll();},4000);})();
+(function poll(){setTimeout(async()=>{try{const r=await fetch('{% url progress_route job.pk %}',{headers:{'Accept':'application/json'}});if(!r.ok||r.redirected)throw Error();const data=await r.json();if(!data.pending){location.reload();return;}document.getElementById('tw-progress').textContent=data.message||'Оформляем статью…';document.getElementById('tw-connection').textContent='';}catch(e){document.getElementById('tw-connection').textContent='Не удалось обновить статус. Пробуем снова…';}poll();},2500);})();
 </script>{% endif %}{% endblock %}

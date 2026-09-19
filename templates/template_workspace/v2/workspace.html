@@ -1,16 +1,26 @@
 {% extends "template_workspace/base.html" %}
 {% block workspace_content %}
+{% if is_style %}
+<h1>Стиль JAMT</h1>
+<p class="tw-muted">Загрузите Word-статью. Система оформит её в стиле Journal of Advanced Materials and Technologies и подготовит DOCX и PDF.</p>
+<section class="tw-card">
+<h2>Знакомый стиль без загрузки шаблона</h2>
+<p>Сохранённые правила по пяти статьям JAMT: титульные блоки на английском и русском, две колонки основного текста, оформление заголовков, таблиц, рисунков и списка литературы. Текст, формулы и изображения сохраняются. Перевод и новые сведения не добавляются; используются блоки, которые уже есть в статье.</p>
+</section>
+{% else %}
 <h1>Шаблон V2</h1>
-<p class="tw-muted">Загрузите статью и образец оформления в Word-формате. Результат — отредактированный DOCX, PDF-предпросмотр и отчёт проверки.</p>
+<p class="tw-muted">Загрузите статью и образец оформления в Word-формате. Результат — отредактированный DOCX, PDF и отчёт проверки.</p>
 <section class="tw-card">
 <h2>Оформление статьи по образцу</h2>
-<p>Система переносит оформление шаблона на копию статьи, сохраняя текст, код, формулы и рисунки. Учитываются интервалы, оформление таблиц и расположение рисунков с подписями. Qwen проверяет фрагменты страниц, а первые страницы дополнительно сравнивает с оформлением шаблона. Отчёт показывает замечания и фактический охват проверки; модель не переписывает содержание статьи.</p>
+<p>Система переносит оформление шаблона на копию статьи, сохраняя текст, код, формулы и рисунки. Учитываются интервалы, оформление таблиц и расположение рисунков с подписями. Если включена проверка Qwen, отчёт показывает замечания и фактический охват проверки.</p>
 </section>
+{% endif %}
+<p class="tw-muted">{% if ai_status.visual_configured %}После оформления AI проверит внешний вид страниц{% if is_style %} по правилам JAMT{% endif %}: читаемость, таблицы, рисунки, формулы и интервалы. В результате будут указаны проверенные страницы и замечания.{% else %}AI-проверка сейчас недоступна. Оформление и выдача DOCX/PDF работают; результат будет отмечен как непроверенный.{% endif %}</p>
 <form method="post" enctype="multipart/form-data" class="tw-card" id="tw-form">
 {% csrf_token %}{{ form.non_field_errors }}
-<div class="tw-grid">{% for field in form %}<div class="tw-upload">{{ field.label_tag }}{{ field }}<small>{{ field.help_text }}</small>{{ field.errors }}</div>{% endfor %}</div>
-<button type="submit" class="tw-btn" id="tw-submit">Оформить статью</button>
+<div{% if not is_style %} class="tw-grid"{% endif %}>{% for field in form %}<div class="tw-upload">{{ field.label_tag }}{{ field }}<small>{{ field.help_text }}</small>{{ field.errors }}</div>{% endfor %}</div>
+<p><button type="submit" class="tw-btn" id="tw-submit">{% if is_style %}Оформить в стиле JAMT{% else %}Оформить статью{% endif %}</button></p>
 </form>
-<section class="tw-card"><h2>Мои результаты</h2><ul class="tw-history">{% for job in jobs %}<li><div><a href="{% url 'template_workspace:v2_detail' job.pk %}">{{ job.article_name }}</a><small>Шаблон: {{ job.template_name }} · {{ job.created_at|date:"d.m.Y H:i" }}</small></div><span>{% if job.pending %}В работе{% elif job.status == 'completed' %}Готово{% else %}Не завершено{% endif %}</span></li>{% empty %}<li class="tw-muted">Здесь появятся оформленные статьи и отчёты проверки.</li>{% endfor %}</ul></section>
+<section class="tw-card"><h2>Мои результаты</h2><ul class="tw-history">{% for job in jobs %}<li><div><a href="{% url detail_route job.pk %}">{{ job.article_name }}</a><small>{% if is_style %}Стиль JAMT{% else %}Шаблон: {{ job.template_name }}{% endif %} · {{ job.created_at|date:"d.m.Y H:i" }}</small></div><span>{% if job.pending %}В работе{% elif job.status == 'completed' %}Готово{% elif job.status == 'partial' %}Готов DOCX, PDF недоступен{% else %}Не завершено{% endif %}</span></li>{% empty %}<li class="tw-muted">Здесь появятся оформленные статьи и отчёты проверки.</li>{% endfor %}</ul></section>
 {% endblock %}
-{% block extra_scripts %}<script>document.getElementById('tw-form').addEventListener('submit',function(){const b=document.getElementById('tw-submit');b.disabled=true;b.textContent='Загружаем DOCX…';});</script>{% endblock %}
+{% block extra_scripts %}<script>document.getElementById('tw-form').addEventListener('submit',function(){const b=document.getElementById('tw-submit');b.disabled=true;b.textContent='Загружаем статью…';});</script>{% endblock %}

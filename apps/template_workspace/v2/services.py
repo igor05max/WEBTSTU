@@ -13,7 +13,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.checks.ai_client import get_api_base_url
-from apps.submissions.document_conversion import LegacyDocConversionError, convert_legacy_doc_to_docx
+from apps.submissions.document_conversion import LegacyDocConversionError
 from apps.template_workspace.models import TemplateJob
 from apps.template_workspace.services import output_directory
 from apps.template_workspace.v2.classification.roles import RoleClassifierV2
@@ -27,8 +27,11 @@ from apps.template_workspace.v2.word_inputs import prepare_word_file
 from apps.template_workspace.v2.readability import review_summary, template_title_text
 from apps.template_workspace.v2.quality_cycle import run_quality_cycle, cycle_summary
 from apps.template_workspace.v2.timeouts import stale_job_seconds
+from apps.template_workspace.v2.styles.jamt import prepare_jamt_style
+from apps.template_workspace.v2.exports import export_result_pdf
 
 logger = logging.getLogger(__name__)
+NATIVE_JOB_KINDS = ("v2", "jamt")
 
 
 def analysis_directory(job: TemplateJob) -> Path:
@@ -62,10 +65,10 @@ def expire_v2_jobs(owner) -> None:
     deadline = stale_job_seconds()
     TemplateJob.objects.filter(
         owner=owner,
-        kind="v2",
+        kind__in=NATIVE_JOB_KINDS,
         status__in=["queued", "running"],
         updated_at__lt=timezone.now() - timedelta(seconds=deadline),
-    ).update(status="failed", message=f"V2-анализ прервался или превысил лимит {(deadline+59)//60} мин. Создайте новый отчёт.")
+    ).update(status="failed", message=f"Оформление прервалось или превысило лимит {(deadline+59)//60} мин. Создайте новый результат.")
 
 
 def launch_v2_job(job: TemplateJob) -> None:
@@ -82,25 +85,29 @@ def launch_v2_job(job: TemplateJob) -> None:
             subprocess.Popen([sys.executable, str(settings.BASE_DIR / "manage.py"), "run_template_v2_job", str(job.pk)], **kwargs)
     except OSError:
         logger.exception("Cannot start template V2 job %s", job.pk)
-        TemplateJob.objects.filter(pk=job.pk, kind="v2").update(status="failed", message="Не удалось запустить V2-анализ.")
+        TemplateJob.objects.filter(pk=job.pk, kind__in=NATIVE_JOB_KINDS).update(status="failed", message="Не удалось запустить оформление.")
 
 
 def run_v2_job(job_id: str) -> None:
-    if not TemplateJob.objects.filter(pk=job_id, kind="v2", status="queued").update(status="running", updated_at=timezone.now()):
+    if not TemplateJob.objects.filter(pk=job_id, kind__in=NATIVE_JOB_KINDS, status="queued").update(status="running", updated_at=timezone.now()):
         return
-    job = TemplateJob.objects.get(pk=job_id, kind="v2")
+    job = TemplateJob.objects.get(pk=job_id, kind__in=NATIVE_JOB_KINDS)
     try:
         output = analysis_directory(job)
         conversion_warnings: list[str] = []
         source_path, warnings = _working_docx_path(job, job.article, "ARTICLE")
         conversion_warnings.extend(warnings)
-        template_path, warnings = _working_docx_path(job, job.template, "TEMPLATE")
-        conversion_warnings.extend(warnings)
         source_report = DocumentInspector(source_path).inspect()
-        template_report = DocumentInspector(template_path).inspect()
         classifier = RoleClassifierV2(use_ai=False)
         article_structure = classifier.article_structure(source_report)
-        template_profile = TemplateProfileBuilder(classifier=classifier).build(template_report)
+        if job.kind == "jamt":
+            template_path, template_report, template_profile = prepare_jamt_style(
+                output, article_report=source_report, article_structure=article_structure)
+        else:
+            template_path, warnings = _working_docx_path(job, job.template, "TEMPLATE")
+            conversion_warnings.extend(warnings)
+            template_report = DocumentInspector(template_path).inspect()
+            template_profile = TemplateProfileBuilder(classifier=classifier).build(template_report)
         mapping_preview = RoleMatcher().build_preview(article_structure, template_profile)
         planner = build_planning_engine()
         editor_result = SafeWordEditor(classifier=classifier, planner=planner).render(
@@ -125,9 +132,13 @@ def run_v2_job(job_id: str) -> None:
         )
         write_json(output / "editor_report.json", editor_result.to_dict())
         def progress(message):
-            TemplateJob.objects.filter(pk=job_id, kind='v2', status='running').update(message=message, updated_at=timezone.now())
+            TemplateJob.objects.filter(pk=job_id, kind=job.kind, status='running').update(message=message, updated_at=timezone.now())
         readability, quality = run_quality_cycle(result_docx_path(job), output, editor_result=editor_result,
-            template_path=template_path, template_title=template_title_text(template_report, template_profile), progress=progress)
+            template_path=template_path if job.kind == 'v2' else None,
+            template_title=template_title_text(template_report, template_profile), progress=progress,
+            style_id='jamt' if job.kind == 'jamt' else '')
+        progress("Готовим PDF из окончательного Word-документа…")
+        export = export_result_pdf(result_docx_path(job), output)
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
@@ -139,12 +150,21 @@ def run_v2_job(job_id: str) -> None:
             {"kind": "Рисунки", "text": f"ARTICLE: {len(source_report.drawings)}; TEMPLATE: {len(template_report.drawings)}"},
             {"kind": "Формулы", "text": f"ARTICLE: {len(source_report.formulas)}; TEMPLATE: {len(template_report.formulas)}"},
         ]
+        if job.kind == "jamt":
+            plan = [
+                {"kind": "Стиль", "text": f"JAMT {template_profile.style_version}: сохранённые правила по пяти статьям."},
+                {"kind": "Оформление", "text": "Times New Roman; титульные блоки на ширину страницы, основной текст в две колонки."},
+                {"kind": "Сохранение содержимого", "text": f"Проверено сохранение текста и исходных объектов: формул — {len(source_report.formulas)}, рисунков — {len(source_report.drawings)}, таблиц — {len(source_report.tables)}."},
+            ]
+        plan.append({"kind": "PDF", "text": f"Готово, страниц: {export['pages']}." if export['status'] == 'completed' else export['message']})
         warnings = []
         warnings.extend(conversion_warnings)
         warnings.extend(article_structure.warnings)
         warnings.extend(template_profile.warnings)
         warnings.extend(mapping_preview.warnings)
         warnings.extend(editor_result.warnings)
+        if export['status'] != 'completed':
+            warnings.append(export['message'])
         warnings.extend(readability['warnings'])
         warnings.extend(f"Блок {issue['target_id']}: {issue['description']} (структурная проверка)"
                         for issue in quality['remaining_structural_issues'])
@@ -165,8 +185,10 @@ def run_v2_job(job_id: str) -> None:
         message = cycle_summary(quality)
         if recovery_count:
             message += f" Восстановлено фрагментов: {recovery_count}; см. предупреждения."
-        TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
-            status="completed",
+        if export['status'] != 'completed':
+            message = export['message'] + " " + message
+        TemplateJob.objects.filter(pk=job_id, kind=job.kind, status="running").update(
+            status="completed" if export['status'] == 'completed' else "partial",
             message=message,
             plan=plan,
             warnings=warnings,
@@ -175,7 +197,7 @@ def run_v2_job(job_id: str) -> None:
     except ContentPreservationError as exc:
         logger.exception("Template V2 could not safely restore content: %s", job_id)
         write_json(analysis_directory(job) / "preservation_failure.json", exc.report)
-        TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
+        TemplateJob.objects.filter(pk=job_id, kind=job.kind, status="running").update(
             status="failed",
             message="Не удалось безопасно сохранить содержимое документа даже после локального восстановления. "
                     "Исходные файлы не изменены; диагностика записана в preservation_failure.json.",
@@ -183,14 +205,14 @@ def run_v2_job(job_id: str) -> None:
         )
     except LegacyDocConversionError as exc:
         logger.exception("Template V2 DOC conversion failed: %s", job_id)
-        TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
+        TemplateJob.objects.filter(pk=job_id, kind=job.kind, status="running").update(
             status="failed",
             message=f"Не удалось сконвертировать DOC в DOCX для V2. {exc}",
             updated_at=timezone.now(),
         )
     except Exception:
         logger.exception("Template V2 analysis failed: %s", job_id)
-        TemplateJob.objects.filter(pk=job_id, kind="v2", status="running").update(
+        TemplateJob.objects.filter(pk=job_id, kind=job.kind, status="running").update(
             status="failed",
             message="Внутренняя ошибка обработки V2. Исходные файлы не изменены; подробности записаны в журнал обработки.",
             updated_at=timezone.now(),

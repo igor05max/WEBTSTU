@@ -82,6 +82,17 @@ class QualityCycleTests(SimpleTestCase):
         self.assertIn('12.5 ± 0.2 mg.', Document(self.path).paragraphs[0].text)
         self.assertEqual(review['quality_status'], 'checked')
 
+    def test_saved_style_is_used_for_baseline_and_repair_recheck(self):
+        calls = []
+        def reviewer(path, folder, **kwargs):
+            calls.append(kwargs)
+            return reviewed([ISSUE] if structural_issues(path, [self.target]) else [])
+        _, report = run_quality_cycle(self.path, self.root, editor_result=self.editor,
+                                     style_id='jamt', reviewer=reviewer)
+        self.assertEqual(report['accepted_repairs'], 1)
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(call['style_id'] == 'jamt' for call in calls))
+
     def test_visual_regression_rolls_back_even_if_font_fixed(self):
         results = iter([reviewed([ISSUE]), reviewed([dict(ISSUE, severity='high', kind='overlap')])])
         _, report = self.run_cycle(lambda *a, **k: next(results))

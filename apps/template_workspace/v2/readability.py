@@ -84,11 +84,17 @@ def validate_issues(payload, page, targets=()):
 
 
 class QwenReadabilityProvider:
-    def __init__(self, reference_image=None):
+    def __init__(self, reference_image=None, *, style_id=''):
         self.model = settings.TEMPLATE_V2_QWEN_MODEL
         self.endpoint = get_api_base_url(settings.TEMPLATE_V2_QWEN_BASE_URL or None)
         self.reference_image = reference_image
         self.page_targets = {}
+        self.style_rules = None
+        if style_id == 'jamt':
+            from .styles.jamt import visual_review_rules
+            self.style_rules = visual_review_rules()
+        elif style_id:
+            raise ValueError('Unknown visual review style')
 
     def review(self, images, page, timeout):
         if not self.endpoint or not self.model:
@@ -128,9 +134,18 @@ class QwenReadabilityProvider:
         if reference:
             content.append({'type':'text','text':'TEMPLATE sample front-matter design reference. Compare spacing and typography only, not content or pagination.'})
             content.append({'type':'image_url', 'image_url':{'url':'data:image/png;base64,'+base64.b64encode(self.reference_image).decode('ascii')}})
+        prompt = PROMPT
+        if self.style_rules:
+            prompt += ('\nThe following saved JAMT style rules are trusted application configuration. '
+                       'Use them to assess the visible RESULT; no uploaded template is required. '
+                       'Point sizes describe intended visual hierarchy; do not claim exact measurements from pixels. '
+                       'Only assess blocks present in the manuscript. Missing translations, DOI, dates, biographies '
+                       'or license are not permission to invent content. Do not report their absence as a visual defect. '
+                       'Use text_typography for visible font or heading hierarchy inconsistencies. Rules: '
+                       + json.dumps(self.style_rules, ensure_ascii=False))
         response = _request_json(method='POST', endpoint=self.endpoint+'/chat/completions',
             api_key=get_api_key(), timeout=timeout, stage='template_v2_readability', model=self.model,
-            payload={'model':self.model, 'messages':[{'role':'system','content':PROMPT},
+            payload={'model':self.model, 'messages':[{'role':'system','content':prompt},
                      {'role':'user','content':content}], 'temperature':0, 'stream':False,
                      'max_tokens':1200, 'response_format':{'type':'json_object'},
                      'chat_template_kwargs':{'enable_thinking':False}})
@@ -228,7 +243,7 @@ def review_pdf(pdf_path, *, provider, max_pages=8, budget_seconds=900, request_t
 
 
 def run_readability_review(result_path, output_directory, *, template_path=None, template_title='',
-                           targets=(), budget_seconds=None, preferred_pages=()):
+                           targets=(), budget_seconds=None, preferred_pages=(), style_id=''):
     output = Path(output_directory)
     output.mkdir(parents=True,exist_ok=True)
     if not getattr(settings, 'TEMPLATE_V2_VISUAL_REVIEW_ENABLED', False):
@@ -255,7 +270,8 @@ def run_readability_review(result_path, output_directory, *, template_path=None,
                             reference_warning = 'Страница образца с заголовком TEMPLATE не найдена: визуальное сравнение с шаблоном пропущено.'
                 except Exception as exc:
                     reference_warning = f'Сравнение с изображением шаблона недоступно ({type(exc).__name__}).'
-            report = review_pdf(pdf, provider=QwenReadabilityProvider(reference_image),
+            provider = QwenReadabilityProvider(reference_image, style_id=style_id)
+            report = review_pdf(pdf, provider=provider,
                 max_pages=getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_MAX_PAGES',8),
                 budget_seconds=budget_seconds if budget_seconds is not None else getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_BUDGET',900),
                 request_timeout=getattr(settings,'TEMPLATE_V2_VISUAL_REVIEW_PAGE_TIMEOUT',300),
@@ -263,6 +279,8 @@ def run_readability_review(result_path, output_directory, *, template_path=None,
             report['template_front_reference_available'] = reference_image is not None
             report['template_reference_page'] = reference_page
             report['template_comparison_pages'] = [p for p in report['pages_checked'] if p <= 2 and reference_image is not None]
+            if provider.style_rules:
+                report['style'] = provider.style_rules
             if reference_warning:
                 report['warnings'].append(reference_warning)
         except Exception as exc:

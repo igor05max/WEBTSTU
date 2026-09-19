@@ -1,6 +1,6 @@
 {% extends "workspace_base.html" %}
 {% load workspace_navigation %}
-{% block title %}Шаблон V2 — оформление статьи{% endblock %}
+{% block title %}{% if is_style %}Стиль JAMT{% else %}Шаблон V2{% endif %} — оформление статьи{% endblock %}
 {% block sidebar %}{% workspace_sidebar active_sidebar_section|default:"template_v2" %}{% endblock %}
 {% block extra_css %}
 <style>

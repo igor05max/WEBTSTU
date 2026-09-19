@@ -68,6 +68,8 @@ class TemplateProfile:
     front_language_order: list[str] = field(default_factory=list)
     front_role_sequence: list[str] = field(default_factory=list)
     front_merge_roles: list[str] = field(default_factory=list)
+    style_id: str | None = None
+    style_version: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return to_plain(self)

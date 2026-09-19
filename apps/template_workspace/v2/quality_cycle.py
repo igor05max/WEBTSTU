@@ -72,7 +72,7 @@ def repairs_covered(review, actions):
 
 
 def run_quality_cycle(result_path, output_directory, *, editor_result, template_path=None,
-                      template_title='', reviewer=None, progress=None):
+                      template_title='', reviewer=None, progress=None, style_id=''):
     reviewer = reviewer or run_readability_review
     result_path, output = Path(result_path), Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)
@@ -95,7 +95,8 @@ def run_quality_cycle(result_path, output_directory, *, editor_result, template_
             progress('Проверяем внешний вид и читаемость: '+folder.name)
         remaining = max(1, int(budget-(time.monotonic()-started)))
         return reviewer(path, folder, template_path=template_path, template_title=template_title,
-                        targets=targets, budget_seconds=min(pass_budget, remaining), preferred_pages=preferred)
+                        targets=targets, budget_seconds=min(pass_budget, remaining), preferred_pages=preferred,
+                        **({'style_id': style_id} if style_id else {}))
 
     best_review = {'status':'unavailable', 'pages_checked':[], 'issues':[], 'warnings':[]}
     best_structural = []

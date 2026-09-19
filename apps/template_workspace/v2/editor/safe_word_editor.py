@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .layout_fidelity import (front_gap_evidence, apply_front_gaps, align_standalone_picture,
                              scientific_table_rules, math_typography, descriptions_before_figures,
-                             wrap_picture_captions, heading_gap_evidence, apply_heading_gaps)
+                             wrap_picture_captions, heading_gap_evidence, apply_heading_gaps, blank)
 from .table_structure import analyze_table_structure
 from .object_flow import detach_display_objects, normalize_display_geometry, display_width_twips
 
@@ -314,6 +314,19 @@ class SafeWordEditor:
             # remain the original OOXML nodes.
             front_stats = _normalise_front_matter(body, meta_by_node, template_profile)
             metrics.update(front_stats)
+            if template_profile.style_id:
+                # Fixed styles express gaps as paragraph spacing. Existing blank
+                # lines must not double those gaps in a floating/object front.
+                removed = 0
+                for node in list(body):
+                    meta = meta_by_node.get(node)
+                    if meta and meta.zone == 'body':
+                        break
+                    if blank(node):
+                        body.remove(node)
+                        meta_by_node.pop(node, None)
+                        removed += 1
+                metrics['front_blank_spacers_removed'] = removed
 
             # The first journal rubric in the reference files is not an ordinary
             # paragraph: it is a small VML text-box shell.  Reusing only that
@@ -358,6 +371,9 @@ class SafeWordEditor:
                 if not normalize_text(element_text(child)):
                     continue
                 profile = template_profile.roles.get(role or "")
+                if (template_profile.style_id and role == 'author_information'
+                        and not re.match(r'^(?:Information about (?:the )?authors|Информация об авторах)', normalize_text(element_text(child)), re.I)):
+                    profile = template_profile.roles.get('author_bio') or profile
                 if profile is None:
                     # Safety: do not convert an unknown semantic role to BODY.
                     continue
@@ -368,10 +384,18 @@ class SafeWordEditor:
                         pformat, rformat = variant['paragraph'], variant['run']
                 with content_guard.formatting(child):
                     applied_role_formats[child] = (pformat, rformat)
-                    _apply_role_format(child, role or "body", pformat, rformat)
+                    if (template_profile.style_id and child.xpath('.//w:txbxContent', namespaces=NS)
+                            and not child.xpath('./w:r/w:t|./w:hyperlink//w:t', namespaces=NS)):
+                        # A native text box has its own measured font and fixed
+                        # geometry; styling its enclosing paragraph must not
+                        # enlarge the text inside a journal rubric/license box.
+                        _apply_paragraph_profile(child, role or 'body', pformat)
+                    else:
+                        format_role = 'body' if profile.role == 'author_bio' else role or 'body'
+                        _apply_role_format(child, format_role, pformat, rformat)
                     metrics["formatted_paragraphs"] += 1
 
-                    if role == "rubric":
+                    if role == "rubric" and not template_profile.style_id:
                         metrics["captions_normalized"] += _normalise_rubric_translation(child, template_hints["rubric_has_cyrillic"])
                     elif role == "keywords" and template_hints["keywords_use_semicolon"]:
                         metrics["captions_normalized"] += _normalise_keywords_delimiter(child)
@@ -450,6 +474,15 @@ class SafeWordEditor:
             metrics["section_markers_inserted"] += _install_front_body_sections(body, meta_by_node, layout)
 
             wide_spans = _wide_object_spans(body, meta_by_node, table_info, layout)
+            if template_profile.style_id:
+                children = list(body)
+                tail_start = next((i for i, node in enumerate(children)
+                    if meta_by_node.get(node) and meta_by_node[node].role in
+                    {'author_information', 'received_metadata', 'copyright_metadata'}), None)
+                if tail_start is not None:
+                    tail = [node for node in children[tail_start:] if local_name(node) != 'sectPr']
+                    tail_set = set(tail)
+                    wide_spans = [span for span in wide_spans if not tail_set.intersection(span)] + [tail]
             metrics["section_markers_inserted"] += _install_wide_section_spans(body, wide_spans, layout)
             metrics["large_figure_page_breaks"] += _apply_planned_wide_figure_breaks(
                 body=body, spans=wide_spans, meta_by_node=meta_by_node, table_info=table_info, planning=planning
@@ -490,14 +523,14 @@ class SafeWordEditor:
                             # author_information may represent the bold section
                             # HEADING in TEMPLATE, not the biography prose itself.
                             # Use body typography and retain the author's name emphasis.
-                            prose = template_profile.roles.get('body')
+                            prose = template_profile.roles.get('author_bio') or template_profile.roles.get('body')
                             if prose:
                                 cell_format = {**prose.typical_paragraph_formatting, 'alignment':'left',
                                                'indentation':{qn('w:left'):'0', qn('w:right'):'0', qn('w:firstLine'):'0'}}
                                 for cell_p in child.xpath('./w:tr/w:tc/w:p', namespaces=NS):
                                     _apply_role_format(cell_p, 'body', cell_format, prose.typical_run_formatting)
                         if not table_evidence and info and info.classification != 'FIGURE_CONTAINER' and not table_structure.nested:
-                            body_profile = template_profile.roles.get('body')
+                            body_profile = template_profile.roles.get('table_body') or template_profile.roles.get('body')
                             if body_profile:
                                 for cell_p in child.xpath('./w:tr/w:tc/w:p', namespaces=NS):
                                     _apply_role_format(cell_p, 'body', body_profile.typical_paragraph_formatting,
@@ -556,6 +589,7 @@ class SafeWordEditor:
                     template_zip=template_zip,
                     document_root=document_root,
                     author_shortline=author_short,
+                    trusted_style=bool(template_profile.style_id),
                 )
                 replacements.update(story_replacements)
                 # document.xml may have relationship IDs rewritten by the merge.
@@ -725,7 +759,8 @@ def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Elem
         if n not in article_type and n not in rubric and n not in bibliographic and meta_by_node[n].subtype != "rubric_label"
     ]
     for node in article_type:
-        _normalise_article_type_text(node)
+        if not profile.style_id:
+            _normalise_article_type_text(node)
         canonical.append(node)
     canonical.extend(rubric)
     canonical.extend(other_metadata)
@@ -3247,10 +3282,11 @@ def _merge_template_header_footer(
     template_zip: ZipFile,
     document_root: etree._Element,
     author_shortline: str,
+    trusted_style: bool = False,
 ) -> dict[str, bytes]:
     # Without an ARTICLE author line the template footer cannot be sanitised
     # safely.  Keep the ARTICLE stories rather than leaking another paper's name.
-    if not author_shortline:
+    if not author_shortline and not trusted_style:
         return {}
     template_sections = _section_properties_from_zip(template_zip)
     if not template_sections:
@@ -3307,7 +3343,9 @@ def _merge_template_header_footer(
                 value = normalize_text(element_text(p))
                 # Only a pure author shortline is article-specific footer text.
                 # Do not overwrite publication details or a DOI with author names.
-                if story_part.startswith('word/footer') and _is_footer_author_line(value):
+                # Compiled style furniture already contains ARTICLE authors.
+                # Uploaded examples still need the original sanitisation path.
+                if not trusted_style and story_part.startswith('word/footer') and _is_footer_author_line(value):
                     _set_plain_text_preserve_ppr(p, author_shortline)
                 # Preserve the user's explicit running-line alignment correction.
                 if story_part.startswith('word/header') and re.match(r'^Journal of Advanced Materials and Technologies\.', value):

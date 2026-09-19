@@ -239,6 +239,15 @@ V1 jobs are `TemplateJob.kind = "v1"`.
 
 ## Template Workspace V2
 
+Local extension prepared on 2026-09-18 (not yet deployed by that task):
+`/template/style/jamt/` accepts one Word article and applies the versioned JAMT
+style without an uploaded template. `TemplateJob.kind = "jamt"` uses the native
+V2 worker/editor, with its own owner-only routes/history. Both modes now export
+the final DOCX to `result.pdf` independently of optional Qwen review; PDF failures
+leave a downloadable DOCX and explicit `partial` status. PDF input remains out of
+scope per the user's clarification. See `docs/JAMT_STYLE_20260918.md` and migration
+`template_workspace.0003_jamt_style_jobs` before releasing these local changes.
+
 Route:
 
 ```text

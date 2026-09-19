@@ -19,3 +19,12 @@ class TemplateV2JobForm(forms.Form):
             elif upload.size > 120 * 1024 * 1024:
                 self.add_error(field, "Размер файла превышает 120 МБ.")
         return data
+
+
+class JamtStyleJobForm(TemplateV2JobForm):
+    template = None
+    article = forms.FileField(
+        label="Статья в Word",
+        help_text="DOCX или DOC до 120 МБ. Шаблон загружать не нужно.",
+        widget=forms.ClearableFileInput(attrs={"accept": ".docx,.doc"}),
+    )

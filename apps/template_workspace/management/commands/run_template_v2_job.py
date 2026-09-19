@@ -10,7 +10,7 @@ from apps.template_workspace.v2.timeouts import job_timeout_seconds
 
 
 class Command(BaseCommand):
-    help = "Run Word-first V2 analysis for a saved article/template pair."
+    help = "Format a saved Word article using a V2 template or the built-in JAMT style."
 
     def add_arguments(self, parser):
         parser.add_argument("job_id")

@@ -498,6 +498,9 @@ class TemplateV2InspectorTests(TestCase):
 @override_settings(TEMPLATE_V2_QWEN_ENABLED=False, TEMPLATE_V2_VISUAL_REVIEW_ENABLED=False)
 class TemplateV2ViewTests(TestCase):
     def setUp(self):
+        exporter = patch('apps.template_workspace.v2.services.export_result_pdf', return_value={'status': 'completed', 'pages': 1})
+        exporter.start()
+        self.addCleanup(exporter.stop)
         self.media = tempfile.TemporaryDirectory()
         self.addCleanup(self.media.cleanup)
         self.override = override_settings(MEDIA_ROOT=self.media.name)
@@ -613,7 +616,7 @@ class TemplateV2ViewTests(TestCase):
             article_name="source.docx",
             template_name="template.doc",
         )
-        with patch("apps.template_workspace.v2.services.convert_legacy_doc_to_docx", return_value=source.read_bytes()):
+        with patch("apps.template_workspace.v2.word_inputs.convert_legacy_doc_to_docx", return_value=source.read_bytes()):
             run_v2_job(str(job.pk))
         job.refresh_from_db()
         self.assertEqual(job.status, "completed")
