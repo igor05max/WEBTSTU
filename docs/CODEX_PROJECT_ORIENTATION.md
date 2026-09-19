@@ -248,6 +248,12 @@ leave a downloadable DOCX and explicit `partial` status. PDF input remains out o
 scope per the user's clarification. See `docs/JAMT_STYLE_20260918.md` and migration
 `template_workspace.0003_jamt_style_jobs` before releasing these local changes.
 
+On 2026-09-19, JAMT visual review gained trusted saved-style rules (including
+repair rechecks) and a visible coverage/findings card. All 189 workspace/account
+tests pass in a clean Git checkout. Deployment was requested but is pending SSH
+connectivity from the developer machine; HTTPS is healthy. See the JAMT document
+for the access blocker and do not assume these changes are already in production.
+
 Route:
 
 ```text
