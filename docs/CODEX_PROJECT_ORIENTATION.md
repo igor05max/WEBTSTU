@@ -239,20 +239,23 @@ V1 jobs are `TemplateJob.kind = "v1"`.
 
 ## Template Workspace V2
 
-Local extension prepared on 2026-09-18 (not yet deployed by that task):
+JAMT extension prepared on 2026-09-18 and deployed on 2026-09-19:
 `/template/style/jamt/` accepts one Word article and applies the versioned JAMT
 style without an uploaded template. `TemplateJob.kind = "jamt"` uses the native
 V2 worker/editor, with its own owner-only routes/history. Both modes now export
 the final DOCX to `result.pdf` independently of optional Qwen review; PDF failures
 leave a downloadable DOCX and explicit `partial` status. PDF input remains out of
 scope per the user's clarification. See `docs/JAMT_STYLE_20260918.md` and migration
-`template_workspace.0003_jamt_style_jobs` before releasing these local changes.
+`template_workspace.0003_jamt_style_jobs` (applied in production).
 
 On 2026-09-19, JAMT visual review gained trusted saved-style rules (including
-repair rechecks) and a visible coverage/findings card. All 189 workspace/account
-tests pass in a clean Git checkout. Deployment was requested but is pending SSH
-connectivity from the developer machine; HTTPS is healthy. See the JAMT document
-for the access blocker and do not assume these changes are already in production.
+repair rechecks) and a visible coverage/findings card. Production code is
+`6ef11bd`; 194 workspace/account tests pass in a clean checkout and 21 JAMT/VML
+tests pass on Linux. A real HTTPS upload produced DOCX and a six-page PDF;
+Qwen checked 6/6 pages, and authenticated downloads matched the export hashes.
+The release also repairs unambiguous incomplete VML canvas coordinates and
+flags empty PDF bodies independently of AI. See the JAMT document for deployment,
+backup and real validation details. Server VPN/model configuration is unchanged.
 
 Route:
 
