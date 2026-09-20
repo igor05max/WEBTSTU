@@ -80,7 +80,7 @@ def _eligible(carrier, equation_ids):
         return bool(re.match(r'^\s*(?:Fig(?:ure)?\.?|Рис(?:унок)?\.?)\s*\d', ''.join(captions), re.I))
     if display_width_twips(carrier) < 1800:  # 90pt: inline symbols are not figures
         return False
-    return bool(carrier.xpath('.//wp:anchor|.//v:imagedata', namespaces=NS))
+    return bool(carrier.xpath('.//wp:anchor|.//wp:inline[.//pic:pic]|.//v:imagedata', namespaces=NS))
 
 
 def detach_display_objects(body, metadata, equation_ids):
@@ -93,7 +93,16 @@ def detach_display_objects(body, metadata, equation_ids):
             following = paragraph.getnext()
             fm = metadata.get(following)
             if fm and re.match(r'^\s*(?:Fig(?:ure)?\.?|Рис(?:унок)?\.?)\s*\d', ''.join(following.xpath('.//w:t/text()', namespaces=NS)), re.I):
-                metadata[following] = replace(fm, role='figure_caption', group_id=meta.group_id)
+                # Keep a translated/multi-paragraph caption's existing group.
+                # Replacing only its first member's id strands the translation
+                # outside a full-width figure span.
+                group = fm.group_id or meta.group_id
+                metadata[paragraph] = meta = replace(meta, group_id=group)
+                metadata[following] = replace(fm, role='figure_caption', group_id=group)
+                if fm.zone == 'body':
+                    # A textless leading illustration belongs with its body
+                    # caption, not with the bilingual front preceding it.
+                    metadata[paragraph] = meta = replace(meta, zone='body')
         if paragraph.tag != qn('w:p') or not meta or meta.role not in {'body', 'figure_caption', 'heading_1', 'heading_2'}:
             continue
         if paragraph.xpath('./w:r/w:fldChar|./w:r/w:instrText|./w:hyperlink', namespaces=NS):
@@ -138,6 +147,20 @@ def normalize_display_geometry(paragraph, target_twips, equation_ids=()):
             line.insert(0, etree.Element(qn('a:noFill')))
         for shape in paragraph.xpath('.//v:shape', namespaces=NS):
             shape.set('stroked', 'f')
+        # Word centres an inline text frame; LibreOffice can pin the same narrow
+        # frame to the column's left edge. Use the available column width for
+        # text-only captions in BOTH compatibility branches. Never stretch an
+        # image, OLE preview or mixed drawing group along with the text frame.
+        if not paragraph.xpath('.//a:blip|.//v:imagedata|.//o:OLEObject', namespaces=NS):
+            width = str(round(target_twips * 635))
+            for extent in paragraph.xpath('.//wp:extent|.//a:xfrm/a:ext', namespaces=NS):
+                if extent.get('cx') != width:
+                    extent.set('cx', width); changed += 1
+            for shape in paragraph.xpath('.//v:shape[v:textbox]', namespaces=NS):
+                style, _, _ = vml_dimensions(shape)
+                style['width'] = f'{target_twips / 20:.3f}pt'
+                shape.set('style', ';'.join(f'{k}:{v}' for k, v in style.items()))
+                changed += 1
     for anchor in paragraph.xpath('.//wp:anchor[not(ancestor::w:txbxContent)]', namespaces=NS):
         inline = etree.Element(qn('wp:inline'), distT='0', distB='0', distL='0', distR='0')
         for tag in ('wp:extent', 'wp:effectExtent', 'wp:docPr', 'wp:cNvGraphicFramePr', 'a:graphic'):
@@ -150,7 +173,8 @@ def normalize_display_geometry(paragraph, target_twips, equation_ids=()):
         style, width, height = vml_dimensions(shape)
         if width <= 0 or height <= 0:
             continue
-        factor = min(1, target_twips / 20 * .98 / width)
+        # Text frames already fit exactly; the safety inset applies to pictures.
+        factor = min(1, target_twips / 20 * (1 if shape.find('v:textbox', NS) is not None else .98) / width)
         clean = {k: v for k, v in style.items() if k not in {'position','left','top','margin-left','margin-top','z-index'}
                  and not k.startswith(('mso-position-', 'mso-wrap-'))}
         clean.update(width=f'{width * factor:.3f}pt', height=f'{height * factor:.3f}pt')

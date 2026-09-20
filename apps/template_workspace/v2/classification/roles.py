@@ -386,7 +386,7 @@ class RoleClassifierV2:
             role, subtype, confidence = "rubric", "rubric_value", 0.97
         elif re.search(r"\bудк\b|\bdoi\s*:", lowered):
             subtype, confidence = "bibliographic_id", 0.99
-        elif re.search(r"short communications|original papers|review articles|nobelistics", lowered):
+        elif re.search(r"short communications|original papers|review articles|nobelistics|нобелистика", lowered):
             role, subtype, confidence = "rubric", "rubric_value", 0.95
         out[p.id] = RoleDecision(p.id, role, confidence, "rules", "front-matter metadata before title", zone=FRONT_MATTER, language=_language(text), group_id=group_id, subtype=subtype)
 
@@ -649,7 +649,7 @@ def _format_similarity(a: ParagraphInfo, b: ParagraphInfo) -> float:
 def _looks_like_sentence(text: str) -> bool:
     if len(text) > 130:
         return True
-    if re.match(r"^(fig\.|figure|рис\.?|рисунок|table|таблица)\s*\d+\s+(?:presents?|shows?|illustrates?)\b", text, flags=re.I):
+    if re.match(r"^(fig\.?|figure|рис\.?|рисунок|table|таблица)\s*\d+\s+(?:presents?|shows?|illustrates?)\b", text, flags=re.I):
         return True
     words = text.split()
     return len(words) > 22 and text.endswith(('.', '!', '?'))
@@ -658,7 +658,7 @@ def _looks_like_sentence(text: str) -> bool:
 def _is_front_metadata_marker(lowered: str) -> bool:
     return bool(
         re.search(
-            r"\b(удк|doi|тип статьи|article type|рубрика журнала|rubric|short communications|original papers|review articles|nobelistics)\b",
+            r"\b(удк|doi|тип статьи|article type|рубрика журнала|rubric|short communications|original papers|review articles|nobelistics|нобелистика)\b",
             lowered,
         )
     )
@@ -691,7 +691,7 @@ def _is_citation(text: str) -> bool:
 
 def _is_figure_caption(text: str) -> bool:
     # Require punctuation after the figure number.  "Fig. 4 presents..." is body.
-    return bool(re.match(r"^(?:fig\.|figure|рис\.?|рисунок)\s*\d+\s*[.\):\-–]\s*\S", text.strip(), flags=re.IGNORECASE))
+    return bool(re.match(r"^(?:fig\.?|figure|рис\.?|рисунок)\s*\d+\s*[.\):\-–]\s*\S", text.strip(), flags=re.IGNORECASE))
 
 
 def _is_table_caption(text: str) -> bool:

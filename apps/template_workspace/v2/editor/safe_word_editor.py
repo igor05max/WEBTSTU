@@ -395,6 +395,12 @@ class SafeWordEditor:
                         # geometry; styling its enclosing paragraph must not
                         # enlarge the text inside a journal rubric/license box.
                         _apply_paragraph_profile(child, role or 'body', pformat)
+                        if role == 'figure_caption' and meta.subtype == 'native_caption_box':
+                            # Caption boxes detached from prose are editorial
+                            # text. Style both modern and legacy representations;
+                            # license/rubric boxes retain their native geometry.
+                            for inner in child.xpath('.//w:txbxContent/w:p', namespaces=NS):
+                                _apply_role_format(inner, role, pformat, rformat)
                     else:
                         format_role = 'body' if profile.role == 'author_bio' else role or 'body'
                         _apply_role_format(child, format_role, pformat, rformat)
@@ -1329,7 +1335,9 @@ def _merge_front_text_paragraphs(nodes: list[etree._Element], role: str, meta_by
         separator = etree.SubElement(first, qn("w:r"))
         text = etree.SubElement(separator, qn("w:t"))
         text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-        text.text = " "
+        # A separate abstract heading becomes an inline label. The punctuation
+        # is presentation, while all original runs remain intact.
+        text.text = ". " if role == 'abstract' and normalize_text(element_text(first)).casefold() in {'abstract', 'аннотация', 'резюме'} else " "
         for child in list(node):
             if local_name(child) != "pPr":
                 first.append(child)
@@ -3354,7 +3362,7 @@ def _merge_template_header_footer(
                 if not trusted_style and story_part.startswith('word/footer') and _is_footer_author_line(value):
                     _set_plain_text_preserve_ppr(p, author_shortline)
                 # Preserve the user's explicit running-line alignment correction.
-                if story_part.startswith('word/header') and re.match(r'^Journal of Advanced Materials and Technologies\.', value):
+                if not trusted_style and story_part.startswith('word/header') and re.match(r'^Journal of Advanced Materials and Technologies\.', value):
                     ppr = p.find('w:pPr', NS)
                     jc = ppr.find('w:jc', NS)
                     if jc is None:

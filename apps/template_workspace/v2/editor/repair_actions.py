@@ -72,6 +72,7 @@ def inventory(root, metadata, profile, layout, full_width_nodes, equation_ids=()
         pformat, rformat = (role_formats or {}).get(p, (role.typical_paragraph_formatting if role else {},
                                                       role.typical_run_formatting if role else {}))
         targets.append(dict(id=f'layout_{len(targets)+1:04d}', path=path, role=meta.role,
+                            native_caption_box=meta.subtype == 'native_caption_box',
                             text=text[:240], group_id=meta.group_id, source_block=meta.block_id,
                             allowed_actions=actions,
                             paragraph_format=pformat, run_format=rformat,
@@ -123,6 +124,8 @@ def structural_issues(path, targets):
             if 'restore_typography' in target['allowed_actions']:
                 expected = str(_role_run_defaults(target['role'], target['run_format'])['size'])
                 runs = p.xpath('./w:r[w:t and not(w:rPr/w:vertAlign) and not(w:rPr/w:position)]', namespaces=NS)
+                if target.get('native_caption_box'):
+                    runs += p.xpath('.//w:txbxContent/w:p/w:r[w:t and not(w:rPr/w:vertAlign) and not(w:rPr/w:position)]', namespaces=NS)
                 sizes = [r.find('w:rPr/w:sz', NS) for r in runs]
                 if any(s is not None and s.get(qn('w:val')) != expected for s in sizes):
                     issues.append(dict(target_id=target['id'], action='restore_typography', kind='text_typography',

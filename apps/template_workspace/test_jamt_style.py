@@ -351,5 +351,5 @@ class JamtVisualReviewTests(SimpleTestCase):
         self.assertEqual(report['status'], 'reviewed')
         self.assertEqual(report['pages_checked'], [1])
         self.assertEqual(report['style']['id'], 'jamt')
-        self.assertEqual(report['style']['version'], '2026.2')
+        self.assertEqual(report['style']['version'], '2026.3')
         self.assertFalse(report['template_front_reference_available'])
