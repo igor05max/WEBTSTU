@@ -15,6 +15,7 @@ def main():
     parser.add_argument('--qwen', action='store_true')
     parser.add_argument('--reuse', action='store_true')
     parser.add_argument('--search', action='store_true', help='Compare three bounded typography/layout plans before optional Qwen advice.')
+    parser.add_argument('--reference', action='store_true', help='Read source DOCX directly and compare every PDF page against the supplied reference.')
     args = parser.parse_args()
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
     import django
@@ -47,8 +48,8 @@ def main():
                 raise RuntimeError('Native baseline PDF failed.')
     print('Native baseline ready', flush=True)
     project = out / 'latex'
-    blocks, manifest = NativeBridge(docx, project).build()
-    plan = default_plan(blocks, running_footer=manifest['running_footer'])
+    blocks, manifest = NativeBridge(args.source if args.reference else docx, project).build()
+    plan = default_plan(blocks, **{key: manifest[key] for key in ('running_footer', 'running_header', 'page_start', 'reference_layout')})
     render(blocks, project, plan)
     latex_pdf, compilation = compile_pdf(project)
     native_metrics = measure(pdf, manifest)
@@ -73,8 +74,8 @@ def main():
                 metrics = measure(trial_pdf,manifest,compiled)
                 passed = gate(metrics,native_metrics)
                 trials.append({'name':name,'metrics':metrics,'gate':passed,'penalty':penalty(metrics)})
-                if passed['passed'] and (not gate(best_metrics,native_metrics)['passed'] or penalty(metrics) < penalty(best_metrics)):
-                    best_plan,best_metrics,best_project = trial_plan,metrics,trial
+                # Trials are review candidates. Whitespace/density measurements
+                # alone must never replace the measured reference typography.
             except RuntimeError as exc:
                 trials.append({'name':name,'failed':str(exc)[:200]})
         if best_project != project:
@@ -89,8 +90,12 @@ def main():
     render_pages(latex_pdf, project / 'pages')
     print('Compiled', {key: report[key]['pages'] for key in ['native', 'latex']}, report['latex_gate'], flush=True)
     if args.qwen:
-        from .qwen import optimize
-        optimize(blocks, manifest, plan, out, report)
+        if args.reference:
+            from .reference_review import compare_all_pages
+            compare_all_pages(pdf, latex_pdf, out/'qwen_reference_review.json')
+        else:
+            from .qwen import optimize
+            optimize(blocks, manifest, plan, out, report)
 
 
 if __name__ == '__main__':

@@ -42,7 +42,7 @@ def package(root, output, cases):
         with ZipFile(output/files['tex_zip'],'w',ZIP_DEFLATED) as archive:
             for source in sorted(project.rglob('*')):
                 relative = source.relative_to(project)
-                if source.is_file() and (relative.parts[0] in {'assets','fonts'} or source.name in {'main.tex','layout_plan.json'}):
+                if source.is_file() and (relative.parts[0] in {'assets','fonts'} or source.name in {'main.tex','jamt-reference.cls','layout_plan.json'}):
                     archive.write(source, relative.as_posix())
             archive.writestr('manifest.json', json.dumps(manifest,ensure_ascii=False,indent=2))
             archive.writestr('README.txt', 'Build with XeLaTeX twice: xelatex -no-shell-escape main.tex\n'
@@ -67,7 +67,7 @@ def package(root, output, cases):
     return summary
 
 
-def write_html(output, cases):
+def write_html(output, cases, *, reference=False):
     options = ''.join('<option value="'+html.escape(c['id'])+'">'+html.escape(c['title'])+'</option>' for c in cases)
     data = json.dumps(cases,ensure_ascii=False).replace('</','<\\/')
     page = '''<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -94,7 +94,7 @@ details{margin:18px 0;background:white;padding:14px 18px;border:1px solid #d7dfe
 <div class="fact"><strong id="objects"></strong><span>формул · изображений</span></div>
 <div class="fact"><strong id="sparse"></strong><span>почти пустых страниц Word → LaTeX</span></div></div>
 <div class="note">Количество страниц — только один из показателей. Смотрите читаемость формул, таблиц и подписей.
-DOCX сохраняет вёрстку Word: его страницы могут отличаться от LaTeX PDF. AI-проверка выборочная; это экспериментальный режим.</div>
+DOCX сохраняет вёрстку Word: его страницы могут отличаться от LaTeX PDF. __REVIEW_SCOPE__ Это экспериментальный режим.</div>
 <nav><a id="word" download>Скачать DOCX</a><a id="tex" download>Скачать LaTeX-проект</a><a id="metrics" download>Показатели и протокол</a></nav>
 <p id="review"></p><div class="panels">__PANELS__</div>
 <details><summary>Что проверял Qwen</summary><p>Сравнение A/B с чередованием порядка. Модель не знает названий движков.
@@ -127,8 +127,10 @@ el('case').addEventListener('change',show);show();</script></html>'''
 <div class="controls"><button id="{side}Prev" aria-label="Предыдущая страница {title}">←</button><label>Страница <input id="{side}Page" type="number" min="1" value="1" aria-label="Страница {title}"></label><span id="{side}Count"></span>
 <button id="{side}Next" aria-label="Следующая страница {title}">→</button><label>Масштаб <select id="{side}Zoom" aria-label="Масштаб {title}"><option value="100">По ширине</option><option value="150">150%</option><option value="200">200%</option></select></label></div>
 <div class="viewport" id="{side}View"><img id="{side}" alt="Страница PDF"></div></section>'''
-        for side,title in [('native','Текущий Word'),('latex','Эксперимент LaTeX')])
-    (Path(output)/'index.html').write_text(page.replace('__OPTIONS__',options).replace('__DATA__',data).replace('__PANELS__',panels),encoding='utf-8')
+        for side,title in [('native','Word-эталон' if reference else 'Текущий Word'),('latex','Эксперимент LaTeX')])
+    review_scope = ('Фактический охват AI-проверки указан в протоколе для каждой статьи.' if reference
+                    else 'AI-проверка выборочная.')
+    (Path(output)/'index.html').write_text(page.replace('__OPTIONS__',options).replace('__DATA__',data).replace('__PANELS__',panels).replace('__REVIEW_SCOPE__', review_scope),encoding='utf-8')
 
 
 if __name__ == '__main__':

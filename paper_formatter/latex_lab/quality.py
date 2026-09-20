@@ -20,12 +20,13 @@ def words(text):
 
 
 def measure(pdf_path, manifest, compile_report=None):
-    pages, texts, out_of_page = [], [], []
+    pages, texts, body_texts, out_of_page = [], [], [], []
     with fitz.open(pdf_path) as pdf:
         for i, page in enumerate(pdf):
             text = page.get_text(sort=False)
             texts.append(text)
             rect = page.rect
+            body_texts.append(page.get_text('text', clip=fitz.Rect(0, 74, rect.width, rect.height-58)))
             spans = [s for b in page.get_text('dict')['blocks'] if b['type'] == 0 for l in b['lines'] for s in l['spans']]
             # Headers/footers are excluded from body whitespace statistics.
             body_spans = [s for s in spans if s['bbox'][1] >= 74 and s['bbox'][3] <= rect.height - 58]
@@ -51,6 +52,10 @@ def measure(pdf_path, manifest, compile_report=None):
     source_words, output_words = words(manifest['source_text']), words(text)
     missing_words = source_words - output_words
     normalized = normalize(text)
+    # A paragraph may cross a page; running furniture is not inserted content.
+    body_normalized = normalize('\n'.join(body_texts))
+    missing_labels = [label for label in manifest.get('list_labels', [])
+                      if normalize(label['label'] + label['text_anchor'][:60]) not in body_normalized]
     missing = []
     blocks = [b for b in manifest['blocks']]
     blocks += [c for b in manifest['blocks'] for c in b['captions']]
@@ -63,6 +68,7 @@ def measure(pdf_path, manifest, compile_report=None):
     result = {'pages': len(pages), 'word_coverage': round(coverage, 6),
               'missing_words': dict(missing_words.most_common(40)),
               'unmatched_text_blocks': missing, 'page_metrics': pages,
+              'missing_list_labels': missing_labels,
               'out_of_page': out_of_page, 'compile': compile_report or {},
               'sparse_pages': [p['page'] for p in pages if p['body_characters'] < 200 and p['images'] == 0],
               'limitations': ['Word counts and text matching do not establish mathematical equivalence.',
@@ -77,6 +83,8 @@ def gate(candidate, baseline):
         errors.append('text_coverage_regression')
     if candidate['out_of_page']:
         errors.append('text_out_of_page')
+    if candidate.get('missing_list_labels'):
+        errors.append('missing_list_labels')
     if candidate.get('sparse_pages'):
         errors.append('almost_empty_pages')
     compile_report = candidate['compile']

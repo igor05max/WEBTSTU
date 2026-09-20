@@ -8,7 +8,9 @@
 {% else %}<div class="tw-state">{% if job.status == 'completed' and 'pdf' in files %}DOCX и PDF готовы{% elif job.status == 'partial' %}DOCX готов, PDF недоступен{% elif job.status == 'completed' %}DOCX готов{% else %}Оформление не завершено{% endif %}</div><p>{{ job.message }}</p>{% endif %}
 <div class="tw-actions">
 {% if 'docx' in files %}<a class="tw-btn" href="{% url download_route job.pk 'docx' %}">Скачать DOCX</a>{% endif %}
-{% if 'pdf' in files %}<a class="tw-btn" href="{% url download_route job.pk 'pdf' %}">Скачать PDF</a>{% endif %}
+{% if 'pdf' in files %}<a class="tw-btn" href="{% url download_route job.pk 'pdf' %}">Скачать PDF{% if is_style %} (Word){% endif %}</a>{% endif %}
+{% if is_style and 'latex_pdf' in files %}<a class="tw-btn" href="{% url download_route job.pk 'latex_pdf' %}">PDF LaTeX · эксперимент</a>{% endif %}
+{% if is_style and 'latex_source' in files %}<a class="tw-btn tw-btn-secondary" href="{% url download_route job.pk 'latex_source' %}">Исходник LaTeX</a>{% endif %}
 </div>
 {% if job.warnings %}<details class="tw-warnings"><summary>Замечания: {{ job.warnings|length }}</summary><ul>{% for warning in job.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
 {% if 'readability' in files %}<p><a href="{% url download_route job.pk 'readability' %}">Отчёт проверки читаемости</a></p>{% endif %}
@@ -23,8 +25,16 @@
 {% if 'mapping' in files %}<li><a href="{% url download_route job.pk 'mapping' %}">Соответствие блоков</a></li>{% endif %}
 {% if 'editor' in files %}<li><a href="{% url download_route job.pk 'editor' %}">Изменения оформления</a></li>{% endif %}
 {% if 'export' in files %}<li><a href="{% url download_route job.pk 'export' %}">Экспорт PDF</a></li>{% endif %}
+{% if 'latex_report' in files %}<li><a href="{% url download_route job.pk 'latex_report' %}">Проверка и сравнение LaTeX</a></li>{% endif %}
 </ul></details>{% endif %}
 </section>
+{% if latex_review %}<section class="tw-card">
+<h2>Дополнительный PDF LaTeX</h2><p>{{ latex_review.message }}</p>
+{% if latex_review.has_review %}<p>Qwen сравнил страниц LaTeX: {{ latex_review.checked }} из {{ latex_review.total }}.{% if not latex_review.complete %} Сравнение неполное.{% endif %}</p>
+{% if latex_review.reference_total %}<p class="tw-muted">Страниц PDF Word в сравнении: {{ latex_review.reference_checked }} из {{ latex_review.reference_total }}.</p>{% endif %}
+{% if latex_review.issues %}<ul>{% for issue in latex_review.issues %}<li>Стр. {{ issue.page }}: {{ issue.description }}</li>{% endfor %}</ul>{% endif %}{% endif %}
+<p class="tw-muted">DOCX сохраняет разметку Word. Переносы строк и страниц в LaTeX могут отличаться. Замечания AI требуют проверки.</p>
+</section>{% endif %}
 {% if ai_review %}<section class="tw-card">
 <h2>AI-проверка оформления{% if is_style %} JAMT{% endif %}</h2>
 <p><strong>{{ ai_review.label }}</strong>{% if ai_review.total %} · Проверено страниц: {{ ai_review.checked_count }} из {{ ai_review.total }}{% endif %}</p>

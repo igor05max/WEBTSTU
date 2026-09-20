@@ -6,6 +6,7 @@ PyMuPDF>=1.26,<2
 latex2mathml>=3.81,<4
 lxml>=5.3,<7
 openai==2.44.0
+olefile>=0.47,<0.48
 psycopg[binary]==3.3.4
 pymorphy3==2.0.6
 pydantic>=2.10,<3

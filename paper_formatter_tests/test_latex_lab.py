@@ -34,6 +34,31 @@ class LatexBridgeTests(unittest.TestCase):
         self.assertIn(r'\$x\$', blocks[0].tex)
         self.assertIn('50%', manifest['source_text'])
 
+    def test_inherited_word_numbering_is_visible_and_audited(self):
+        doc = Document()
+        doc.add_paragraph('First scientific reference.', style='List Number')
+        doc.add_paragraph('Second scientific reference.', style='List Number')
+        blocks, manifest = self.build(doc)
+        self.assertTrue(blocks[0].tex.startswith('1. '))
+        self.assertTrue(blocks[1].tex.startswith('2. '))
+        self.assertEqual([n['label'] for n in manifest['list_labels']], ['1.', '2.'])
+
+    def test_figure_caption_starts_a_new_paragraph(self):
+        image_path = self.root/'plot.png'; Image.new('RGB', (120,80), 'white').save(image_path)
+        doc = Document(); doc.add_paragraph('Scientific article', style='Title')
+        doc.add_paragraph('Abstract. Original research.')
+        doc.add_paragraph('1. Introduction', style='Heading 1')
+        doc.add_picture(str(image_path)); doc.add_paragraph('Fig. 1. Measured plot.')
+        blocks, manifest = self.build(doc)
+        project = self.root/'project'
+        source = render(blocks, project, default_plan(blocks, reference_layout=True)).read_text()
+        self.assertIn('figure_caption\n\\par\n', source)
+
+    def test_generated_reference_labels_are_a_separate_pdf_gate(self):
+        from paper_formatter.latex_lab.quality import gate
+        baseline = dict(word_coverage=1, out_of_page=[], sparse_pages=[], compile={})
+        self.assertFalse(gate(dict(baseline, missing_list_labels=[{'label':'1.'}]), baseline)['passed'])
+
     def test_crop_matches_word_and_original_image_remains_unchanged(self):
         path = self.root/'two-colors.png'
         im = Image.new('RGB', (100, 60), 'red')

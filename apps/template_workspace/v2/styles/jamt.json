@@ -1,45 +1,228 @@
 {
   "id": "jamt",
-  "version": "2026.1",
+  "version": "2026.2",
   "name": "JAMT",
   "journal": "Journal of Advanced Materials and Technologies.",
-  "references": ["97-143-1-SM.pdf", "94-137-1-SM.pdf", "93-135-1-SM.pdf", "92-133-1-SM.pdf", "91-131-1-SM.pdf"],
+  "references": [
+    "97-143-1-SM.pdf",
+    "94-137-1-SM.pdf",
+    "93-135-1-SM.pdf",
+    "92-133-1-SM.pdf",
+    "91-131-1-SM.pdf"
+  ],
   "font": "Times New Roman",
-  "page_twips": {"w": 11907, "h": 16840},
-  "margins_twips": {"top": 1701, "right": 1021, "bottom": 1361, "left": 1021, "header": 709, "footer": 907, "gutter": 0},
+  "page_twips": {
+    "w": 11907,
+    "h": 16840
+  },
+  "margins_twips": {
+    "top": 1701,
+    "right": 1021,
+    "bottom": 1361,
+    "left": 1021,
+    "header": 709,
+    "footer": 907,
+    "gutter": 0
+  },
   "columns": 2,
   "column_gap_twips": 340,
-  "front_language_order": ["en", "ru"],
-  "front_role_sequence": ["title", "author", "affiliation", "email", "abstract", "keywords", "citation"],
+  "front_language_order": [
+    "en",
+    "ru"
+  ],
+  "front_role_sequence": [
+    "title",
+    "author",
+    "affiliation",
+    "email",
+    "abstract",
+    "keywords",
+    "citation"
+  ],
   "roles": {
-    "editorial_metadata": {"pt": 10, "align": "left", "after": 11.5, "right_tab": 9865},
-    "article_type": {"pt": 10, "align": "right", "bold": true},
-    "rubric": {"pt": 10, "align": "right", "bold": true, "italic": true, "after": 11.5},
-    "title": {"pt": 14, "align": "center", "bold": true, "before": 11.5, "after": 11.5},
-    "author": {"pt": 11, "align": "center", "bold": true, "after": 11.5},
-    "affiliation": {"pt": 10, "align": "center", "italic": true, "after": 11.5},
-    "email": {"pt": 10, "align": "center", "after": 11.5},
-    "abstract": {"pt": 10, "align": "both", "after": 11.5},
-    "keywords": {"pt": 10, "align": "both", "after": 11.5},
-    "citation": {"pt": 10, "align": "both", "after": 11.5},
-    "body": {"pt": 11, "align": "both", "first_indent": 21.3},
-    "heading_1": {"pt": 11, "align": "center", "bold": true, "before": 11.5, "after": 11.5},
-    "heading_2": {"pt": 11, "align": "center", "bold": true, "italic": true, "before": 6, "after": 6},
-    "heading_3": {"pt": 11, "align": "center", "italic": true, "before": 6, "after": 6},
-    "figure_caption": {"pt": 10, "align": "center", "before": 6, "after": 6},
-    "table_caption": {"pt": 10, "align": "center", "before": 6, "after": 6},
-    "table_body": {"pt": 10, "align": "left"},
-    "reference_item": {"pt": 10, "align": "both", "first_indent": 21.3},
-    "references_heading": {"pt": 10, "align": "center", "bold": true, "before": 11.5, "after": 11.5},
-    "funding_heading": {"pt": 10, "align": "center", "bold": true, "before": 11.5, "after": 6},
-    "funding_text": {"pt": 10, "align": "both", "first_indent": 21.3},
-    "acknowledgements_heading": {"pt": 10, "align": "center", "bold": true, "before": 11.5, "after": 6},
-    "acknowledgements_text": {"pt": 10, "align": "both", "first_indent": 21.3},
-    "conflict_heading": {"pt": 10, "align": "center", "bold": true, "before": 11.5, "after": 6},
-    "conflict_text": {"pt": 10, "align": "both", "first_indent": 21.3},
-    "author_information": {"pt": 10, "align": "center", "bold": true, "before": 11.5, "after": 11.5},
-    "author_bio": {"pt": 10, "align": "left"},
-    "received_metadata": {"pt": 10, "align": "right", "italic": true, "before": 11.5, "after": 11.5},
-    "copyright_metadata": {"pt": 9, "align": "both", "before": 6, "after": 6}
-  }
+    "editorial_metadata": {
+      "pt": 10,
+      "align": "left",
+      "after": 11.5,
+      "right_tab": 9865
+    },
+    "article_type": {
+      "pt": 10,
+      "align": "right",
+      "bold": true
+    },
+    "rubric": {
+      "pt": 10,
+      "align": "right",
+      "bold": true,
+      "italic": true,
+      "after": 11.5
+    },
+    "title": {
+      "pt": 14,
+      "align": "center",
+      "bold": true,
+      "before": 11.5,
+      "after": 11.5
+    },
+    "author": {
+      "pt": 11,
+      "align": "center",
+      "bold": true,
+      "after": 11.5
+    },
+    "affiliation": {
+      "pt": 10,
+      "align": "center",
+      "italic": true,
+      "after": 11.5
+    },
+    "email": {
+      "pt": 10,
+      "align": "center",
+      "after": 11.5
+    },
+    "abstract": {
+      "pt": 10,
+      "align": "both",
+      "after": 11.5
+    },
+    "keywords": {
+      "pt": 10,
+      "align": "both",
+      "after": 11.5
+    },
+    "citation": {
+      "pt": 10,
+      "align": "both",
+      "after": 11.5
+    },
+    "body": {
+      "pt": 11,
+      "align": "both",
+      "first_indent": 21.3
+    },
+    "heading_1": {
+      "pt": 11,
+      "align": "center",
+      "bold": true,
+      "before": 11.5,
+      "after": 11.5
+    },
+    "heading_2": {
+      "pt": 11,
+      "align": "center",
+      "bold": true,
+      "italic": true,
+      "before": 6,
+      "after": 6
+    },
+    "heading_3": {
+      "pt": 11,
+      "align": "center",
+      "italic": true,
+      "before": 6,
+      "after": 6
+    },
+    "figure_caption": {
+      "pt": 10,
+      "align": "center",
+      "before": 6,
+      "after": 6
+    },
+    "table_caption": {
+      "pt": 11,
+      "align": "center",
+      "before": 6,
+      "after": 6
+    },
+    "table_body": {
+      "pt": 10,
+      "align": "left"
+    },
+    "reference_item": {
+      "pt": 10,
+      "align": "both",
+      "first_indent": 21.3
+    },
+    "references_heading": {
+      "pt": 11,
+      "align": "center",
+      "bold": true,
+      "before": 11.5,
+      "after": 11.5
+    },
+    "funding_heading": {
+      "pt": 11,
+      "align": "center",
+      "bold": true,
+      "before": 11.5,
+      "after": 6
+    },
+    "funding_text": {
+      "pt": 11,
+      "align": "both",
+      "first_indent": 21.3
+    },
+    "acknowledgements_heading": {
+      "pt": 11,
+      "align": "center",
+      "bold": true,
+      "before": 11.5,
+      "after": 6
+    },
+    "acknowledgements_text": {
+      "pt": 11,
+      "align": "both",
+      "first_indent": 21.3
+    },
+    "conflict_heading": {
+      "pt": 11,
+      "align": "center",
+      "bold": true,
+      "before": 11.5,
+      "after": 6
+    },
+    "conflict_text": {
+      "pt": 11,
+      "align": "both",
+      "first_indent": 21.3
+    },
+    "author_information": {
+      "pt": 12,
+      "align": "center",
+      "bold": true,
+      "before": 11.5,
+      "after": 11.5
+    },
+    "author_bio": {
+      "pt": 10,
+      "align": "left"
+    },
+    "received_metadata": {
+      "pt": 10,
+      "align": "right",
+      "italic": true,
+      "before": 11.5,
+      "after": 11.5
+    },
+    "copyright_metadata": {
+      "pt": 9,
+      "align": "both",
+      "before": 6,
+      "after": 6
+    }
+  },
+  "word_references": [
+    "01_Tyutyunnik_98-103 (2).docx",
+    "03_Balabanov_Dyachkova_Gutnik_Chapaksov_Burakova_118-128 (2).docx"
+  ],
+  "body_line_multiple": 1.0208333333333333,
+  "quality_rules": [
+    "Do not optimize for fewer pages or a filled final page.",
+    "Preserve source line breaks, native equations, table merges and image crops.",
+    "Figure caption: 10 pt; table caption: 11 pt.",
+    "Author information heading: 12 pt; body and funding prose: 11 pt.",
+    "Keep already conforming journal layout; inspect render before moving objects."
+  ]
 }

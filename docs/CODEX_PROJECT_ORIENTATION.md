@@ -239,6 +239,14 @@ V1 jobs are `TemplateJob.kind = "v1"`.
 
 ## Template Workspace V2
 
+2026-09-20 reference update: JAMT 2026.2 is measured from five published PDFs
+and two final DOCX articles. Conforming native layouts are preserved; isolated
+font/size damage is repaired without rebuilding sections/objects. An optional
+`JAMT_LATEX_EXPORT_ENABLED=1` adds a PDF and source archive from the original
+DOCX, independent of native Word output, plus Qwen comparison with explicit
+coverage. See `docs/JAMT_REFERENCE_LAYOUT_20260920.md` and
+`paper_formatter/latex_lab/README.md` for current behavior and limits.
+
 JAMT extension prepared on 2026-09-18 and deployed on 2026-09-19:
 `/template/style/jamt/` accepts one Word article and applies the versioned JAMT
 style without an uploaded template. `TemplateJob.kind = "jamt"` uses the native

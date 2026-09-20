@@ -19,6 +19,9 @@ from apps.template_workspace.v2.services import analysis_directory, expire_v2_jo
 FILES = {
     "docx": ("result.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "result.docx"),
     "pdf": ("result.pdf", "application/pdf", "result.pdf"),
+    "latex_pdf": ("result-latex.pdf", "application/pdf", "result-latex.pdf"),
+    "latex_source": ("result-latex.zip", "application/zip", "result-latex.zip"),
+    "latex_report": ("latex-export-report.json", "application/json", "latex-export-report.json"),
     "export": ("export_report.json", "application/json", "export_report.json"),
     "style": ("style_source.json", "application/json", "jamt-style.json"),
     "article": ("article_report.json", "application/json", "article_report.json"),
@@ -126,7 +129,31 @@ def detail(request, job_id, job_kind="v2"):
         "job": job,
         "files": available_files(job),
         "ai_review": visual_review_context(job),
+        "latex_review": latex_review_context(job),
     })
+
+
+def latex_review_context(job):
+    if job.kind != 'jamt' or job.pending or job.status == 'failed':
+        return None
+    try:
+        report = json.loads((analysis_directory(job) / 'latex-export-report.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(report, dict):
+        return None
+    visual = report.get('visual_review') or {}
+    issues = []
+    for event in visual.get('events', []):
+        letter = next((key for key, value in event.get('mapping', {}).items() if value == 'candidate'), None)
+        for issue in event.get('response', {}).get('issues_'+str(letter), []):
+            issues.append({'page': event['candidate_page'], 'description': issue['description']})
+    return {'message': report.get('message'), 'has_review': bool(visual),
+            'checked': len(visual.get('candidate_pages_checked', [])),
+            'total': visual.get('candidate_pages', report.get('pages', 0)), 'issues': issues,
+            'reference_checked': len(visual.get('reference_pages_checked', [])),
+            'reference_total': visual.get('reference_pages', 0),
+            'complete': visual.get('status') == 'reviewed'}
 
 
 @login_required

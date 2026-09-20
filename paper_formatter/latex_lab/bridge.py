@@ -1,6 +1,6 @@
 """Native DOCX -> typed, provenance-carrying LaTeX blocks, without LLM prose.
 
-This bridge consumes the native editor's DOCX, not the lossy legacy ArticleIR.
+This bridge consumes native DOCX directly, not PDF or the legacy ArticleIR.
 Every visible paragraph (including text boxes and table cells) stays in order.
 Unsupported objects fail explicitly. The companion Word remains native/editable.
 """
@@ -41,6 +41,9 @@ class Block:
     columns: int = 0
     rows: int = 0
     captions: list = field(default_factory=list)
+    source_columns: int = 0
+    space_before: float = 0
+    space_after: float = 0
 
 
 def visible_tree(node):
@@ -90,10 +93,22 @@ class NativeBridge:
         self.zip = None
         self.author_zone = False
         self.emitted_text = []
+        self.list_labels = []
+        self.paragraphs = {p.id: p for p in self.report.paragraphs}
+        from apps.template_workspace.v2.styles.reference_fidelity import assess_existing_layout
+        self.reference_layout = assess_existing_layout(self.report, self.structure)['eligible']
+        self.column_map = {}
+        for section in self.report.sections:
+            start = int((section.start_block or 'block_0001').split('_')[-1])
+            end = int((section.end_block or section.start_block or 'block_0001').split('_')[-1])
+            for i in range(start, end+1):
+                self.column_map[f'block_{i:04d}'] = int(section.columns.get(qn('w:num'), 1))
 
     def build(self):
         with ZipFile(self.path) as archive:
             self.zip = archive
+            from .numbering import Numbering
+            self.numbering = Numbering(archive)
             root = etree.fromstring(archive.read('word/document.xml'))
             # Footnotes require a dedicated numbered-text contract; never drop them.
             if root.xpath('//w:footnoteReference|//w:endnoteReference', namespaces=NS):
@@ -119,13 +134,39 @@ class NativeBridge:
                 if role.get('detected_role') == 'author_information':
                     self.author_zone = True
                 assets_before, math_before = len(self.assets), len(self.formulas)
+                # Word sometimes stores a data table and the following panel grid
+                # in one native table. They are two pagination units in LaTeX.
+                if node.tag == qn('w:tbl'):
+                    rows = node.findall('w:tr', NS)
+                    panel_start = next((i for i, row in enumerate(rows) if row.xpath('.//w:drawing|.//w:pict[not(ancestor::w:object)]', namespaces=NS)), None)
+                    if panel_start and all(not r.xpath('.//w:drawing|.//w:pict', namespaces=NS) for r in rows[:panel_start]):
+                        tail_text = ''.join(visible_text(r) for r in rows[panel_start:]).strip()
+                        if re.fullmatch(r'[\s()a-zа-я0-9]*', tail_text, re.I):
+                            self.block_id = f'block_{index:04d}'
+                            data_tex = self.table(node, selected_rows=rows[:panel_start], figure=False)
+                            width = sum(float(x or 0) for x in self.tables[self.block_id].grid) / 20
+                            blocks.append(Block(self.block_id, 'table', 'table', 'body',
+                                                ''.join(visible_text(r) for r in rows[:panel_start]), data_tex,
+                                                width, 0, len(self.formulas)-math_before,
+                                                self.tables[self.block_id].logical_column_count, panel_start,
+                                                source_columns=self.column_map.get(self.block_id, 0)))
+                            self.block_id += '_panels'
+                            panel_tex = self.table(node, selected_rows=rows[panel_start:], figure=True)
+                            images = self.assets[assets_before:]
+                            blocks.append(Block(self.block_id, 'figure', 'figure', 'body', tail_text, panel_tex,
+                                                width, len(images), 0, 2, len(rows)-panel_start, source_columns=1))
+                            continue
                 tex = self.table(node) if node.tag == qn('w:tbl') else self.inline(node)
                 text = visible_text(node)
                 if not tex.strip():
+                    if self.reference_layout and blocks and node.tag == qn('w:p') and node.find('w:pPr/w:sectPr', NS) is None:
+                        para = self.paragraphs.get(self.block_id)
+                        sizes = [float(r.effective_formatting.get('size') or 20)/2 for r in para.runs] if para else []
+                        blocks[-1].space_after += min(13.0, max(sizes or [10])*1.15)
                     continue
                 images = self.assets[assets_before:]
                 table = self.tables.get(self.block_id)
-                kind = 'table' if node.tag == qn('w:tbl') else ('figure' if images and not text.strip() else 'paragraph')
+                kind = 'table' if node.tag == qn('w:tbl') else ('figure' if images and (not text.strip() or role.get('detected_role') == 'figure_caption') else 'paragraph')
                 is_figure_table = table and table.classification == 'FIGURE_CONTAINER'
                 if is_figure_table:
                     kind = 'figure'
@@ -138,7 +179,13 @@ class NativeBridge:
                                     role.get('detected_role', 'body'), role.get('zone') or '',
                                     text, tex, width, len(images), len(self.formulas)-math_before,
                                     table.logical_column_count if table else 0,
-                                    table.row_count if table else 0))
+                                    table.row_count if table else 0,
+                                    source_columns=self.column_map.get(self.block_id, 0)))
+                if self.reference_layout and node.tag == qn('w:p'):
+                    para = self.paragraphs.get(self.block_id)
+                    spacing = para.effective_formatting.get('paragraph', {}).get('spacing', {}) if para else {}
+                    blocks[-1].space_before = float(spacing.get(qn('w:before'), 0))/20
+                    blocks[-1].space_after = float(spacing.get(qn('w:after'), 0))/20
             expected_text = Counter((root.getroottree().getpath(n), n.text or '')
                                     for n in visible_tree(root) if n.tag == qn('w:t'))
             emitted_text = Counter(self.emitted_text)
@@ -151,6 +198,16 @@ class NativeBridge:
             if block.role == 'table_caption' and index + 1 < len(blocks) and blocks[index + 1].kind == 'table':
                 table = blocks[index + 1]
                 table.captions.append(asdict(block)); grouped.append(table); index += 2
+            elif block.kind == 'figure' and index + 1 < len(blocks) and blocks[index+1].kind == 'table' and re.fullmatch(r'\s*(?:\([a-zа-я0-9]\)\s*)+', blocks[index+1].text, re.I):
+                # Labels under separate native pictures are a panel grid, not data.
+                labels = blocks[index+1]
+                block.tex += r'\par ' + labels.tex
+                block.text += labels.text
+                block.space_after = labels.space_after
+                index += 2
+                while index < len(blocks) and blocks[index].role == 'figure_caption':
+                    block.captions.append(asdict(blocks[index])); index += 1
+                grouped.append(block)
             elif block.kind in {'figure', 'table'}:
                 index += 1
                 expected_caption = 'figure_caption' if block.kind == 'figure' else 'table_caption'
@@ -163,13 +220,17 @@ class NativeBridge:
             'source_sha256': sha256(self.path.read_bytes()).hexdigest(),
             'blocks': [asdict(b) for b in grouped], 'assets': self.assets,
             'formulas': self.formulas, 'warnings': self.warnings,
-            'native_equations': self.report.embedded_objects.omml_formula_count,
+            'list_labels': self.list_labels,
+            'native_equations': sum(n.tag == qn('m:oMath') or etree.QName(n).localname == 'OLEObject' for n in visible_tree(root)),
             'converted_equations': len(self.formulas),
             'text_transfer': {'expected_nodes': sum(expected_text.values()),
                               'emitted_nodes': sum(emitted_text.values()), 'exact': True},
             'source_text': '\n'.join(b.text for b in blocks),
-            'style': 'JAMT 2026.1', 'experimental': True,
-            'running_footer': active_footers[-1] if active_footers else '',
+            'style': 'JAMT 2026.2', 'experimental': True,
+            'reference_layout': self.reference_layout,
+            'running_footer': active_footers[0] if active_footers else '',
+            'running_header': next((h.text for h in self.report.headers if 'Journal of Advanced Materials' in h.text), ''),
+            'page_start': int(self.report.sections[0].page_numbering.get(qn('w:start'), 1)) if self.reference_layout else 1,
         }
         if manifest['native_equations'] != manifest['converted_equations']:
             raise UnsupportedContent('Native equation inventory does not match converted equations.')
@@ -178,6 +239,15 @@ class NativeBridge:
 
     def inline(self, node):
         tag = etree.QName(node).localname
+        if node.tag == qn('w:p'):
+            from .numbering import NumberingError
+            try:
+                label = self.numbering.label(node)
+            except NumberingError as exc:
+                raise UnsupportedContent(str(exc)) from exc
+            if label:
+                self.list_labels.append({'block_id': self.block_id, 'label': label, 'text_anchor': visible_text(node).strip()[:100]})
+            return (escaped(label) + ' ' if label else '') + ''.join(self.inline(child) for child in node)
         if tag == 'AlternateContent':
             branch = next((c for c in node if etree.QName(c).localname == 'Choice'), None)
             if branch is None:
@@ -225,7 +295,9 @@ class NativeBridge:
         if node.tag == qn('w:tab'):
             return r'\quad '
         if node.tag == qn('w:br'):
-            return ' '
+            if self.roles.get(self.block_id, {}).get('detected_role') == 'copyright_metadata':
+                return ' '
+            return r'\newline ' if node.get(qn('w:type'), 'textWrapping') == 'textWrapping' else ' '
         if node.tag == qn('w:sym'):
             val = node.get(qn('w:char'), '')
             font = node.get(qn('w:font'), '').casefold()
@@ -233,8 +305,10 @@ class NativeBridge:
                 return r'{\fontspec{DejaVu Sans}✉}'
             if font == 'symbol' and val == 'F0D3':
                 return r'\textcopyright{}'
-            symbol_chars = {'F0B0': '°', 'F0B4': '×', 'F062': 'β', 'F071': 'θ'}
+            symbol_chars = {'F0B0': '°', 'F0B4': '×', 'F0D7': '⋅', 'F062': 'β', 'F063': 'χ', 'F071': 'θ', 'F072': 'ρ'}
             if font == 'symbol' and val in symbol_chars:
+                if val == 'F0D7':
+                    return r'\ensuremath{\cdot}'
                 return escaped(symbol_chars[val])
             if val == '002A':
                 return '*'
@@ -255,8 +329,25 @@ class NativeBridge:
                 text = r'\textbf{' + text + '}'
             return text
         if node.tag in {qn('w:drawing'), qn('w:pict'), qn('w:object')}:
-            if node.xpath('.//*[local-name()="OLEObject"]'):
-                raise UnsupportedContent('OLE/MathType needs an explicitly verified vector preview; native DOCX is retained.')
+            ole = node.xpath('.//*[local-name()="OLEObject"]')
+            if ole:
+                if len(ole) != 1:
+                    raise UnsupportedContent('Ambiguous OLE equation container.')
+                rel = self.rels.get(ole[0].get(qn('r:id')))
+                if rel is None or rel.get('TargetMode') == 'External':
+                    raise UnsupportedContent('Missing/external OLE equation relationship.')
+                target = posixpath.normpath(posixpath.join('word', rel.get('Target', '')))
+                if not target.startswith('word/embeddings/'):
+                    raise UnsupportedContent('OLE relationship escapes embeddings.')
+                from .mtef import ole_to_latex, UnsupportedEquation
+                payload = self.zip.read(target)
+                try:
+                    tex = ole_to_latex(payload)
+                except (UnsupportedEquation, OSError) as exc:
+                    raise UnsupportedContent(f'{self.block_id}: {exc}') from exc
+                self.formulas.append({'block_id': self.block_id, 'latex': tex, 'kind': 'MTEF3',
+                                      'source': target, 'sha256': sha256(payload).hexdigest()})
+                return r'\(' + tex + r'\)'
             # Visible text boxes are content, not commands, and must survive.
             pictures = node.xpath('.//a:blip|.//v:imagedata', namespaces=NS)
             result = ' '.join(self.picture(p) for p in pictures)
@@ -342,32 +433,35 @@ class NativeBridge:
         # adjustbox caps width relative to the current cell/column, preserving aspect.
         return rf'\labimage{{{width:.3f}}}{{{rendered_name}}}'
 
-    def table(self, node):
+    def table(self, node, selected_rows=None, figure=None):
+        rows = selected_rows if selected_rows is not None else node.findall('w:tr', NS)
         grid = [max(1, int(x.get(qn('w:w'), 1))) for x in node.findall('w:tblGrid/w:gridCol', NS)]
         if not grid:
             raise UnsupportedContent('Table has no explicit column grid.')
         if node.xpath('.//w:tbl', namespaces=NS):
             raise UnsupportedContent('Nested tables require a separate layout adapter.')
         # Visual objects in tables are a figure grid, not a ruled data table.
-        figure = bool(node.xpath('.//w:drawing|.//w:pict', namespaces=NS))
+        if figure is None:
+            figure = any(row.xpath('.//w:drawing|.//w:pict[not(ancestor::w:object)]', namespaces=NS) for row in rows)
+        label_grid = bool(re.fullmatch(r'\s*(?:\([a-zа-я0-9]\)\s*)+', ''.join(visible_text(r) for r in rows), re.I))
+        figure = figure or label_grid
         ruled = not figure and not self.author_zone
         # An equal-width source grid is particularly poor for mathematical tables:
         # reserve space for displayed fractions, not the short citation column.
         math_columns = set()
-        for row in node.findall('w:tr', NS):
+        for row in rows:
             column = 0
             for cell in row.findall('w:tc', NS):
                 span_node = cell.find('w:tcPr/w:gridSpan', NS)
                 span = int(span_node.get(qn('w:val'), 1)) if span_node is not None else 1
-                if cell.xpath('.//m:oMath', namespaces=NS):
+                if cell.xpath('.//m:oMath|.//w:object', namespaces=NS):
                     math_columns.add(column)
                 column += span
-        if math_columns and len(grid) == 3:
+        if math_columns and len(grid) == 3 and not self.reference_layout:
             grid = [200 if i in math_columns else (70 if i == 2 else 140) for i in range(3)]
         total = sum(grid)
         cell_align = r'\RaggedRight' if self.author_zone else r'\centering'
         spec = '@{}' + ''.join('>{' + cell_align + r'\arraybackslash}p{' + f'{n/total:.6f}' + r'\labtablewidth}' for n in grid) + '@{}'
-        rows = node.findall('w:tr', NS)
         lines = [r'\begingroup\setlength{\tabcolsep}{3pt}',
                  rf'\setlength{{\labtablewidth}}{{\dimexpr\linewidth-{6*(len(grid)-1)}pt\relax}}',
                  r'\fontsize{\labtablesize}{\labtableleading}\selectfont',
@@ -380,14 +474,17 @@ class NativeBridge:
             if ruled and row_index > 0 and first_merge is not None and first_merge.get(qn('w:val')) == 'restart':
                 # Boundary after a multi-row header and between outer data groups.
                 lines.append(r'\midrule')
-            cells, col = [], 0
+            before = row.find('w:trPr/w:gridBefore', NS)
+            after = row.find('w:trPr/w:gridAfter', NS)
+            col = int(before.get(qn('w:val'), 0)) if before is not None else 0
+            cells = [''] * col
             for cell in row.findall('w:tc', NS):
                 span_node = cell.find('w:tcPr/w:gridSpan', NS)
                 span = int(span_node.get(qn('w:val'), 1)) if span_node is not None else 1
                 if span < 1 or col + span > len(grid):
                     raise UnsupportedContent('Invalid table merge grid.')
                 content = r'\par '.join(self.inline(p) for p in cell.findall('w:p', NS))
-                if cell.xpath('.//m:oMath', namespaces=NS):
+                if cell.xpath('.//m:oMath|.//w:object', namespaces=NS):
                     content = content.replace(r'\(', r'\(\displaystyle ')
                 content = content.strip() or r'\strut'
                 # Continuation cells contain no copy of the vertically merged text.
@@ -401,9 +498,14 @@ class NativeBridge:
                                + r'>{\centering\arraybackslash}p{' + width + '}'
                                + edge_right + '}{' + content + '}')
                 cells.append(content); col += span
+            trailing = int(after.get(qn('w:val'), 0)) if after is not None else 0
+            cells.extend([''] * trailing); col += trailing
             if col != len(grid):
                 raise UnsupportedContent('Sparse table rows are not supported.')
-            lines.append(' & '.join(cells) + r' \\')
+            # Display-style fractions can extend below the ordinary table strut.
+            # Separate equation rows so adjacent numerators/denominators stay clear.
+            row_end = r' \\[4pt]' if row.xpath('.//m:oMath|.//w:object', namespaces=NS) else r' \\'
+            lines.append(' & '.join(cells) + row_end)
             # Avoid a rule through a vertically merged header. Native header row is
             # kept as text; a single rule after the header group is sufficient.
             if ruled and row_index == 0 and not row.xpath('.//w:vMerge', namespaces=NS):

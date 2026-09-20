@@ -255,6 +255,40 @@ class JamtWorkspaceTests(TestCase):
         self.client.logout()
         self.assertEqual(self.client.get(reverse('template_workspace:jamt_workspace')).status_code, 302)
 
+    @override_settings(JAMT_LATEX_EXPORT_ENABLED=True)
+    def test_latex_receives_original_upload_and_new_downloads_remain_private(self):
+        job = self.job()
+        def extra(source, folder, baseline):
+            self.assertEqual(Path(source), Path(job.article.path))
+            self.assertEqual(Path(source).read_bytes(), self.source.read_bytes())
+            self.assertEqual(baseline, folder/'result.pdf')
+            (folder/'result-latex.pdf').write_bytes(b'latex pdf')
+            (folder/'result-latex.zip').write_bytes(b'latex sources')
+            report = dict(status='completed', message='LaTeX ready', pages=3,
+                visual_review=dict(status='partial', candidate_pages=3, candidate_pages_checked=[1, 3], events=[
+                    dict(candidate_page=3, mapping={'A':'candidate', 'B':'reference'},
+                         response={'issues_A':[{'description':'<script>bad</script>'}]})]))
+            (folder/'latex-export-report.json').write_text(json.dumps(report), encoding='utf-8')
+            return report
+        with patch('apps.template_workspace.v2.exports.convert_word_path_to_pdf', side_effect=write_pdf), patch(
+                'apps.template_workspace.v2.latex_export.export_jamt_latex', side_effect=extra) as exporter:
+            run_v2_job(str(job.pk))
+        exporter.assert_called_once()
+        job.refresh_from_db(); self.assertEqual(job.status, 'completed')
+        page = self.client.get(reverse('template_workspace:jamt_detail', args=[job.pk]))
+        self.assertContains(page, 'PDF LaTeX · эксперимент')
+        self.assertContains(page, 'Qwen сравнил страниц LaTeX: 2 из 3.')
+        self.assertContains(page, 'Сравнение неполное.')
+        self.assertContains(page, '&lt;script&gt;bad&lt;/script&gt;')
+        for kind in ('latex_pdf', 'latex_source', 'latex_report'):
+            response = self.client.get(reverse('template_workspace:jamt_download', args=[job.pk, kind]))
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response['Cache-Control'], 'private, no-store'); response.close()
+        other = get_user_model().objects.create_user(username='other-latex')
+        self.client.force_login(other)
+        for kind in ('latex_pdf', 'latex_source', 'latex_report'):
+            self.assertEqual(self.client.get(reverse('template_workspace:jamt_download', args=[job.pk, kind])).status_code, 404)
+
     def test_partial_ai_review_shows_actual_coverage_and_escapes_findings(self):
         job = self.job()
         job.status = 'completed'; job.save()
@@ -317,5 +351,5 @@ class JamtVisualReviewTests(SimpleTestCase):
         self.assertEqual(report['status'], 'reviewed')
         self.assertEqual(report['pages_checked'], [1])
         self.assertEqual(report['style']['id'], 'jamt')
-        self.assertEqual(report['style']['version'], '2026.1')
+        self.assertEqual(report['style']['version'], '2026.2')
         self.assertFalse(report['template_front_reference_available'])

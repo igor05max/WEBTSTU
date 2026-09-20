@@ -34,8 +34,10 @@ def visual_review_rules():
         "typography": {role: {key: value for key, value in style["roles"][role].items()
                               if key in {"pt", "align", "bold", "italic", "first_indent"}}
                        for role in ("title", "author", "affiliation", "abstract", "body", "heading_1",
-                                    "heading_2", "figure_caption", "table_body", "reference_item")},
-        "journal_header": "Gray, right aligned, with a gray rule below.",
+                                    "heading_2", "figure_caption", "table_caption", "table_body", "reference_item",
+                                    "funding_text", "author_information")},
+        "journal_header": "Published reference: black bold italic, alternating outer alignment and double rules. Preserve existing source issue metadata.",
+        "quality_rules": style.get('quality_rules', []),
     }
 
 
@@ -54,13 +56,13 @@ def _furniture(paragraph, style, *, footer=False, author=""):
     properties = paragraph._p.get_or_add_pPr()
     _rule(properties, "jc", val="left" if footer else "right")
     borders = _rule(properties, "pBdr")
-    _rule(borders, "top" if footer else "bottom", val="single", sz=18, space=3, color="808080")
+    _rule(borders, "top" if footer else "bottom", val="thickThinSmallGap" if footer else "thinThickSmallGap", sz=24, space=1, color="000000")
     run = paragraph.add_run() if footer else paragraph.add_run(style["journal"])
     run.font.name = style["font"]
     run.font.size = Pt(9 if footer else 10)
     run.bold = True
     run.italic = not footer
-    _rule(run._r.get_or_add_rPr(), "color", val="808080")
+    _rule(run._r.get_or_add_rPr(), "color", val="000000")
     if footer:
         _rule(run._r, "fldChar", fldCharType="begin")
         instruction = _rule(run._r, "instrText")
@@ -121,7 +123,7 @@ def prepare_jamt_style(directory, *, article_report=None, article_structure=None
             "alignment": rule["align"],
             "spacing": {qn("w:before"): str(round(rule.get("before", 0) * 20)),
                         qn("w:after"): str(round(rule.get("after", 0) * 20)),
-                        qn("w:line"): "240", qn("w:lineRule"): "auto"},
+                        qn("w:line"): "245" if role in {"body", "funding_text", "acknowledgements_text", "conflict_text"} else "240", qn("w:lineRule"): "auto"},
             "indentation": {qn("w:firstLine"): str(round(rule.get("first_indent", 0) * 20))},
         }
         if "right_tab" in rule:

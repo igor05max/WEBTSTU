@@ -13,9 +13,10 @@ from .bridge import escaped
 STYLE_PATH = Path(__file__).resolve().parents[2] / 'apps/template_workspace/v2/styles/jamt.json'
 
 
-def default_plan(blocks, *, running_footer=''):
-    return {'body_leading': 12.65, 'front_gap': 8.0, 'caption_gap': 5.0,
-            'table_size': 10.0, 'running_footer': running_footer, 'objects': {
+def default_plan(blocks, *, running_footer='', reference_layout=False, running_header='', page_start=1):
+    return {'body_leading': 13.0, 'front_gap': 11.5, 'caption_gap': 6.0,
+            'table_size': 10.0, 'running_footer': running_footer, 'reference_layout': reference_layout,
+            'running_header': running_header, 'page_start': page_start, 'objects': {
                 b.id: {'width': 'wide' if b.width_pt > 244 or b.columns >= 4 else 'column',
                        'scale': 1.0, 'break_before': False}
                 for b in blocks if b.kind in {'figure', 'table'}}}
@@ -69,49 +70,42 @@ def render(blocks, project, plan):
     author = re.sub(r'^\s*\d+\s*|\s*\d+\s*$', '', author).strip()
     if len(author) > 105:
         author = author[:102].rsplit(' ', 1)[0] + '…'
-    preamble = r'''\documentclass[11pt,a4paper]{article}
-\usepackage{fontspec}
-\usepackage{polyglossia}
-\setdefaultlanguage{english}
-\setotherlanguage{russian}
-\setmainfont{Liberation Serif}
-\newfontfamily\cyrillicfont{Liberation Serif}
-\usepackage{unicode-math}
-\setmathfont{texgyretermes-math.otf}[Path=fonts/]
-\usepackage[a4paper,left=18mm,right=18mm,top=30mm,bottom=24mm,headheight=14pt,headsep=28pt,footskip=24pt]{geometry}
-\usepackage{microtype}
-\usepackage{multicol,needspace,graphicx,adjustbox,array,booktabs,ragged2e,xcolor,fancyhdr,xurl,hyperref}
-\hypersetup{hidelinks,pdfcreator={JAMT LaTeX laboratory},pdfproducer={XeLaTeX}}
-\setlength{\columnsep}{6mm}
-\setlength{\parindent}{7.5mm}
-\setlength{\parskip}{0pt}
-\setlength{\multicolsep}{8pt}
-\setlength{\emergencystretch}{1.5em}
-\tolerance=1400
-\hbadness=2500
-\widowpenalty=5000
-\clubpenalty=5000
-\raggedbottom
-\pagestyle{fancy}
-\fancyhf{}
-\fancyhead[R]{\fontsize{9}{10}\selectfont\color{gray}Journal of Advanced Materials and Technologies.}
-\fancyfoot[L]{\fontsize{9}{10}\selectfont __AUTHOR__}
-\fancyfoot[R]{\fontsize{9}{10}\selectfont\thepage}
-\renewcommand{\headrulewidth}{0.4pt}
-\renewcommand{\footrulewidth}{0.3pt}
-\newlength{\labtablewidth}
-\newcommand{\labtablesize}{__TABLESIZE__}
-\newcommand{\labtableleading}{__TABLELEADING__}
-\newcommand{\labfigscale}{1.0}
-\newcommand{\labimage}[2]{\adjustbox{max width=\labfigscale\linewidth,max height=0.65\textheight}{\includegraphics[width=#1pt]{#2}}}
-\begin{document}
-\fontsize{11}{__LEADING__}\selectfont
-'''
-    replacements = {'__AUTHOR__': escaped(author), '__TABLESIZE__': str(plan['table_size']),
-                    '__TABLELEADING__': str(plan['table_size'] * 1.18), '__LEADING__': str(plan['body_leading'])}
-    for key, value in replacements.items():
-        preamble = preamble.replace(key, value)
+    shutil.copy2(Path(__file__).with_name('jamt-reference.cls'), project/'jamt-reference.cls')
+    header = plan.get('running_header') or style['journal']
+    first_page = max(1, int(plan.get('page_start', 1)))
+    preamble = (
+        r"\documentclass{jamt-reference}" + "\n"
+        + r"\renewcommand{\jamtjournal}{" + escaped(header) + "}\n"
+        + r"\renewcommand{\jamtauthors}{" + escaped(author) + "}\n"
+        + r"\renewcommand{\labtablesize}{" + str(plan['table_size']) + "}\n"
+        + r"\renewcommand{\labtableleading}{" + str(plan['table_size'] * 1.15) + "}\n"
+        + r"\begin{document}" + "\n"
+        + r"\setcounter{page}{" + str(first_page) + "}\n"
+        + r"\fontsize{11}{" + str(plan['body_leading']) + r"}\selectfont" + "\n")
     lines, columns, tail = [], False, False
+
+    # Native Word floats may be anchored after a short editorial paragraph but
+    # appear above it on the page. Float only the intact wide figure groups;
+    # prose order and all scientific content remain unchanged.
+    blocks = list(blocks)
+    moves = []
+    if plan.get('reference_layout'):
+        i = 0
+        while i < len(blocks):
+            if blocks[i].kind != 'figure' or blocks[i].source_columns != 1:
+                i += 1; continue
+            end = i
+            while end < len(blocks) and blocks[end].kind == 'figure' and blocks[end].source_columns == 1:
+                end += 1
+            start = i-1
+            while start >= 0 and blocks[start].role in {'funding_text', 'acknowledgements_text', 'conflict_text'}:
+                start -= 1
+            if start >= 0 and start < i-1 and blocks[start].role in {'funding_heading', 'acknowledgements_heading', 'conflict_heading'} and sum(len(b.text) for b in blocks[start:i]) < 600:
+                moves.append({'figures': [b.id for b in blocks[i:end]], 'before': blocks[start].id,
+                              'reason': 'keep_short_editorial_section_together_below_wide_figures'})
+                blocks[start:end] = blocks[i:end] + blocks[start:i]
+            i = end
+    plan['layout_actions'] = moves
 
     def switch(want_columns):
         nonlocal columns
@@ -124,22 +118,35 @@ def render(blocks, project, plan):
         role = 'figure_caption' if caption else block.role
         spec = style['roles'].get(role, style['roles']['body'])
         pt = spec.get('pt', 11)
-        before = spec.get('before', 0)
-        after = spec.get('after', 0)
-        if block.zone == 'front_matter':
+        faithful = plan.get('reference_layout', False)
+        before = block.space_before if faithful else spec.get('before', 0)
+        after = block.space_after if faithful else spec.get('after', 0)
+        if block.zone == 'front_matter' and not faithful:
             after = min(after, plan['front_gap'])
-        if caption:
+        if caption and not faithful:
             before = after = plan['caption_gap']
         align = {'center': r'\centering', 'right': r'\raggedleft', 'left': r'\RaggedRight', 'both': r'\justifying'}.get(spec.get('align'), r'\justifying')
         is_heading = role.startswith('heading_') or role.endswith('_heading') or role == 'author_information'
         if is_heading:
             lines.append(r'\needspace{4\baselineskip}')
+        elif role in {'body', 'reference_item'}:
+            lines.append(r'\needspace{2\baselineskip}')
         lines.append('% ' + block.id + ' ' + role)
+        lines.append(r'\par')
         if before:
             lines.append(rf'\par\addvspace{{{before}pt}}')
-        leading = plan['body_leading'] if pt == 11 and role == 'body' else pt * 1.15
+        leading = plan['body_leading'] if pt == 11 and role in {'body', 'funding_text', 'acknowledgements_text', 'conflict_text'} else pt * 1.15
         indent = spec.get('first_indent', 0)
         text = block.tex
+        if role == 'rubric':
+            # A source textbox's centring belongs to its own first line.
+            text = r'\par\noindent '.join(text.split(r'\newline '))
+        if role == 'copyright_metadata':
+            logo = re.search(r'\\labimage\{[\d.]+\}\{[^}]+\}', text)
+            if logo:
+                text_without_logo = text[:logo.start()] + text[logo.end():]
+                lines.append(r'\jamtlicense{' + logo[0] + '}{' + text_without_logo + '}')
+                return
         if role == 'editorial_metadata':
             text = text.replace(r'\quad ', r'\hfill ')
         language = 'russian' if len(re.findall('[А-Яа-яЁё]', block.text)) > len(re.findall('[A-Za-z]', block.text)) else 'english'
@@ -162,25 +169,40 @@ def render(blocks, project, plan):
         front = block.zone == 'front_matter'
         obj = plan['objects'].get(block.id)
         wide = bool(obj and obj['width'] == 'wide')
+        if plan.get('reference_layout') and block.source_columns:
+            wide = block.source_columns == 1
+            if obj:
+                obj = dict(obj, width='wide' if wide else 'column')
         switch(not front and not tail and not wide)
         if obj:
             if obj['break_before']:
                 lines.append(r'\newpage')
+            gap = block.space_before if plan.get('reference_layout') else 6
             lines += ['% ' + block.id + ' ' + block.kind,
-                      r'\par\addvspace{6pt}\noindent\begin{minipage}{\linewidth}',
+                      rf'\par\addvspace{{{gap}pt}}\noindent\begin{{minipage}}{{\linewidth}}',
                       rf'\renewcommand{{\labfigscale}}{{{obj["scale"]}}}\centering']
             if block.kind == 'table':
                 for caption in block.captions:
-                    paragraph(_as_block(caption), caption=True)
+                    paragraph(_as_block(caption))
             # Scale the actual requested image dimensions, not just a maximum
             # width (a smaller image otherwise ignores the planner's scale).
             object_tex = re.sub(r'\\labimage\{([\d.]+)\}',
                 lambda match: r'\labimage{' + f'{float(match[1])*obj["scale"]:.3f}' + '}', block.tex)
+            if block.kind == 'figure' and block.role == 'figure_caption':
+                # Native floating pictures can share a paragraph with their
+                # caption. In a semantic figure the caption starts BELOW the
+                # complete image group, never to the right of its last image.
+                pictures = list(re.finditer(r'\\labimage\{[\d.]+\}\{[^}]+\}', object_tex))
+                if pictures:
+                    end = pictures[-1].end()
+                    object_tex = (object_tex[:end] + r'\par\vspace{4pt}{\fontsize{10}{11.5}\selectfont '
+                                  + object_tex[end:] + r'\par}')
             lines.append(object_tex)
             if block.kind != 'table':
                 for caption in block.captions:
                     paragraph(_as_block(caption), caption=True)
-            lines += [r'\end{minipage}\par\addvspace{6pt}']
+            gap = block.space_after if plan.get('reference_layout') else 6
+            lines += [rf'\end{{minipage}}\par\addvspace{{{gap}pt}}']
         elif block.kind == 'equation':
             lines.append('% ' + block.id + ' equation')
             math = block.tex

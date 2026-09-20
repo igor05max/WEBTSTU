@@ -241,6 +241,11 @@ class SafeWordEditor:
         template_report = template_report or DocumentInspector(template_path).inspect()
         article_structure = article_structure or self.classifier.article_structure(article_report)
         template_profile = template_profile or TemplateProfileBuilder(self.classifier).build(template_report)
+        if template_profile.style_id == 'jamt':
+            from ..styles.reference_fidelity import preserve_existing_layout
+            preserved = preserve_existing_layout(article_path, output_path, article_report, article_structure)
+            if preserved is not None:
+                return preserved
         planning = self.planner.plan(
             article_report=article_report,
             template_report=template_report,

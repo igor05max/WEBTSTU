@@ -10,7 +10,8 @@ def job_timeout_seconds():
     if vision and getattr(settings, 'TEMPLATE_V2_EDIT_CYCLE_ENABLED', True):
         vision = max(vision, getattr(settings, 'TEMPLATE_V2_EDIT_CYCLE_BUDGET', 2100))
     # Separate margin for DOC/DOTX preparation, inspection and two PDF renders.
-    return max(18 * 60, planning + vision + 10 * 60)
+    latex = 16 * 60 if getattr(settings, 'JAMT_LATEX_EXPORT_ENABLED', False) else 0
+    return max(18 * 60, planning + vision + 10 * 60) + latex
 
 
 def stale_job_seconds():

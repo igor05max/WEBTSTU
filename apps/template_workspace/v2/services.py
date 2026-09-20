@@ -139,6 +139,11 @@ def run_v2_job(job_id: str) -> None:
             style_id='jamt' if job.kind == 'jamt' else '')
         progress("Готовим PDF из окончательного Word-документа…")
         export = export_result_pdf(result_docx_path(job), output)
+        latex_export = None
+        if job.kind == 'jamt' and export['status'] == 'completed' and getattr(settings, 'JAMT_LATEX_EXPORT_ENABLED', False):
+            progress('Собираем дополнительный PDF в LaTeX и сравниваем оформление…')
+            from .latex_export import export_jamt_latex
+            latex_export = export_jamt_latex(source_path, output, output/'result.pdf')
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
@@ -152,11 +157,16 @@ def run_v2_job(job_id: str) -> None:
         ]
         if job.kind == "jamt":
             plan = [
-                {"kind": "Стиль", "text": f"JAMT {template_profile.style_version}: сохранённые правила по пяти статьям."},
+                {"kind": "Стиль", "text": f"JAMT {template_profile.style_version}: правила по пяти PDF и двум Word-эталонам."},
                 {"kind": "Оформление", "text": "Times New Roman; титульные блоки на ширину страницы, основной текст в две колонки."},
                 {"kind": "Сохранение содержимого", "text": f"Проверено сохранение текста и исходных объектов: формул — {len(source_report.formulas)}, рисунков — {len(source_report.drawings)}, таблиц — {len(source_report.tables)}."},
             ]
         plan.append({"kind": "PDF", "text": f"Готово, страниц: {export['pages']}." if export['status'] == 'completed' else export['message']})
+        if latex_export:
+            plan.append({'kind': 'PDF LaTeX', 'text': latex_export['message']})
+            visual = latex_export.get('visual_review', {})
+            if visual:
+                plan.append({'kind': 'Сравнение PDF', 'text': f"Qwen: проверено страниц LaTeX {len(visual.get('candidate_pages_checked', []))} из {latex_export.get('pages', 0)}. Замечания — в протоколе сравнения."})
         warnings = []
         warnings.extend(conversion_warnings)
         warnings.extend(article_structure.warnings)
