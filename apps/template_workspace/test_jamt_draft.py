@@ -100,6 +100,18 @@ class DraftLayoutTests(SimpleTestCase):
         self.assertEqual(result.metrics['front_blocks_reordered'], 0)
         self.assertTrue(output._element.body[0].xpath('.//w:drawing'))
 
+    def test_bilingual_rubrics_have_one_inter_block_gap(self):
+        doc = Document()
+        doc.add_paragraph('Нобелистика'); doc.add_paragraph('Nobelistics')
+        bilingual_front(doc)
+        doc.add_paragraph('1. Introduction', style='Heading 1')
+        doc.add_paragraph('Original scientific measurements remain unchanged.')
+        output, _ = self.render(doc)
+        rubrics = [p for p in output.paragraphs if p.text in {'Нобелистика', 'Nobelistics'}]
+        self.assertEqual(len(rubrics), 2)
+        self.assertEqual(rubrics[0]._p.xpath('./w:pPr/w:spacing/@w:after'), ['0'])
+        self.assertEqual(rubrics[1]._p.xpath('./w:pPr/w:spacing/@w:after'), ['230'])
+
     def test_native_caption_box_uses_caption_typography_without_touching_license(self):
         doc = Document(); bilingual_front(doc)
         doc.add_paragraph('1. Introduction', style='Heading 1')

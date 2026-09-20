@@ -16,6 +16,9 @@ column width, preventing LibreOffice from left-pinning a narrow frame that Word
 centres. Images, OLE previews, license boxes and mixed drawing groups are not
 stretched. The structural quality check now inspects nested caption font sizes.
 Trusted JAMT running lines retain the profile's black colour.
+Consecutive translated rubric labels share one inter-block gap, instead of
+adding a full paragraph gap after each language. This keeps the draft's last
+front-matter citation on the opening page in the server PDF.
 
 Validation includes the actual raw Tyutyunnik manuscript, Word and LibreOffice
 renders, unchanged image/OLE bytes, and two finished Word references preserved

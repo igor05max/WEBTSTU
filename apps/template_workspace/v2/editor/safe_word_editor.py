@@ -383,6 +383,13 @@ class SafeWordEditor:
                     # Safety: do not convert an unknown semantic role to BODY.
                     continue
                 pformat, rformat = profile.typical_paragraph_formatting, profile.typical_run_formatting
+                following_meta = meta_by_node.get(child.getnext())
+                if (template_profile.style_id and role == 'rubric'
+                        and following_meta and following_meta.role == 'rubric'):
+                    # Translations of the same front label form one compact
+                    # block. A full inter-block gap after each language can
+                    # orphan the final citation on the next PDF page.
+                    pformat = {**pformat, 'spacing': {**pformat.get('spacing', {}), qn('w:after'): '0'}}
                 if role == 'abstract' and normalize_text(element_text(child)).casefold().strip(' .:') in {'abstract', 'аннотация', 'резюме'}:
                     variant = next((v for v in profile.observed_variants if any(p.id == v['block_id'] and p.normalized_text.casefold().strip(' .:') in {'abstract','аннотация','резюме'} for p in template_report.paragraphs)), None)
                     if variant:
