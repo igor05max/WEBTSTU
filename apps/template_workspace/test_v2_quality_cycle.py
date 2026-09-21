@@ -183,7 +183,7 @@ class QualityCycleTests(SimpleTestCase):
     @override_settings(TEMPLATE_V2_QWEN_ENABLED=True, TEMPLATE_V2_QWEN_TIMEOUT=300,
                        TEMPLATE_V2_VISUAL_REVIEW_ENABLED=True, TEMPLATE_V2_VISUAL_REVIEW_BUDGET=900)
     def test_worker_encloses_whole_cycle_budget(self):
-        self.assertEqual(job_timeout_seconds(), 3000)
+        self.assertEqual(job_timeout_seconds(), 3120)
 
 
 class NativeObjectFlowTests(SimpleTestCase):

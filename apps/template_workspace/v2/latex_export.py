@@ -1,4 +1,4 @@
-"""Optional JAMT PDF branch from original DOCX, independent of Word export.
+"""JAMT PDF branch from the final native DOCX, including editorial marks.
 
 The native DOCX/PDF remain available if a construct cannot be represented safely.
 LaTeX sources never contain model-authored article text or executable user TeX.
@@ -22,8 +22,8 @@ def export_jamt_latex(source, directory, baseline_pdf):
     directory, source = Path(directory), Path(source)
     project = directory/'latex'
     destination, bundle = directory/'result-latex.pdf', directory/'result-latex.zip'
-    report = {'status': 'unavailable', 'experimental': True, 'source_docx_sha256': sha256(source.read_bytes()).hexdigest(),
-              'content_source': 'original_docx', 'native_output_changed': False}
+    report = {'status': 'unavailable', 'style_version': '2026.4', 'source_docx_sha256': sha256(source.read_bytes()).hexdigest(),
+              'content_source': 'reviewed_native_docx', 'native_output_changed': False}
     destination.unlink(missing_ok=True); bundle.unlink(missing_ok=True)
     try:
         blocks, manifest = NativeBridge(source, project).build()
@@ -45,9 +45,9 @@ def export_jamt_latex(source, directory, baseline_pdf):
                     archive.write(path, relative.as_posix())
             archive.writestr('README.txt', 'Compile twice with XeLaTeX: xelatex -no-shell-escape main.tex\n'
                 'Requires TeX Live, Liberation Serif (or Times New Roman) and DejaVu Sans.\n'
-                'Editable Word output remains native. Article content comes directly from the original DOCX.\n')
+                'Editable Word output remains native. Article content and editorial marks come from the final DOCX.\n')
         report.update(status='completed', pages=metrics['pages'], pdf_sha256=sha256(destination.read_bytes()).hexdigest(),
-                      message='Дополнительный PDF собран в LaTeX. Сравните его с PDF Word перед использованием.')
+                      message='PDF собран в LaTeX. Проверены перенос текста, нумерация, наличие символов и выход за границы страницы.')
         if getattr(settings, 'TEMPLATE_V2_VISUAL_REVIEW_ENABLED', False):
             from paper_formatter.latex_lab.reference_review import compare_all_pages
             try:

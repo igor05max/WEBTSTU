@@ -256,11 +256,13 @@ class JamtWorkspaceTests(TestCase):
         self.assertEqual(self.client.get(reverse('template_workspace:jamt_workspace')).status_code, 302)
 
     @override_settings(JAMT_LATEX_EXPORT_ENABLED=True)
-    def test_latex_receives_original_upload_and_new_downloads_remain_private(self):
+    def test_latex_receives_final_marked_word_and_new_downloads_remain_private(self):
         job = self.job()
         def extra(source, folder, baseline):
-            self.assertEqual(Path(source), Path(job.article.path))
-            self.assertEqual(Path(source).read_bytes(), self.source.read_bytes())
+            self.assertEqual(Path(source), folder/'result.docx')
+            with ZipFile(source) as archive:
+                self.assertIn(b'JAMT_missing_',archive.read('word/document.xml'))
+            self.assertEqual(Path(job.article.path).read_bytes(), self.source.read_bytes())
             self.assertEqual(baseline, folder/'result.pdf')
             (folder/'result-latex.pdf').write_bytes(b'latex pdf')
             (folder/'result-latex.zip').write_bytes(b'latex sources')
@@ -276,7 +278,7 @@ class JamtWorkspaceTests(TestCase):
         exporter.assert_called_once()
         job.refresh_from_db(); self.assertEqual(job.status, 'completed')
         page = self.client.get(reverse('template_workspace:jamt_detail', args=[job.pk]))
-        self.assertContains(page, 'PDF LaTeX · эксперимент')
+        self.assertContains(page, 'Вариант LaTeX для проверки')
         self.assertContains(page, 'Qwen сравнил страниц LaTeX: 2 из 3.')
         self.assertContains(page, 'Сравнение неполное.')
         self.assertContains(page, '&lt;script&gt;bad&lt;/script&gt;')
@@ -351,5 +353,5 @@ class JamtVisualReviewTests(SimpleTestCase):
         self.assertEqual(report['status'], 'reviewed')
         self.assertEqual(report['pages_checked'], [1])
         self.assertEqual(report['style']['id'], 'jamt')
-        self.assertEqual(report['style']['version'], '2026.3')
+        self.assertEqual(report['style']['version'], '2026.4')
         self.assertFalse(report['template_front_reference_available'])

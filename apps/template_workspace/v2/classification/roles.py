@@ -35,6 +35,7 @@ ROLE_NAMES = (
     "conflict_heading",
     "conflict_text",
     "author_information",
+    "author_bio",
     "received_metadata",
     "copyright_metadata",
     "unknown",
@@ -102,6 +103,29 @@ class RoleClassifierV2:
         if template_mode:
             paragraphs = _template_sample_paragraphs(paragraphs)
         decisions = self._classify_document(paragraphs)
+        # Generated missing-field slots are semantic labels, not author prose.
+        # Their language/role cannot be guessed from the Russian explanation.
+        from ..editorial import generated_role
+        by_id = {d.block_id: d for d in decisions}
+        for paragraph in paragraphs:
+            explicit = generated_role(paragraph)
+            if explicit:
+                role, language = explicit
+                decision = by_id.get(paragraph.id)
+                if decision:
+                    decision.role, decision.language = role, language
+                    decision.zone = AUTHOR_INFO if role in {'received_metadata', 'author_information'} else FRONT_MATTER
+                    decision.group_id = ('jamt_' + language) if language and role in {'title','author','affiliation','email','abstract','keywords','citation'} else None
+                    decision.confidence, decision.needs_review = 1.0, False
+                    decision.source, decision.reason = 'generated-slot', 'Explicit missing-field role; manuscript content is not invented'
+        # A partially missing language block shares its existing group. All front
+        # blocks in this journal's generated group are ordered by the same rules.
+        if any(d.source == 'generated-slot' for d in decisions):
+            group_lang = {d.group_id:d.language for d in decisions if d.role=='title' and d.group_id}
+            for d in decisions:
+                if d.zone == FRONT_MATTER and d.role in {'title','author','affiliation','email','abstract','keywords','citation'}:
+                    language = group_lang.get(d.group_id) or d.language
+                    if language in {'en','ru'}:d.group_id='jamt_'+language
         warnings: list[str] = []
 
         if self.use_ai and self.semantic_provider is not None:
@@ -203,6 +227,10 @@ class RoleClassifierV2:
             lowered = _strip_heading_number(text).casefold().strip(" .:")
             lang = _language(text)
 
+            if re.match(r'^(?:received|revised|accepted|published|поступил\w*|принят\w*|опубликован\w*)\s*:?\s*\d', text, re.I):
+                decision_by_id[p.id] = RoleDecision(p.id, 'received_metadata', 0.98, 'rules', 'editorial date line', zone=AUTHOR_INFO, language=lang)
+                continue
+
             if references_start is not None and idx >= references_start:
                 if p.id in translated_tail:
                     decision_by_id[p.id] = translated_tail[p.id]
@@ -216,7 +244,7 @@ class RoleClassifierV2:
                 if re.match(r'^(?:Acknowledgements|Поддержка исследований|Funding)\.', text, re.I):
                     decision_by_id[p.id] = RoleDecision(p.id, "funding_text", 0.95, "rules", "inline funding marker", zone=BACK_MATTER, language=lang)
                     continue
-                if author_info_start is not None and idx >= author_info_start:
+                if author_info_start is not None and author_info_start > references_start and idx >= author_info_start:
                     decision_by_id[p.id] = self._classify_author_info_tail(p, lowered, lang)
                     continue
                 if idx == references_start:
@@ -378,7 +406,7 @@ class RoleClassifierV2:
         subtype = None
         role = "editorial_metadata"
         confidence = 0.90
-        if re.search(r"\b(тип статьи|article type|type of the paper)\b", lowered) or lowered in {"article", "review", "communication"}:
+        if re.search(r"\b(тип статьи|article type|type of the paper)\b", lowered) or lowered in {"article", "review", "communication", "original papers", "review articles", "reviews", "short communications"}:
             role, subtype, confidence = "article_type", "article_type", 0.98
         elif re.search(r"\b(рубрика журнала|rubric|section)\s*:?$", lowered):
             subtype, confidence = "rubric_label", 0.98
@@ -386,7 +414,7 @@ class RoleClassifierV2:
             role, subtype, confidence = "rubric", "rubric_value", 0.97
         elif re.search(r"\bудк\b|\bdoi\s*:", lowered):
             subtype, confidence = "bibliographic_id", 0.99
-        elif re.search(r"short communications|original papers|review articles|nobelistics|нобелистика", lowered):
+        elif _is_jamt_rubric(lowered):
             role, subtype, confidence = "rubric", "rubric_value", 0.95
         out[p.id] = RoleDecision(p.id, role, confidence, "rules", "front-matter metadata before title", zone=FRONT_MATTER, language=_language(text), group_id=group_id, subtype=subtype)
 
@@ -394,11 +422,11 @@ class RoleClassifierV2:
     def _classify_author_info_tail(p: ParagraphInfo, lowered: str, lang: str | None) -> RoleDecision:
         if _is_author_information_heading(lowered):
             return RoleDecision(p.id, "author_information", 0.98, "rules", "author information heading", heading_level=1, zone=AUTHOR_INFO, language=lang)
-        if re.match(r"^(received|поступил|revised|accepted|принята)", lowered):
+        if re.match(r"^(received|поступил|revised|accepted|принят|published|опубликован)", lowered):
             return RoleDecision(p.id, "received_metadata", 0.98, "rules", "received/revised/accepted metadata", zone=AUTHOR_INFO, language=lang)
         if lowered.startswith("copyright") or "creative commons" in lowered:
             return RoleDecision(p.id, "copyright_metadata", 0.98, "rules", "copyright metadata", zone=AUTHOR_INFO, language=lang)
-        return RoleDecision(p.id, "author_information", 0.88, "rules", "paragraph inside author-information tail", zone=AUTHOR_INFO, language=lang)
+        return RoleDecision(p.id, "author_bio", 0.88, "rules", "paragraph inside author-information tail", zone=AUTHOR_INFO, language=lang)
 
 
 def _front_matter_end(paragraphs: list[ParagraphInfo]) -> int:
@@ -408,7 +436,7 @@ def _front_matter_end(paragraphs: list[ParagraphInfo]) -> int:
         # Stop at the FIRST body anchor. Later translated summaries/keywords must
         # not swallow the entire paper into the front-matter zone.
         stripped = _strip_heading_number(p.normalized_text).casefold()
-        if i > 0 and (re.match(r"^(?:introduction|введение)(?:[.\s:]|$)", stripped)
+        if (re.match(r"^(?:introduction|введение)(?:[.\s:]|$)", stripped)
                       or re.match(r"^0\.\s+how to use", p.normalized_text, re.I)):
             return i
         if _is_citation(p.normalized_text):
@@ -437,7 +465,7 @@ def _find_author_info_start(paragraphs: list[ParagraphInfo]) -> int | None:
         if _is_author_information_heading(_strip_heading_number(p.normalized_text).casefold()):
             return i
         lowered = p.normalized_text.casefold()
-        if re.match(r"^received\b", lowered) or lowered.startswith("copyright"):
+        if re.match(r"^(?:received|revised|accepted|published|поступил\w*|принят\w*|опубликован\w*)\b", lowered) or lowered.startswith("copyright"):
             return i
     return None
 
@@ -536,10 +564,15 @@ def _best_author_index(paragraphs: list[ParagraphInfo], indices: list[int]) -> i
 
 
 def _best_title_index(paragraphs: list[ParagraphInfo], indices: list[int], author_idx: int | None, abstract_idx: int | None) -> int | None:
+    from ..editorial import generated_role
     upper = abstract_idx
     eligible = [i for i in indices if upper is None or i < upper]
     candidates: list[tuple[float, int]] = []
     for i in eligible:
+        explicit = generated_role(paragraphs[i])
+        if explicit:
+            if explicit[0] == 'title':return i
+            continue
         text = paragraphs[i].normalized_text
         lowered = text.casefold()
         style = (paragraphs[i].style_name or "").casefold()
@@ -621,6 +654,8 @@ def _attach_caption_continuations(paragraphs: list[ParagraphInfo], decisions: li
             continue
         if cur.zone != BODY or cur.role not in {"body", "heading_1", "heading_2", "heading_3"}:
             continue
+        if cur.role.startswith('heading_') and (cur.confidence >= .97 or re.match(r'^\d+(?:\.\d+)*\.?\s+', paragraphs[i].normalized_text)):
+            continue
         text = paragraphs[i].normalized_text
         if len(text) > 220 or _looks_like_sentence(text):
             continue
@@ -656,12 +691,21 @@ def _looks_like_sentence(text: str) -> bool:
 
 
 def _is_front_metadata_marker(lowered: str) -> bool:
-    return bool(
+    return _is_jamt_rubric(lowered) or bool(
         re.search(
             r"\b(удк|doi|тип статьи|article type|рубрика журнала|rubric|short communications|original papers|review articles|nobelistics|нобелистика)\b",
             lowered,
         )
     )
+
+
+def _is_jamt_rubric(value):
+    return value.strip(' .') in {
+        'nobelistics', 'нобелистика', 'nanostructured, nanoscale materials and nanodevices',
+        'manufacturing processes and systems', 'advanced structural materials, materials for extreme conditions',
+        'materials for energy and environment, next-generation photovoltaics, and green technologies',
+        'biological materials; nanomedicine, and novel technologies for clinical and medical applications',
+    }
 
 
 def _is_references_heading(lowered: str) -> bool:
@@ -695,7 +739,11 @@ def _is_figure_caption(text: str) -> bool:
 
 
 def _is_table_caption(text: str) -> bool:
-    return bool(re.match(r"^(?:table|таблица)\s*\d+\s*[.\):\-–]?\s+\S", text.strip(), flags=re.IGNORECASE))
+    # A prose sentence such as "Table 1 contains the measurements" keeps its
+    # body role. Captions have a separator, or a short capitalised title.
+    value=text.strip()
+    return bool(re.match(r"^(?:table|таблица)\s*\d+\s*[.\):\-–]\s*\S", value, re.I)
+                or (len(value)<180 and re.match(r"^(?i:table|таблица)\s*\d+\s+[A-ZА-ЯЁ]", value)))
 
 
 def _is_email(text: str) -> bool:
@@ -715,6 +763,9 @@ def _looks_like_author(text: str) -> bool:
     if re.search(r"\[\d{4}-\d{4}-\d{4}-[\dX]{4}\]", text) and len(text) < 120:
         return True
     if re.fullmatch(r"[A-ZА-ЯЁ][\w-]+\s+[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.?(?:\s*[,;]\s*[A-ZА-ЯЁ][\w-]+\s+[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.?)?", text):
+        return True
+    full_name = r"[A-Z][a-z]+(?:[-'][A-Z]?[a-z]+)*(?:\s+[A-Z]\.\s*)?\s+[A-Z][A-Za-z'-]+"
+    if re.fullmatch(full_name + r'(?:\s*[,;]\s*' + full_name + r')*', text.strip()):
         return True
     # Initials + surname, or Latin full names separated by commas.
     initial_names = r"\b(?:[A-ZА-ЯЁ]\.\s*){1,3}[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё-]+|\b[A-ZА-ЯЁ][a-zа-яё-]+\s+(?:[A-ZА-ЯЁ]\.\s*){1,3}"

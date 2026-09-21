@@ -1,8 +1,10 @@
 from __future__ import annotations
+from copy import deepcopy
 
 from .layout_fidelity import (front_gap_evidence, apply_front_gaps, align_standalone_picture,
                              scientific_table_rules, math_typography, descriptions_before_figures,
-                             wrap_picture_captions, heading_gap_evidence, apply_heading_gaps, blank)
+                             wrap_picture_captions, heading_gap_evidence, apply_heading_gaps, blank,
+                             parallel_text_layout as _parallel_text_layout)
 from .table_structure import analyze_table_structure
 from .object_flow import detach_display_objects, normalize_display_geometry, display_width_twips, normalize_vml_canvases
 
@@ -47,13 +49,13 @@ FRONT_ROLES = {
     "affiliation", "email", "abstract", "keywords", "citation",
 }
 HEADING_ROLES = {"heading_1", "heading_2", "heading_3", "references_heading",
-                 "funding_heading", "acknowledgements_heading", "conflict_heading"}
+                 "funding_heading", "acknowledgements_heading", "conflict_heading", "author_information"}
 TEXT_ROLES = {"body", "reference_item", "funding_text", "acknowledgements_text", "conflict_text"}
 CAPTION_ROLES = {"figure_caption", "table_caption"}
 BACK_ROLES = {
     "funding_heading", "funding_text", "acknowledgements_heading",
     "acknowledgements_text", "conflict_heading", "conflict_text",
-    "references_heading", "reference_item", "author_information",
+    "references_heading", "reference_item", "author_information", "author_bio",
     "received_metadata", "copyright_metadata",
 }
 
@@ -319,6 +321,15 @@ class SafeWordEditor:
             # remain the original OOXML nodes.
             front_stats = _normalise_front_matter(body, meta_by_node, template_profile)
             metrics.update(front_stats)
+            if template_profile.style_id == 'jamt':
+                # Drafts often put editorial dates before References. Move the
+                # original paragraphs together to the journal's closing block.
+                dates = [n for n in body if meta_by_node.get(n) and meta_by_node[n].role == 'received_metadata']
+                anchor = next((n for n in body if meta_by_node.get(n) and meta_by_node[n].role == 'copyright_metadata'), body.find('w:sectPr', NS))
+                for node in dates:
+                    body.remove(node)
+                    if anchor is not None:anchor.addprevious(node)
+                    else:body.append(node)
             if template_profile.style_id:
                 # Fixed styles express gaps as paragraph spacing. Existing blank
                 # lines must not double those gaps in a floating/object front.
@@ -383,6 +394,22 @@ class SafeWordEditor:
                     # Safety: do not convert an unknown semantic role to BODY.
                     continue
                 pformat, rformat = profile.typical_paragraph_formatting, profile.typical_run_formatting
+                if template_profile.style_id == 'jamt' and meta.zone == 'front_matter' and re.search(r'\[(?:MISSING:|НЕ УКАЗАНО:)', element_text(child)):
+                    # Pending-field prompts are editorial annotations. Keep their
+                    # semantic typography but use a compact six-point gap.
+                    pformat = deepcopy(pformat)
+                    spacing = pformat.setdefault('spacing', {})
+                    for side in ('before', 'after'):
+                        key = qn('w:' + side)
+                        spacing[key] = str(min(120, int(spacing.get(key, 0))))
+                if template_profile.style_id == 'jamt' and role == 'received_metadata':
+                    pformat = deepcopy(pformat)
+                    previous = meta_by_node.get(child.getprevious())
+                    pformat.setdefault('spacing', {}).update({qn('w:before'): '0' if previous and previous.role == role else '230', qn('w:after'): '0'})
+                if template_profile.style_id == 'jamt' and role == 'editorial_metadata' and child.find('w:pPr/w:pStyle', NS) is not None:
+                    if child.find('w:pPr/w:pStyle', NS).get(qn('w:val'), '').startswith('JAMTReview_'):
+                        pformat = deepcopy(pformat)
+                        pformat.setdefault('spacing', {}).update({qn('w:before'): '0', qn('w:after'): '80'})
                 following_meta = meta_by_node.get(child.getnext())
                 if (template_profile.style_id and role == 'rubric'
                         and following_meta and following_meta.role == 'rubric'):
@@ -412,14 +439,22 @@ class SafeWordEditor:
                         format_role = 'body' if profile.role == 'author_bio' else role or 'body'
                         _apply_role_format(child, format_role, pformat, rformat)
                     metrics["formatted_paragraphs"] += 1
+                    if template_profile.style_id == 'jamt' and role == 'citation' and meta.language == 'en':
+                        ppr = child.find('w:pPr', NS)
+                        border = ppr.find('w:pBdr', NS)
+                        if border is None:border = etree.SubElement(ppr, qn('w:pBdr'))
+                        bottom = border.find('w:bottom', NS)
+                        if bottom is None:bottom = etree.SubElement(border, qn('w:bottom'))
+                        for key,value in {'val':'single','sz':'2','space':'6','color':'808080'}.items():
+                            bottom.set(qn('w:'+key),value)
 
                     if role == "rubric" and not template_profile.style_id:
                         metrics["captions_normalized"] += _normalise_rubric_translation(child, template_hints["rubric_has_cyrillic"])
-                    elif role == "keywords" and template_hints["keywords_use_semicolon"]:
+                    elif role == "keywords" and template_profile.style_id != 'jamt' and template_hints["keywords_use_semicolon"]:
                         metrics["captions_normalized"] += _normalise_keywords_delimiter(child)
                     elif role == "title" and template_hints["title_uses_manual_breaks"]:
                         metrics["title_breaks_inserted"] += _balance_title_lines(child)
-                    elif role == "figure_caption" and template_hints["figure_caption_prefix"]:
+                    elif role == "figure_caption" and template_profile.style_id != 'jamt' and template_hints["figure_caption_prefix"]:
                         metrics["captions_normalized"] += _normalise_figure_caption_prefix(
                             child, template_hints["figure_caption_prefix"]
                         )
@@ -469,7 +504,8 @@ class SafeWordEditor:
 
             # Figure-container labels such as ``a`` / ``b`` are layout metadata.
             # The journal convention is ``(a)`` / ``(b)`` in italics.
-            metrics["subfigure_labels_normalized"] += _normalise_subfigure_labels(body, table_info, meta_by_node)
+            if template_profile.style_id != 'jamt':
+                metrics["subfigure_labels_normalized"] += _normalise_subfigure_labels(body, table_info, meta_by_node)
             metrics["figure_container_metadata_normalized"] += _normalise_figure_container_metadata(
                 body, table_info, meta_by_node
             )
@@ -491,12 +527,12 @@ class SafeWordEditor:
             _remove_existing_inline_section_breaks(body)
             metrics["section_markers_inserted"] += _install_front_body_sections(body, meta_by_node, layout)
 
-            wide_spans = _wide_object_spans(body, meta_by_node, table_info, layout)
+            wide_spans = _wide_object_spans(body, meta_by_node, table_info, layout, journal=template_profile.style_id == 'jamt')
             if template_profile.style_id:
                 children = list(body)
                 tail_start = next((i for i, node in enumerate(children)
                     if meta_by_node.get(node) and meta_by_node[node].role in
-                    {'author_information', 'received_metadata', 'copyright_metadata'}), None)
+                    {'author_information', 'author_bio', 'received_metadata', 'copyright_metadata'}), None)
                 if tail_start is not None:
                     tail = [node for node in children[tail_start:] if local_name(node) != 'sectPr']
                     tail_set = set(tail)
@@ -518,6 +554,13 @@ class SafeWordEditor:
                 meta_by_node=meta_by_node,
                 layout=layout,
             )
+            if template_profile.style_id == 'jamt':
+                date_nodes = [n for n in body if meta_by_node.get(n) and meta_by_node[n].role == 'received_metadata']
+                for node in date_nodes[:-1]:
+                    pp = node.find('w:pPr', NS)
+                    keep = pp.find('w:keepNext', NS)
+                    if keep is None:keep = etree.SubElement(pp, qn('w:keepNext'))
+                    keep.set(qn('w:val'), '1')
 
             # Resize the original native tables and drawings to the actual column or
             # printable width.  Their XML is not reconstructed.
@@ -535,7 +578,7 @@ class SafeWordEditor:
                             for t in template_report.tables))
                     if use_wide_template:
                         target = layout.printable_width_twips
-                    if _resize_table_to_width(child, target, info):
+                    if _resize_table_to_width(child, target, info, journal=template_profile.style_id == 'jamt'):
                         table_evidence = _apply_template_table_evidence(child, template_zip, template_report)
                         if _parallel_text_layout(child):
                             # author_information may represent the bold section
@@ -554,7 +597,8 @@ class SafeWordEditor:
                                     _apply_role_format(cell_p, 'body', body_profile.typical_paragraph_formatting,
                                                        body_profile.typical_run_formatting)
                         metrics['scientific_tables_styled'] = metrics.get('scientific_tables_styled', 0) + scientific_table_rules(
-                            child, info, structure=table_structure, audit=metrics.setdefault('table_rule_plans', []))
+                            child, info, structure=table_structure, audit=metrics.setdefault('table_rule_plans', []),
+                            journal=template_profile.style_id == 'jamt')
                         if layout.body_left_twips and child not in full_width_nodes and not use_wide_template:
                             tblpr = child.find("w:tblPr", namespaces=NS)
                             jc = tblpr.find("w:jc", namespaces=NS)
@@ -775,7 +819,8 @@ def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Elem
     bibliographic = [n for n in metadata if meta_by_node[n].subtype == "bibliographic_id"]
     other_metadata = [
         n for n in metadata
-        if n not in article_type and n not in rubric and n not in bibliographic and meta_by_node[n].subtype != "rubric_label"
+        if n not in article_type and n not in rubric and n not in bibliographic
+        and (profile.style_id == 'jamt' or meta_by_node[n].subtype != "rubric_label")
     ]
     for node in article_type:
         if not profile.style_id:
@@ -808,7 +853,8 @@ def _normalise_front_matter(body: etree._Element, meta_by_node: dict[etree._Elem
             if not role_nodes:
                 continue
             if role in profile.front_merge_roles and len(role_nodes) > 1:
-                combined = _merge_front_text_paragraphs(role_nodes, role, meta_by_node)
+                combined = _merge_front_text_paragraphs(role_nodes, role, meta_by_node,
+                                                      preserve_punctuation=profile.style_id == 'jamt')
                 canonical.append(combined)
                 merged += len(role_nodes) - 1
             else:
@@ -1333,7 +1379,7 @@ def _replace_paragraph_text_preserve_rpr(paragraph: etree._Element, text: str) -
     t.text = text
 
 
-def _merge_front_text_paragraphs(nodes: list[etree._Element], role: str, meta_by_node: dict[etree._Element, _NodeMeta]) -> etree._Element:
+def _merge_front_text_paragraphs(nodes: list[etree._Element], role: str, meta_by_node: dict[etree._Element, _NodeMeta], *, preserve_punctuation=False) -> etree._Element:
     first = nodes[0]
     # Move original rich XML, including superscripts, hyperlinks, bookmarks,
     # fields and equations. Flattening through element_text destroys science.
@@ -1344,7 +1390,7 @@ def _merge_front_text_paragraphs(nodes: list[etree._Element], role: str, meta_by
         text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
         # A separate abstract heading becomes an inline label. The punctuation
         # is presentation, while all original runs remain intact.
-        text.text = ". " if role == 'abstract' and normalize_text(element_text(first)).casefold() in {'abstract', 'аннотация', 'резюме'} else " "
+        text.text = ". " if not preserve_punctuation and role == 'abstract' and normalize_text(element_text(first)).casefold() in {'abstract', 'аннотация', 'резюме'} else " "
         for child in list(node):
             if local_name(child) != "pPr":
                 first.append(child)
@@ -1474,7 +1520,8 @@ def _apply_paragraph_profile(paragraph: etree._Element, role: str, profile: dict
     keep: list[etree._Element] = []
     if old is not None:
         for child in old:
-            if local_name(child) in {"numPr", "tabs", "sectPr", "bidi", "textDirection"}:
+            if (local_name(child) in {"numPr", "tabs", "sectPr", "bidi", "textDirection"}
+                    or (local_name(child)=='pStyle' and child.get(qn('w:val'),'').startswith('JAMTReview_'))):
                 keep.append(_clone(child))
     new = etree.Element(qn("w:pPr"))
     for child in keep:
@@ -1504,6 +1551,20 @@ def _apply_paragraph_profile(paragraph: etree._Element, role: str, profile: dict
     if indentation:
         ind = etree.SubElement(new, qn("w:ind"))
         _copy_attribute_dict(ind, indentation)
+    numbering = new.find('w:numPr', NS)
+    num_id = numbering.find('w:numId', NS) if numbering is not None else None
+    if num_id is not None and num_id.get(qn('w:val')) != '0' and role == 'body':
+        level=numbering.find('w:ilvl',NS)
+        depth=int(level.get(qn('w:val'),'0')) if level is not None else 0
+        inset=426+240*min(depth,8)
+        ind=new.find('w:ind',NS)
+        if ind is None:ind=etree.SubElement(new,qn('w:ind'))
+        ind.attrib.pop(qn('w:firstLine'),None)
+        ind.set(qn('w:left'),str(inset));ind.set(qn('w:hanging'),'300')
+        tabs=new.find('w:tabs',NS)
+        if tabs is not None:new.remove(tabs)
+        tabs=etree.SubElement(new,qn('w:tabs'));tab=etree.SubElement(tabs,qn('w:tab'))
+        tab.set(qn('w:val'),'num');tab.set(qn('w:pos'),str(inset))
 
     if role in HEADING_ROLES | CAPTION_ROLES:
         etree.SubElement(new, qn("w:keepNext")).set(qn('w:val'), '0' if role == 'figure_caption' else '1')
@@ -1581,6 +1642,17 @@ def _materialise_source_semantics(body, article_zip):
     """Keep inherited hidden/positioned runs even when replacing source styles."""
     native = NativeTemplateFormatting(article_zip)
     for p in body.xpath('.//w:p', namespaces=NS):
+        # List Number/List Bullet commonly carry numPr only in their style.
+        # Replacing pStyle must not erase visible numbering or bullet markers.
+        ppr=p.find('w:pPr',NS)
+        if ppr is None:
+            ppr=etree.Element(qn('w:pPr'));p.insert(0,ppr)
+        if ppr.find('w:numPr',NS) is None:
+            sid=ppr.find('w:pStyle',NS)
+            for style in reversed(native.chain(sid.get(qn('w:val')) if sid is not None else native.default)):
+                numbering=style.find('w:pPr/w:numPr',NS)
+                if numbering is not None:
+                    ppr.append(_clone(numbering));break
         for run in p.findall('w:r', NS):
             effective = native.properties(p, 'rPr', run)
             for child in effective:
@@ -2641,6 +2713,7 @@ def _wide_object_spans(
     meta_by_node: dict[etree._Element, _NodeMeta],
     tables: dict[str, TableInfo],
     layout: _LayoutSpec,
+    journal: bool = False,
 ) -> list[list[etree._Element]]:
     if _section_column_count(layout.body_section) == 1:
         return []
@@ -2675,7 +2748,7 @@ def _wide_object_spans(
             continue
         meta = meta_by_node.get(node)
         info = tables.get(meta.block_id) if meta and meta.block_id else None
-        if info is None or not _table_needs_full_width(node, info, layout):
+        if info is None or not _table_needs_full_width(node, info, layout, journal=journal):
             continue
         start, end = i, i
         if info.classification != "FIGURE_CONTAINER":
@@ -2683,10 +2756,13 @@ def _wide_object_spans(
             j = i - 1
             while j >= 0 and local_name(children[j]) == "p" and not normalize_text(element_text(children[j])):
                 j -= 1
-            if j >= 0:
+            while j >= 0:
                 m = meta_by_node.get(children[j])
                 if m and m.role == "table_caption":
                     start = j
+                    j -= 1
+                else:
+                    break
         else:
             # figure captions normally follow the container; include all members of
             # a multi-paragraph caption group.
@@ -2711,10 +2787,12 @@ def _wide_object_spans(
     return _dedupe_overlapping_spans(spans)
 
 
-def _table_needs_full_width(table: etree._Element, info: TableInfo, layout: _LayoutSpec) -> bool:
+def _table_needs_full_width(table: etree._Element, info: TableInfo, layout: _LayoutSpec, *, journal=False) -> bool:
     source_width = sum(_safe_int(value) for value in info.grid if value)
     drawing_count = len(table.xpath(".//w:drawing|.//w:pict", namespaces=NS))
     if info.logical_column_count >= 5:
+        return True
+    if journal and info.logical_column_count >= 4 and info.classification != 'FIGURE_CONTAINER':
         return True
     if info.classification == "FIGURE_CONTAINER":
         if drawing_count >= 3:
@@ -2781,16 +2859,7 @@ def _balance_terminal_two_column_section(
     return True
 
 
-def _parallel_text_layout(table):
-    rows = table.findall('w:tr', NS)
-    if len(rows) != 1 or table.xpath('.//w:tbl|.//w:gridSpan|.//w:vMerge', namespaces=NS):
-        return False
-    cells = rows[0].findall('w:tc', NS)
-    return len(cells) == 3 and not normalize_text(element_text(cells[1])) and all(
-        len(normalize_text(element_text(c))) > 120 for c in (cells[0], cells[2]))
-
-
-def _resize_table_to_width(table: etree._Element, target_twips: int, info: TableInfo | None) -> bool:
+def _resize_table_to_width(table: etree._Element, target_twips: int, info: TableInfo | None, *, journal=False) -> bool:
     grid_cols = table.xpath("./w:tblGrid/w:gridCol", namespaces=NS)
     widths = [_safe_int(col.get(qn("w:w"))) for col in grid_cols]
     source = sum(w for w in widths if w > 0)
@@ -2803,7 +2872,7 @@ def _resize_table_to_width(table: etree._Element, target_twips: int, info: Table
     factor = min(factor, 1.35)
     new_widths = [max(120, int(width * factor)) for width in widths]
     if info is not None and info.classification != "FIGURE_CONTAINER" and not _parallel_text_layout(table):
-        new_widths = _rebalance_data_column_widths(new_widths, int(sum(new_widths)), table)
+        new_widths = _rebalance_data_column_widths(new_widths, int(sum(new_widths)), table, fit_short_prose=journal)
     new_total = int(sum(new_widths))
     for col, nw in zip(grid_cols, new_widths):
         col.set(qn("w:w"), str(nw))
@@ -2846,7 +2915,7 @@ def _resize_table_to_width(table: etree._Element, target_twips: int, info: Table
     return True
 
 
-def _rebalance_data_column_widths(widths: list[int], total: int, table=None) -> list[int]:
+def _rebalance_data_column_widths(widths: list[int], total: int, table=None, *, fit_short_prose=False) -> list[int]:
     if not widths or total <= 0:
         return widths
     n = len(widths)
@@ -2902,7 +2971,7 @@ def _rebalance_data_column_widths(widths: list[int], total: int, table=None) -> 
         min_width = int(total * 0.075)
     minima = [min_width] * n
     if table is not None:
-        for row in table.findall('w:tr', NS):
+        for row_index, row in enumerate(table.findall('w:tr', NS)):
             column = 0
             for cell in row.findall('w:tc', NS):
                 span = cell.find('w:tcPr/w:gridSpan', NS)
@@ -2914,6 +2983,12 @@ def _rebalance_data_column_widths(widths: list[int], total: int, table=None) -> 
                     # Short row labels/acronyms should not be split into single
                     # letters just because the manuscript first column was tiny.
                     minima[column] = max(minima[column], len(value) * 100 + 220)
+                elif (fit_short_prose and row_index > 0 and count == 1 and column < n
+                      and 2 <= len(value.split()) <= 4 and len(value) <= 32):
+                    # A short condition such as "Dry; stable reading" need not
+                    # wrap on every row while numeric columns have spare width.
+                    # Reallocate width, never shrink text or change its wording.
+                    minima[column] = max(minima[column], min(int(total*.3), len(value)*100+220))
                 column += count
     if sum(minima) > total:
         minima = [min_width] * n
@@ -3547,6 +3622,8 @@ def _article_author_shortline(structure: ArticleStructure, report: DocumentRepor
             text = normalize_text(text)
         # Prefer the genuinely Latin author line.  Cyrillic source lines often
         # contain Latin affiliation markers (a/b), so a boolean test is not enough.
+        if '[MISSING:' in text or '[НЕ УКАЗАНО:' in text:
+            continue
         latin_count = len(re.findall(r"[A-Za-z]", text))
         cyr_count = len(re.findall(r"[А-Яа-яЁё]", text))
         latin_score = latin_count / max(1, latin_count + cyr_count)

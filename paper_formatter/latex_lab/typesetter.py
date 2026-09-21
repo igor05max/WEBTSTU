@@ -14,10 +14,10 @@ STYLE_PATH = Path(__file__).resolve().parents[2] / 'apps/template_workspace/v2/s
 
 
 def default_plan(blocks, *, running_footer='', reference_layout=False, running_header='', page_start=1):
-    return {'body_leading': 13.0, 'front_gap': 11.5, 'caption_gap': 6.0,
+    return {'body_leading': 12.7, 'front_gap': 11.5, 'caption_gap': 6.0,
             'table_size': 10.0, 'running_footer': running_footer, 'reference_layout': reference_layout,
             'running_header': running_header, 'page_start': page_start, 'objects': {
-                b.id: {'width': 'wide' if b.width_pt > 244 or b.columns >= 4 else 'column',
+                b.id: {'width': 'wide' if b.width_pt > 244 or b.columns >= 4 or b.breakable else 'column',
                        'scale': 1.0, 'break_before': False}
                 for b in blocks if b.kind in {'figure', 'table'}}}
 
@@ -46,7 +46,7 @@ def validate_plan(patch, baseline, blocks):
         block = by_id[block_id]
         for key, value in changes.items():
             valid = ((key == 'width' and isinstance(value, str) and value in {'column', 'wide'}
-                      and (value == 'wide' or (block.columns < 4 and block.image_count <= 1)))
+                      and (value == 'wide' or (block.columns < 4 and block.image_count <= 1 and not block.breakable)))
                      or (key == 'scale' and type(value) in {int, float} and 0.85 <= value <= 1.0)
                      or (key == 'break_before' and type(value) is bool))
             if valid:
@@ -114,22 +114,32 @@ def render(blocks, project, plan):
         lines.append(r'\begin{multicols}{2}' if want_columns else r'\end{multicols}')
         columns = want_columns
 
+    previous_paragraph_heading = False
     def paragraph(block, caption=False):
+        nonlocal previous_paragraph_heading
         role = 'figure_caption' if caption else block.role
         spec = style['roles'].get(role, style['roles']['body'])
         pt = spec.get('pt', 11)
         faithful = plan.get('reference_layout', False)
         before = block.space_before if faithful else spec.get('before', 0)
         after = block.space_after if faithful else spec.get('after', 0)
+        if role == 'editorial_metadata' and ('[MISSING:' in block.text or '[НЕ УКАЗАНО:' in block.text):
+            after = 4
+        if role == 'received_metadata':
+            position = next((i for i, b in enumerate(blocks) if b.id == block.id), 0)
+            before = 0 if position and blocks[position-1].role == role else 11.5
+            after = 0
         if block.zone == 'front_matter' and not faithful:
             after = min(after, plan['front_gap'])
+        if block.zone == 'front_matter' and ('[MISSING:' in block.text or '[НЕ УКАЗАНО:' in block.text):
+            before,after = min(before,6),min(after,6)
         if caption and not faithful:
             before = after = plan['caption_gap']
         align = {'center': r'\centering', 'right': r'\raggedleft', 'left': r'\RaggedRight', 'both': r'\justifying'}.get(spec.get('align'), r'\justifying')
         is_heading = role.startswith('heading_') or role.endswith('_heading') or role == 'author_information'
         if is_heading:
             lines.append(r'\needspace{4\baselineskip}')
-        elif role in {'body', 'reference_item'}:
+        elif role in {'body', 'reference_item'} and not previous_paragraph_heading:
             lines.append(r'\needspace{2\baselineskip}')
         lines.append('% ' + block.id + ' ' + role)
         lines.append(r'\par')
@@ -138,6 +148,13 @@ def render(blocks, project, plan):
         leading = plan['body_leading'] if pt == 11 and role in {'body', 'funding_text', 'acknowledgements_text', 'conflict_text'} else pt * 1.15
         indent = spec.get('first_indent', 0)
         text = block.tex
+        hanging = ''
+        if block.list_label:
+            label=escaped(block.list_label)
+            if text.startswith(label+' '):
+                text=r'\makebox[21.3pt][l]{'+label+'}'+text[len(label)+1:]
+                hanging=r'\hangindent=21.3pt\hangafter=1 '
+                indent=0
         if role == 'rubric':
             # A source textbox's centring belongs to its own first line.
             text = r'\par\noindent '.join(text.split(r'\newline '))
@@ -157,14 +174,21 @@ def render(blocks, project, plan):
                      + rf'\setlength{{\parindent}}{{{indent}pt}}'
                      + (r'\bfseries ' if spec.get('bold') else '')
                      + (r'\itshape ' if spec.get('italic') else '')
-                     + (r'\noindent ' if not indent else '') + text + r'\par}')
+                     + hanging + (r'\noindent ' if not indent else '') + text + r'\par}')
         if after:
             lines.append(rf'\addvspace{{{after}pt}}')
+        if role == 'citation' and language == 'english':
+            lines.append(r'\par\noindent{\color{gray}\rule{\linewidth}{.25pt}}\par\nobreak')
         if is_heading:
             lines.append(r'\nobreak')
+        previous_paragraph_heading = is_heading
+        if role == 'received_metadata':
+            position = next((i for i, b in enumerate(blocks) if b.id == block.id), 0)
+            if position+1<len(blocks) and blocks[position+1].role == role:
+                lines.append(r'\nobreak')
 
     for block in blocks:
-        if block.role in {'author_information', 'received_metadata', 'copyright_metadata'}:
+        if block.role in {'author_information', 'author_bio', 'received_metadata', 'copyright_metadata'}:
             tail = True
         front = block.zone == 'front_matter'
         obj = plan['objects'].get(block.id)
@@ -173,11 +197,41 @@ def render(blocks, project, plan):
             wide = block.source_columns == 1
             if obj:
                 obj = dict(obj, width='wide' if wide else 'column')
-        switch(not front and not tail and not wide)
+        if block.breakable or (block.kind == 'table' and block.columns >= 4):
+            wide = True
+        want_columns = not front and not tail and not wide
+        # A tall first picture can exceed BOTH short columns below a wide table.
+        # Measure the complete picture + captions at the actual column width
+        # before entering multicols, and reserve that height on the outer page.
+        # Otherwise multicols may ship an overfull minipage through the footer.
+        reserve_object = bool(want_columns and not columns and obj and not block.breakable)
+        if reserve_object:
+            lines.append(r'\setbox\jamtobjectbox=\vbox\bgroup\hsize=\dimexpr(\textwidth-\columnsep)/2\relax\linewidth=\hsize\columnwidth=\hsize')
+        else:
+            switch(want_columns)
         if obj:
+            if block.breakable:
+                # longtable owns page breaking and repeated headers; never put
+                # it inside a minipage or the multicols output routine.
+                lines.append(r'\Needspace{8\baselineskip}')
+                caption_start = len(lines)
+                for caption in block.captions:paragraph(_as_block(caption))
+                caption_tex = '\n'.join(lines[caption_start:])
+                del lines[caption_start:]
+                table_tex = block.tex
+                if caption_tex:
+                    # The caption belongs to the first-page head. An external
+                    # paragraph can be moved by longtable's output routine and
+                    # strand a rule/header before it when the page is nearly full.
+                    caption_row = (r'\multicolumn{' + str(block.columns) + r'}{@{}p{\linewidth}@{}}{'
+                                   + r'\begin{minipage}{\linewidth}' + caption_tex
+                                   + r'\end{minipage}}\\[4pt]' + '\n')
+                    table_tex = table_tex.replace(r'\toprule', caption_row + r'\toprule', 1)
+                lines.extend(['% '+block.id+' multipage table',table_tex])
+                continue
             if obj['break_before']:
                 lines.append(r'\newpage')
-            gap = block.space_before if plan.get('reference_layout') else 6
+            gap = max(6,block.space_before) if plan.get('reference_layout') else 6
             lines += ['% ' + block.id + ' ' + block.kind,
                       rf'\par\addvspace{{{gap}pt}}\noindent\begin{{minipage}}{{\linewidth}}',
                       rf'\renewcommand{{\labfigscale}}{{{obj["scale"]}}}\centering']
@@ -201,14 +255,22 @@ def render(blocks, project, plan):
             if block.kind != 'table':
                 for caption in block.captions:
                     paragraph(_as_block(caption), caption=True)
-            gap = block.space_after if plan.get('reference_layout') else 6
+            gap = max(6,block.space_after) if plan.get('reference_layout') else 6
             lines += [rf'\end{{minipage}}\par\addvspace{{{gap}pt}}']
+            if reserve_object:
+                lines.extend([r'\egroup',
+                              r'\Needspace{\dimexpr\ht\jamtobjectbox+\dp\jamtobjectbox+2\multicolsep+\baselineskip\relax}'])
+                switch(True)
+                lines.append(r'\noindent\box\jamtobjectbox\par')
         elif block.kind == 'equation':
             lines.append('% ' + block.id + ' equation')
             math = block.tex
             if math.startswith(r'\(') and math.endswith(r'\)'):
                 math = math[2:-2]
-            lines.append(r'\[\displaystyle ' + math + r'\]')
+            if block.equation_number:
+                lines.append(r'\begin{equation*}\displaystyle ' + math + r'\tag*{' + escaped(block.equation_number) + r'}\end{equation*}')
+            else:
+                lines.append(r'\[\displaystyle ' + math + r'\]')
         else:
             paragraph(block)
     switch(False)
@@ -221,6 +283,27 @@ def render(blocks, project, plan):
 def _as_block(value):
     from .bridge import Block
     return Block(**value)
+
+
+def compile_report(log, engine='xelatex'):
+    """Keep final overflow warnings; inventory rejected multicol trials apart."""
+    vertical = r'Overfull \\vbox \(([\d.]+)pt too high\)'
+    discarded = []
+    def trial(match):
+        section = match.group()
+        if section.endswith('JAMT-BALANCE-DISCARDED'):
+            discarded.extend(float(v) for v in re.findall(vertical, section))
+            return re.sub(vertical, 'Discarded balancing trial', section)
+        return section
+    # Fail closed for incomplete, nested or otherwise unrecognised markers.
+    checked = re.sub(r'JAMT-BALANCE-BEGIN(?:(?!JAMT-BALANCE-).)*JAMT-BALANCE-(?:DISCARDED|KEPT)',
+                     trial, log, flags=re.S)
+    return {'engine': engine,
+            'overfull_hbox_pt': [float(v) for v in re.findall(r'Overfull \\hbox \(([\d.]+)pt too wide\)', checked)],
+            'overfull_vbox_pt': [float(v) for v in re.findall(vertical, checked)],
+            'discarded_balance_vbox_pt': discarded,
+            'missing_glyphs': list(dict.fromkeys(re.findall(r'Missing character:.*', log))),
+            'underfull_boxes': log.count('Underfull \\hbox')}
 
 
 def compile_pdf(project, timeout=180):
@@ -238,11 +321,7 @@ def compile_pdf(project, timeout=180):
         if result.returncode:
             raise RuntimeError('XeLaTeX failed; see compile.stdout.log: ' + logs[-1][-1600:])
     log = (project / 'main.log').read_text(encoding='utf-8', errors='replace')
-    report = {'engine': Path(engine).name,
-              'overfull_hbox_pt': [float(v) for v in re.findall(r'Overfull \\hbox \(([\d.]+)pt too wide\)', log)],
-              'overfull_vbox_pt': [float(v) for v in re.findall(r'Overfull \\vbox \(([\d.]+)pt too high\)', log)],
-              'missing_glyphs': list(dict.fromkeys(re.findall(r'Missing character:.*', log))),
-              'underfull_boxes': log.count('Underfull \\hbox')}
+    report = compile_report(log, Path(engine).name)
     (project / 'compile_report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     if report['missing_glyphs']:
         raise RuntimeError('Missing font glyphs; PDF is not eligible for promotion.')

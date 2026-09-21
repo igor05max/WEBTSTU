@@ -1,5 +1,5 @@
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesClass{jamt-reference}[2026/09/20 JAMT reference components 2026.2]
+\ProvidesClass{jamt-reference}[2026/09/21 JAMT corpus components 2026.4]
 \LoadClass[11pt,a4paper,twoside]{article}
 \RequirePackage{fontspec,polyglossia}
 \setdefaultlanguage{english}
@@ -7,10 +7,14 @@
 \IfFontExistsTF{Times New Roman}{
   \setmainfont{Times New Roman}\newfontfamily\cyrillicfont{Times New Roman}
 }{\setmainfont{Liberation Serif}\newfontfamily\cyrillicfont{Liberation Serif}}
-\RequirePackage{unicode-math}
+\RequirePackage{amsmath,unicode-math}
 \setmathfont{texgyretermes-math.otf}[Path=fonts/]
-\RequirePackage[a4paper,left=18mm,right=18mm,top=30mm,bottom=24mm,headheight=14pt,headsep=28pt,footskip=24pt]{geometry}
+\RequirePackage[a4paper,left=18mm,right=18mm,top=30mm,bottom=24mm,headheight=16pt,headsep=26pt,footskip=24pt]{geometry}
 \RequirePackage{microtype,multicol,needspace,graphicx,adjustbox,array,booktabs,ragged2e,xcolor,fancyhdr,xurl,hyperref}
+\RequirePackage{longtable}
+\setlength{\heavyrulewidth}{1.5pt}
+\setlength{\lightrulewidth}{1.5pt}
+\newcommand{\jamtmark}[1]{{\setlength{\fboxsep}{.15pt}\colorbox{yellow}{\strut #1}}}
 \hypersetup{hidelinks,pdfcreator={JAMT reference typesetter},pdfproducer={XeLaTeX}}
 \setlength{\columnsep}{6mm}
 \setlength{\parindent}{7.5mm}
@@ -18,6 +22,12 @@
 \setlength{\multicolsep}{6pt}
 \raggedcolumns
 \setcounter{collectmore}{-1}
+% multicol can log an overfull trial before rejecting it and shipping a
+% correctly split page. Trace the disposition, without changing pagination.
+% Only warnings enclosed in a confirmed discarded trial may be excluded.
+\RequirePackage{etoolbox}
+\pretocmd{\balance@columns}{\typeout{JAMT-BALANCE-BEGIN}}{}{\ClassError{jamt-reference}{Cannot trace column balancing}{}}
+\apptocmd{\balance@columns}{\iftoo@bad\typeout{JAMT-BALANCE-DISCARDED}\else\typeout{JAMT-BALANCE-KEPT}\fi}{}{\ClassError{jamt-reference}{Cannot trace column balancing}{}}
 \setlength{\emergencystretch}{1.5em}
 \tolerance=1400
 \hbadness=2500
@@ -36,6 +46,7 @@
 \renewcommand{\headrule}{\hrule width\headwidth height .4pt\vskip .8pt\hrule width\headwidth height 1.8pt}
 \renewcommand{\footrule}{\hrule width\headwidth height 1.8pt\vskip .8pt\hrule width\headwidth height .4pt\vskip 3pt}
 \newlength{\labtablewidth}
+\newbox\jamtobjectbox
 \newcommand{\labtablesize}{10}
 \newcommand{\labtableleading}{11.5}
 \newcommand{\labfigscale}{1.0}

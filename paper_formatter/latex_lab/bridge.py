@@ -44,6 +44,9 @@ class Block:
     source_columns: int = 0
     space_before: float = 0
     space_after: float = 0
+    breakable: bool = False
+    equation_number: str = ''
+    list_label: str = ''
 
 
 def visible_tree(node):
@@ -76,7 +79,9 @@ def truth(node, name):
 def escaped(text):
     # Discretionary hyphens are layout, not scientific content. Preserve actual dashes.
     text = text.replace('\u00ad', '').replace('\u200b', '').replace('\u00a0', ' ')
-    return latex_escape(text).replace('\n', ' ')
+    # A damaged replacement character must remain visible and highlighted; it
+    # must not turn into a silently absent glyph in Liberation Serif.
+    return latex_escape(text).replace('\n', ' ').replace('\ufffd', r'{\fontspec{DejaVu Sans}�}')
 
 
 class NativeBridge:
@@ -88,12 +93,13 @@ class NativeBridge:
         self.structure = RoleClassifierV2().article_structure(self.report)
         self.roles = {b['id']: b for b in self.structure.blocks}
         self.tables = {t.id: t for t in self.report.tables}
-        self.assets, self.formulas, self.warnings = [], [], []
+        self.assets, self.formulas, self.warnings, self.embedded_objects = [], [], [], []
         self.block_id = ''
         self.zip = None
         self.author_zone = False
         self.emitted_text = []
         self.list_labels = []
+        self.breakable_tables = set()
         self.paragraphs = {p.id: p for p in self.report.paragraphs}
         from apps.template_workspace.v2.styles.reference_fidelity import assess_existing_layout
         self.reference_layout = assess_existing_layout(self.report, self.structure)['eligible']
@@ -170,7 +176,12 @@ class NativeBridge:
                 is_figure_table = table and table.classification == 'FIGURE_CONTAINER'
                 if is_figure_table:
                     kind = 'figure'
-                if math_before < len(self.formulas) and not text.strip() and not images:
+                equation_number = ''
+                if (len(self.formulas)-math_before == 1 and not images
+                        and re.fullmatch(r'\s*\([A-Za-zА-Яа-я]?\d+(?:\.\d+)*[a-zа-я]?\)\s*',text)):
+                    equation_number=text.strip()
+                    tex=self.formulas[-1]['latex']
+                if math_before < len(self.formulas) and (not text.strip() or equation_number) and not images:
                     kind = 'equation'
                 width = sum(a['width_pt'] for a in images)
                 if table:
@@ -181,6 +192,10 @@ class NativeBridge:
                                     table.logical_column_count if table else 0,
                                     table.row_count if table else 0,
                                     source_columns=self.column_map.get(self.block_id, 0)))
+                blocks[-1].breakable = self.block_id in self.breakable_tables
+                blocks[-1].equation_number = equation_number
+                if node.tag == qn('w:p') and self.list_labels and self.list_labels[-1]['block_id'] == self.block_id:
+                    blocks[-1].list_label = self.list_labels[-1]['label']
                 if self.reference_layout and node.tag == qn('w:p'):
                     para = self.paragraphs.get(self.block_id)
                     spacing = para.effective_formatting.get('paragraph', {}).get('spacing', {}) if para else {}
@@ -195,9 +210,14 @@ class NativeBridge:
         grouped, index = [], 0
         while index < len(blocks):
             block = blocks[index]
-            if block.role == 'table_caption' and index + 1 < len(blocks) and blocks[index + 1].kind == 'table':
-                table = blocks[index + 1]
-                table.captions.append(asdict(block)); grouped.append(table); index += 2
+            if block.role == 'table_caption':
+                end = index
+                while end < len(blocks) and blocks[end].role == 'table_caption':end += 1
+                if end < len(blocks) and blocks[end].kind == 'table':
+                    table = blocks[end]
+                    table.captions.extend(asdict(c) for c in blocks[index:end]);grouped.append(table);index=end+1
+                else:
+                    grouped.append(block);index+=1
             elif block.kind == 'figure' and index + 1 < len(blocks) and blocks[index+1].kind == 'table' and re.fullmatch(r'\s*(?:\([a-zа-я0-9]\)\s*)+', blocks[index+1].text, re.I):
                 # Labels under separate native pictures are a panel grid, not data.
                 labels = blocks[index+1]
@@ -220,13 +240,14 @@ class NativeBridge:
             'source_sha256': sha256(self.path.read_bytes()).hexdigest(),
             'blocks': [asdict(b) for b in grouped], 'assets': self.assets,
             'formulas': self.formulas, 'warnings': self.warnings,
+            'embedded_objects': self.embedded_objects,
             'list_labels': self.list_labels,
-            'native_equations': sum(n.tag == qn('m:oMath') or etree.QName(n).localname == 'OLEObject' for n in visible_tree(root)),
+            'native_equations': sum(n.tag == qn('m:oMath') or etree.QName(n).localname == 'OLEObject' for n in visible_tree(root)) - len(self.embedded_objects),
             'converted_equations': len(self.formulas),
             'text_transfer': {'expected_nodes': sum(expected_text.values()),
                               'emitted_nodes': sum(emitted_text.values()), 'exact': True},
             'source_text': '\n'.join(b.text for b in blocks),
-            'style': 'JAMT 2026.2', 'experimental': True,
+            'style': 'JAMT 2026.4', 'experimental': True,
             'reference_layout': self.reference_layout,
             'running_footer': active_footers[0] if active_footers else '',
             'running_header': next((h.text for h in self.report.headers if 'Journal of Advanced Materials' in h.text), ''),
@@ -291,7 +312,14 @@ class NativeBridge:
             return text
         if node.tag == qn('w:t'):
             self.emitted_text.append((node.getroottree().getpath(node), node.text or ''))
-            return escaped(node.text or '')
+            value = node.text or ''
+            highlight = node.getparent().find('w:rPr/w:highlight', NS)
+            if highlight is not None and highlight.get(qn('w:val')) == 'yellow':
+                # Word-sized units may wrap between words, even inside a table
+                # or long metadata slot; no unbreakable paragraph-wide box.
+                return ''.join(' ' if word.isspace() else r'\jamtmark{' + escaped(word) + '}'
+                               for word in re.split(r'(\s+)', value) if word)
+            return escaped(value)
         if node.tag == qn('w:tab'):
             return r'\quad '
         if node.tag == qn('w:br'):
@@ -341,6 +369,14 @@ class NativeBridge:
                     raise UnsupportedContent('OLE relationship escapes embeddings.')
                 from .mtef import ole_to_latex, UnsupportedEquation
                 payload = self.zip.read(target)
+                # Old Word manuscripts can contain an Acrobat page as an OLE
+                # figure. Read its single PDF page as data; never activate OLE.
+                import olefile
+                with olefile.OleFileIO(BytesIO(payload)) as compound:
+                    compobj=compound.openstream('\x01CompObj').read(4096) if compound.exists('\x01CompObj') else b''
+                    if (not compound.exists('Equation Native') and b'Acrobat.Document' in compobj
+                            and compound.exists('CONTENTS')):
+                        return self.embedded_pdf(node, compound.openstream('CONTENTS').read(), target, payload)
                 try:
                     tex = ole_to_latex(payload)
                 except (UnsupportedEquation, OSError) as exc:
@@ -362,6 +398,30 @@ class NativeBridge:
         if node.tag == qn('w:tbl'):
             return self.table(node)
         return ''.join(self.inline(child) for child in node)
+
+    def embedded_pdf(self, node, data, source, ole_payload):
+        import pymupdf
+        if not data.startswith(b'%PDF-'):
+            raise UnsupportedContent('Acrobat object does not contain a PDF.')
+        shapes=node.xpath('.//v:shape',namespaces=NS)
+        style=shapes[0].get('style','') if len(shapes)==1 else ''
+        w=re.search(r'(?:^|;)width:([\d.]+)pt',style);h=re.search(r'(?:^|;)height:([\d.]+)pt',style)
+        if not w or not h:
+            raise UnsupportedContent('Embedded PDF has no unambiguous display dimensions.')
+        digest=sha256(data).hexdigest();name='assets/'+digest[:20]+'.pdf'
+        with pymupdf.open(stream=data,filetype='pdf') as original, pymupdf.open() as clean:
+            if original.is_encrypted or len(original)!=1:
+                raise UnsupportedContent('Only unencrypted single-page embedded PDFs are supported.')
+            # Copy the visible page, excluding links, annotations and actions.
+            clean.insert_pdf(original,links=False,annots=False,widgets=False)
+            clean.save(self.project/name,garbage=4,deflate=True)
+        width,height=float(w[1]),float(h[1])
+        self.embedded_objects.append({'block_id':self.block_id,'kind':'Acrobat single-page PDF',
+            'source':source,'ole_sha256':sha256(ole_payload).hexdigest(),'pdf_sha256':digest,'executed':False})
+        self.assets.append({'block_id':self.block_id,'source':source,'path':name,'rendered_path':name,
+            'sha256':sha256((self.project/name).read_bytes()).hexdigest(),'width_pt':width,'height_pt':height,
+            'crop':{},'transform':{},'kind':'embedded_pdf_page'})
+        return rf'\labimage{{{width:.3f}}}{{{name}}}'
 
     def picture(self, node):
         rid = node.get(qn('r:embed')) or node.get(qn('r:id'))
@@ -413,10 +473,16 @@ class NativeBridge:
             with Image.open(BytesIO(payload)) as original:
                 im = original.copy()
             left, top, right, bottom = (crop.get(k, 0) for k in ('l', 't', 'r', 'b'))
-            if min(left, top, right, bottom) < 0 or left+right >= 1 or top+bottom >= 1:
-                raise UnsupportedContent('Invalid or expanded image crop requires manual review.')
-            im = im.crop((round(im.width*left), round(im.height*top),
-                          round(im.width*(1-right)), round(im.height*(1-bottom))))
+            if min(left, top, right, bottom) < -2 or left+right >= 1 or top+bottom >= 1:
+                raise UnsupportedContent('Invalid or excessive image crop.')
+            # Negative srcRect values are valid OOXML padding. Word's old DOC
+            # importer emits tiny negative crops even for ordinary photographs.
+            # Preserve them as transparent padding, never a black Pillow border.
+            box=(round(im.width*left), round(im.height*top),
+                 round(im.width*(1-right)), round(im.height*(1-bottom)))
+            if (box[2]-box[0])*(box[3]-box[1]) > 100_000_000:
+                raise UnsupportedContent('Expanded image exceeds the raster budget.')
+            im = (im.convert('RGBA') if min(left,top,right,bottom)<0 else im).crop(box)
             if transform.get('flipH') in {'1', 'true'}:
                 im = ImageOps.mirror(im)
             if transform.get('flipV') in {'1', 'true'}:
@@ -445,7 +511,15 @@ class NativeBridge:
             figure = any(row.xpath('.//w:drawing|.//w:pict[not(ancestor::w:object)]', namespaces=NS) for row in rows)
         label_grid = bool(re.fullmatch(r'\s*(?:\([a-zа-я0-9]\)\s*)+', ''.join(visible_text(r) for r in rows), re.I))
         figure = figure or label_grid
-        ruled = not figure and not self.author_zone
+        from apps.template_workspace.v2.editor.layout_fidelity import parallel_text_layout
+        prose_layout = self.author_zone or parallel_text_layout(node)
+        ruled = not figure and not prose_layout
+        from apps.template_workspace.v2.editor.table_structure import analyze_table_structure
+        structure = analyze_table_structure(node)
+        estimated_lines = sum(max([1]+[1+len(visible_text(c))//max(15, int(85/len(grid)))
+                                     for c in row.findall('w:tc', NS)]) for row in rows)
+        multipage = ruled and (len(rows)>20 or estimated_lines>42)
+        if multipage:self.breakable_tables.add(self.block_id)
         # An equal-width source grid is particularly poor for mathematical tables:
         # reserve space for displayed fractions, not the short citation column.
         math_columns = set()
@@ -460,14 +534,16 @@ class NativeBridge:
         if math_columns and len(grid) == 3 and not self.reference_layout:
             grid = [200 if i in math_columns else (70 if i == 2 else 140) for i in range(3)]
         total = sum(grid)
-        cell_align = r'\RaggedRight' if self.author_zone else r'\centering'
+        cell_align = r'\RaggedRight' if prose_layout else r'\centering'
         spec = '@{}' + ''.join('>{' + cell_align + r'\arraybackslash}p{' + f'{n/total:.6f}' + r'\labtablewidth}' for n in grid) + '@{}'
         lines = [r'\begingroup\setlength{\tabcolsep}{3pt}',
                  rf'\setlength{{\labtablewidth}}{{\dimexpr\linewidth-{6*(len(grid)-1)}pt\relax}}',
                  r'\fontsize{\labtablesize}{\labtableleading}\selectfont',
-                 r'\renewcommand{\arraystretch}{1.20}\setlength{\extrarowheight}{2pt}', r'\begin{tabular}{' + spec + '}']
+                 r'\renewcommand{\arraystretch}{1.12}\setlength{\extrarowheight}{2pt}',
+                 ('\\begin{longtable}' if multipage else '\\begin{tabular}') + '{' + spec + '}']
         if ruled:
             lines.append(r'\toprule')
+        header_start = len(lines)
         for row_index, row in enumerate(rows):
             first_cell = row.find('w:tc', NS)
             first_merge = first_cell.find('w:tcPr/w:vMerge', NS) if first_cell is not None else None
@@ -508,9 +584,12 @@ class NativeBridge:
             lines.append(' & '.join(cells) + row_end)
             # Avoid a rule through a vertically merged header. Native header row is
             # kept as text; a single rule after the header group is sufficient.
-            if ruled and row_index == 0 and not row.xpath('.//w:vMerge', namespaces=NS):
+            if ruled and row_index+1 == structure.header_rows:
                 lines.append(r'\midrule')
-        if ruled:
+                if multipage:
+                    header = lines[header_start:]
+                    lines += [r'\endfirsthead',r'\toprule',*header,r'\endhead',r'\bottomrule',r'\endfoot',r'\bottomrule',r'\endlastfoot']
+        if ruled and not multipage:
             lines.append(r'\bottomrule')
-        lines += [r'\end{tabular}', r'\endgroup']
+        lines += [r'\end{longtable}' if multipage else r'\end{tabular}', r'\endgroup']
         return '\n'.join(lines)

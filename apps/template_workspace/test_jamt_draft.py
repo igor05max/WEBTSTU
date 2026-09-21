@@ -62,6 +62,20 @@ class DraftLayoutTests(SimpleTestCase):
                     self.assertEqual(before.read(name), after.read(name))
         return Document(self.root/'result.docx'), result
 
+    def test_inherited_list_numbers_and_bullets_survive_word_formatting(self):
+        from paper_formatter.latex_lab.bridge import NativeBridge
+        doc=Document();bilingual_front(doc);doc.add_paragraph('1. Introduction')
+        for text in ('First operation.','Second operation.','Third operation.'):
+            doc.add_paragraph(text,style='List Number')
+        for text in ('First observation.','Second observation.'):
+            doc.add_paragraph(text,style='List Bullet')
+        self.render(doc)
+        _,before=NativeBridge(self.root/'source.docx',self.root/'before-tex').build()
+        _,after=NativeBridge(self.root/'result.docx',self.root/'after-tex').build()
+        self.assertEqual([x['label'] for x in before['list_labels']],['1.','2.','3.','•','•'])
+        self.assertEqual([(x['label'],x['text_anchor']) for x in before['list_labels']],
+                         [(x['label'],x['text_anchor']) for x in after['list_labels']])
+
     def test_leading_body_picture_does_not_block_bilingual_front_layout(self):
         doc = Document(); bilingual_front(doc)
         picture(doc)
@@ -76,7 +90,7 @@ class DraftLayoutTests(SimpleTestCase):
         self.assertGreaterEqual(result.metrics['front_paragraphs_merged'], 4)
         self.assertEqual(text.count('Measurements are 42 ± 0.2 MPa; scientific content stays intact.'), 2)
         self.assertTrue(output._element.xpath('.//w:tbl[.//w:drawing][.//w:t[contains(., "Original portrait")]]'))
-        self.assertTrue(any(p.text.startswith('Abstract. Measurements') for p in output.paragraphs))
+        self.assertTrue(any(p.text.startswith('Abstract Measurements') for p in output.paragraphs))
 
     def test_wide_picture_retains_both_caption_languages_in_the_same_span(self):
         doc = Document(); bilingual_front(doc)

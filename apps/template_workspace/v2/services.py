@@ -28,7 +28,8 @@ from apps.template_workspace.v2.readability import review_summary, template_titl
 from apps.template_workspace.v2.quality_cycle import run_quality_cycle, cycle_summary
 from apps.template_workspace.v2.timeouts import stale_job_seconds
 from apps.template_workspace.v2.styles.jamt import prepare_jamt_style
-from apps.template_workspace.v2.exports import export_result_pdf
+from apps.template_workspace.v2.exports import export_result_pdf, select_jamt_pdf
+from apps.template_workspace.v2.editorial import ImageOnlyManuscript
 
 logger = logging.getLogger(__name__)
 NATIVE_JOB_KINDS = ("v2", "jamt")
@@ -100,7 +101,21 @@ def run_v2_job(job_id: str) -> None:
         source_report = DocumentInspector(source_path).inspect()
         classifier = RoleClassifierV2(use_ai=False)
         article_structure = classifier.article_structure(source_report)
+        def progress(message):
+            TemplateJob.objects.filter(pk=job_id, kind=job.kind, status='running').update(message=message, updated_at=timezone.now())
+        editorial = None
         if job.kind == "jamt":
+            progress('Проверяем обязательные поля и отмечаем подозрительные фрагменты без исправления текста…')
+            from .editorial import annotate_manuscript, qwen_reviewer
+            original_path = source_path
+            source_path = output / 'reviewed-manuscript.docx'
+            editorial = annotate_manuscript(original_path, source_path,
+                document_report=source_report, structure=article_structure,
+                reviewer=qwen_reviewer if getattr(settings, 'TEMPLATE_V2_QWEN_ENABLED', False) else None,
+                budget_seconds=getattr(settings, 'JAMT_EDITORIAL_REVIEW_SECONDS', 120))
+            write_json(output / 'editorial-review.json', editorial)
+            source_report = DocumentInspector(source_path).inspect()
+            article_structure = classifier.article_structure(source_report)
             template_path, template_report, template_profile = prepare_jamt_style(
                 output, article_report=source_report, article_structure=article_structure)
         else:
@@ -131,8 +146,6 @@ def run_v2_job(job_id: str) -> None:
             planner.last_result.to_dict() if planner.last_result else {},
         )
         write_json(output / "editor_report.json", editor_result.to_dict())
-        def progress(message):
-            TemplateJob.objects.filter(pk=job_id, kind=job.kind, status='running').update(message=message, updated_at=timezone.now())
         readability, quality = run_quality_cycle(result_docx_path(job), output, editor_result=editor_result,
             template_path=template_path if job.kind == 'v2' else None,
             template_title=template_title_text(template_report, template_profile), progress=progress,
@@ -141,9 +154,10 @@ def run_v2_job(job_id: str) -> None:
         export = export_result_pdf(result_docx_path(job), output)
         latex_export = None
         if job.kind == 'jamt' and export['status'] == 'completed' and getattr(settings, 'JAMT_LATEX_EXPORT_ENABLED', False):
-            progress('Собираем дополнительный PDF в LaTeX и сравниваем оформление…')
+            progress('Собираем PDF в LaTeX с теми же редакционными отметками…')
             from .latex_export import export_jamt_latex
-            latex_export = export_jamt_latex(source_path, output, output/'result.pdf')
+            latex_export = export_jamt_latex(result_docx_path(job), output, output/'result.pdf')
+            export = select_jamt_pdf(output, export, latex_export)
         plan = [
             {"kind": "DOCX flow", "text": f"ARTICLE: {len(source_report.flow)} блоков; TEMPLATE: {len(template_report.flow)} блоков"},
             {"kind": "V2 роли", "text": f"ARTICLE: {article_structure.provider}; TEMPLATE roles: {len(template_profile.roles)}"},
@@ -157,11 +171,13 @@ def run_v2_job(job_id: str) -> None:
         ]
         if job.kind == "jamt":
             plan = [
-                {"kind": "Стиль", "text": f"JAMT {template_profile.style_version}: правила по пяти PDF и двум Word-эталонам."},
+                {"kind": "Стиль", "text": f"JAMT {template_profile.style_version}: правила по корпусу из 24 опубликованных статей и двум редактируемым Word-эталонам."},
                 {"kind": "Оформление", "text": "Times New Roman; титульные блоки на ширину страницы, основной текст в две колонки."},
                 {"kind": "Сохранение содержимого", "text": f"Проверено сохранение текста и исходных объектов: формул — {len(source_report.formulas)}, рисунков — {len(source_report.drawings)}, таблиц — {len(source_report.tables)}."},
             ]
-        plan.append({"kind": "PDF", "text": f"Готово, страниц: {export['pages']}." if export['status'] == 'completed' else export['message']})
+            if editorial:
+                plan.append({'kind':'Редакционные отметки', 'text':f"Незаполненных полей: {editorial['missing_count']}; замечаний к тексту: {editorial['highlighted_findings']}. Отмечены жёлтым. Исходный текст не исправлялся."})
+        plan.append({"kind": "PDF", "text": f"Готово, страниц: {export['pages']}; сборка: {'LaTeX' if export.get('engine') == 'xelatex' else 'Word'}." if export['status'] == 'completed' else export['message']})
         if latex_export:
             plan.append({'kind': 'PDF LaTeX', 'text': latex_export['message']})
             visual = latex_export.get('visual_review', {})
@@ -193,6 +209,8 @@ def run_v2_job(job_id: str) -> None:
             warnings.append(f"Qwen/VPN: планировщик Template V2 настроен через {get_api_base_url(settings.TEMPLATE_V2_QWEN_BASE_URL or None)}; ответ проходит whitelist-валидацию, при сбое используется локальный fallback.")
         recovery_count = editor_result.metrics.get('local_content_recovery_count', 0)
         message = cycle_summary(quality)
+        if editorial and (editorial['missing_count'] or editorial['highlighted_findings']):
+            message = f"Проверьте жёлтые отметки: полей — {editorial['missing_count']}, замечаний — {editorial['highlighted_findings']}. " + message
         if recovery_count:
             message += f" Восстановлено фрагментов: {recovery_count}; см. предупреждения."
         if export['status'] != 'completed':
@@ -220,6 +238,9 @@ def run_v2_job(job_id: str) -> None:
             message=f"Не удалось сконвертировать DOC в DOCX для V2. {exc}",
             updated_at=timezone.now(),
         )
+    except ImageOnlyManuscript as exc:
+        TemplateJob.objects.filter(pk=job_id, kind=job.kind, status='running').update(
+            status='failed', message=str(exc), updated_at=timezone.now())
     except Exception:
         logger.exception("Template V2 analysis failed: %s", job_id)
         TemplateJob.objects.filter(pk=job_id, kind=job.kind, status="running").update(

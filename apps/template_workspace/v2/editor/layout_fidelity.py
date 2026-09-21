@@ -15,6 +15,16 @@ def text(p):
     return ''.join(p.xpath('.//w:t/text()', namespaces=NS)).strip()
 
 
+def parallel_text_layout(table):
+    """Two long prose cells separated by an empty gutter, not a data table."""
+    rows = table.findall('w:tr', NS)
+    if len(rows) != 1 or table.xpath('.//w:tbl|.//w:gridSpan|.//w:vMerge', namespaces=NS):
+        return False
+    cells = rows[0].findall('w:tc', NS)
+    return len(cells) == 3 and not text(cells[1]) and all(
+        len(' '.join(text(cell).split())) > 120 for cell in (cells[0], cells[2]))
+
+
 def pprops(p):
     pp = p.find('w:pPr', NS)
     if pp is None:
@@ -169,7 +179,7 @@ def align_standalone_picture(p, layout, *, full_width=False):
     return 1
 
 
-def scientific_table_rules(table, info, *, structure=None, audit=None):
+def scientific_table_rules(table, info, *, structure=None, audit=None, journal=False):
     """Horizontal rules follow native headings/groups, not physical row count."""
     if info is None or info.classification == 'FIGURE_CONTAINER':
         return 0
@@ -181,7 +191,7 @@ def scientific_table_rules(table, info, *, structure=None, audit=None):
         for nested in table.findall('.//w:tbl', NS):
             child_structure = analyze_table_structure(nested)
             if child_structure.hierarchical and not nested.xpath('.//w:drawing|.//w:pict|.//w:object', namespaces=NS):
-                changed += scientific_table_rules(nested, info, structure=child_structure, audit=audit)
+                changed += scientific_table_rules(nested, info, structure=child_structure, audit=audit, journal=journal)
         return changed
     rows = table.findall('w:tr', NS)
     if len(rows) < 2 or (len(text(table)) < 240 and re.search(r'\b(?:DOI|УДК|UDC)\b', text(table), re.I)):
@@ -203,12 +213,13 @@ def scientific_table_rules(table, info, *, structure=None, audit=None):
                 if attr != qn('w:val'):
                     del side_node.attrib[attr]
     borders = prop(pr, 'tblBorders')
+    rule_size = 12 if journal else 4  # eighth-points; measured JAMT rules are 1.5 pt
     for side in ('top', 'bottom'):
         el = prop(borders, side)
-        if el.get(qn('w:val')) in {None, 'nil', 'none'}:
-            prop(borders, side, val='single', sz=4, color='000000')
+        if journal or el.get(qn('w:val')) in {None, 'nil', 'none'}:
+            prop(borders, side, val='single', sz=rule_size, color='000000')
     header = structure.header_rows
-    if structure.hierarchical:
+    if structure.hierarchical or journal:
         # Direct nil overrides prevent table styles/row exceptions from
         # resurrecting the old grid when no visible cell border exists in XML.
         for bp in [borders] + table.findall('w:tr/w:tblPrEx/w:tblBorders', NS):
@@ -241,12 +252,12 @@ def scientific_table_rules(table, info, *, structure=None, audit=None):
                 if side in {'start','end'} and cb.find('w:'+side, NS) is None:
                     continue
                 prop(cb, side, val='nil')
-            if structure.hierarchical:
+            if structure.hierarchical or journal:
                 for side in ('top', 'bottom', 'insideH'):
                     prop(cb, side, val='nil')
                 for side, boundary in [('top', ri), ('bottom', ri+1)]:
                     if boundary in boundaries:
-                        prop(cb, side, val='single', sz=4, color='000000')
+                        prop(cb, side, val='single', sz=rule_size, color='000000')
                 # A modest inset separates unruled rows without fixed heights,
                 # blank rows or edits to scientific text.
                 margins = prop(cp, 'tcMar')
@@ -262,7 +273,7 @@ def scientific_table_rules(table, info, *, structure=None, audit=None):
                 ind.attrib.pop(qn('w:hanging'), None)
             span = cp.find('w:gridSpan', NS)
             col += int(span.get(qn('w:val'), '1')) if span is not None else 1
-        if structure.hierarchical and ri < header:
+        if (structure.hierarchical or journal) and ri < header:
             rp = row.find('w:trPr', NS)
             if rp is None:
                 rp = etree.Element(qn('w:trPr')); row.insert(0, rp)

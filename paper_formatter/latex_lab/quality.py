@@ -15,6 +15,9 @@ def normalize(text):
 
 def words(text):
     text = unicodedata.normalize('NFKC', text).casefold().replace('\u00ad', '')
+    # Zero-width formatting characters carry no visible word boundary. Keep
+    # them in Word and in the issue report, but compare visible PDF words fairly.
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Cf')
     text = re.sub(r'(?<=\w)[\-‐‑]\s*(?=\w)', '', text)
     return Counter(re.findall(r'[^\W_]+', text))
 
@@ -81,6 +84,8 @@ def gate(candidate, baseline):
     errors = []
     if candidate['word_coverage'] < max(0.99, baseline['word_coverage'] - 0.001):
         errors.append('text_coverage_regression')
+    if candidate.get('missing_words'):
+        errors.append('missing_source_words_or_numbers')
     if candidate['out_of_page']:
         errors.append('text_out_of_page')
     if candidate.get('missing_list_labels'):

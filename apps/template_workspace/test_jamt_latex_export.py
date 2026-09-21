@@ -9,6 +9,8 @@ from django.test import SimpleTestCase, override_settings
 from docx import Document
 
 from apps.template_workspace.v2.latex_export import export_jamt_latex
+from apps.template_workspace.v2.exports import select_jamt_pdf
+from hashlib import sha256
 from apps.template_workspace.v2.timeouts import job_timeout_seconds
 
 
@@ -71,3 +73,20 @@ class LatexExportTests(SimpleTestCase):
             before = job_timeout_seconds()
         with override_settings(JAMT_LATEX_EXPORT_ENABLED=True):
             self.assertGreaterEqual(job_timeout_seconds(), before + 16 * 60)
+
+    def test_validated_latex_is_primary_and_word_pdf_is_preserved(self):
+        original=self.baseline.read_bytes();candidate=self.root/'result-latex.pdf'
+        self.make_pdf(candidate,'A different verified layout.');payload=candidate.read_bytes()
+        result=select_jamt_pdf(self.root,{'status':'completed','pages':1,'pdf_sha256':sha256(original).hexdigest()},
+            {'status':'completed','pages':1,'gate':{'passed':True},'pdf_sha256':sha256(payload).hexdigest()})
+        self.assertEqual(result['engine'],'xelatex');self.assertEqual(self.baseline.read_bytes(),payload)
+        self.assertEqual((self.root/'result-word.pdf').read_bytes(),original)
+
+    def test_hash_mismatch_or_serious_visual_issue_keeps_word_as_primary(self):
+        original=self.baseline.read_bytes();candidate=self.root/'result-latex.pdf';self.make_pdf(candidate,'Candidate')
+        report={'status':'completed','pages':1,'gate':{'passed':True},'pdf_sha256':'wrong'}
+        self.assertEqual(select_jamt_pdf(self.root,{'status':'completed'},report)['engine'],'word')
+        report['pdf_sha256']=sha256(candidate.read_bytes()).hexdigest()
+        report['visual_review']={'events':[{'mapping':{'A':'candidate'},'response':{'issues_A':[{'category':'overlap','severity':'high','description':'Overlap'}]}}]}
+        self.assertEqual(select_jamt_pdf(self.root,{'status':'completed'},report)['engine'],'word')
+        self.assertEqual(self.baseline.read_bytes(),original)

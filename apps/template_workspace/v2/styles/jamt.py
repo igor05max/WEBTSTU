@@ -49,12 +49,12 @@ def _rule(parent, name, **attributes):
     return element
 
 
-def _furniture(paragraph, style, *, footer=False, author=""):
+def _furniture(paragraph, style, *, footer=False, author="", even=False):
     paragraph.paragraph_format.space_before = Pt(0)
     paragraph.paragraph_format.space_after = Pt(0)
     paragraph.paragraph_format.line_spacing = 1
     properties = paragraph._p.get_or_add_pPr()
-    _rule(properties, "jc", val="left" if footer else "right")
+    _rule(properties, "jc", val="left" if footer or even else "right")
     borders = _rule(properties, "pBdr")
     _rule(borders, "top" if footer else "bottom", val="thickThinSmallGap" if footer else "thinThickSmallGap", sz=24, space=1, color="000000")
     run = paragraph.add_run() if footer else paragraph.add_run(style["journal"])
@@ -70,14 +70,16 @@ def _furniture(paragraph, style, *, footer=False, author=""):
         _rule(run._r, "fldChar", fldCharType="separate")
         _rule(run._r, "t").text = "1"
         _rule(run._r, "fldChar", fldCharType="end")
-        if author:
-            width = style['page_twips']['w'] - style['margins_twips']['left'] - style['margins_twips']['right']
-            tabs = _rule(properties, 'tabs')
-            _rule(tabs, 'tab', val='center', pos=width // 2)
-            name_run = paragraph.add_run('\t' + author)
-            name_run.font.name = style['font']
-            name_run.font.size = Pt(10)
-            name_run.italic = True
+        width = style['page_twips']['w'] - style['margins_twips']['left'] - style['margins_twips']['right']
+        tabs = _rule(properties, 'tabs')
+        _rule(tabs, 'tab', val='center', pos=width // 2)
+        _rule(tabs, 'tab', val='right', pos=width)
+        name_run = paragraph.add_run('\t' + author + ('' if even else '\t'))
+        name_run.font.name = style['font']
+        name_run.font.size = Pt(10)
+        name_run.italic = True
+        if not even:
+            paragraph._p.remove(run._r);paragraph._p.append(run._r)
 
 
 def prepare_jamt_style(directory, *, article_report=None, article_structure=None):
@@ -105,15 +107,18 @@ def prepare_jamt_style(directory, *, article_report=None, article_structure=None
         setattr(section, key + "_margin", Twips(style["margins_twips"][key]))
     section.header_distance = Twips(style["margins_twips"]["header"])
     section.footer_distance = Twips(style["margins_twips"]["footer"])
+    document.settings.odd_and_even_pages_header_footer = True
     columns = section._sectPr.find(qn("w:cols"))
     columns.set(qn("w:num"), str(style["columns"]))
     columns.set(qn("w:space"), str(style["column_gap_twips"]))
     _furniture(section.header.paragraphs[0], style)
+    _furniture(section.even_page_header.paragraphs[0], style, even=True)
     author = ''
     if article_report is not None and article_structure is not None:
         from ..editor.safe_word_editor import _article_author_shortline
         author = _article_author_shortline(article_structure, article_report)
     _furniture(section.footer.paragraphs[0], style, footer=True, author=author)
+    _furniture(section.even_page_footer.paragraphs[0], style, footer=True, author=author, even=True)
     carrier = directory / "style-geometry.docx"
     document.save(carrier)
     report = DocumentInspector(carrier).inspect()

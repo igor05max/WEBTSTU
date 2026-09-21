@@ -19,10 +19,12 @@ from apps.template_workspace.v2.services import analysis_directory, expire_v2_jo
 FILES = {
     "docx": ("result.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "result.docx"),
     "pdf": ("result.pdf", "application/pdf", "result.pdf"),
+    "word_pdf": ("result-word.pdf", "application/pdf", "result-word.pdf"),
     "latex_pdf": ("result-latex.pdf", "application/pdf", "result-latex.pdf"),
     "latex_source": ("result-latex.zip", "application/zip", "result-latex.zip"),
     "latex_report": ("latex-export-report.json", "application/json", "latex-export-report.json"),
     "export": ("export_report.json", "application/json", "export_report.json"),
+    "editorial": ("editorial-review.json", "application/json", "editorial-review.json"),
     "style": ("style_source.json", "application/json", "jamt-style.json"),
     "article": ("article_report.json", "application/json", "article_report.json"),
     "template": ("template_report.json", "application/json", "template_report.json"),
@@ -130,7 +132,33 @@ def detail(request, job_id, job_kind="v2"):
         "files": available_files(job),
         "ai_review": visual_review_context(job),
         "latex_review": latex_review_context(job),
+        "pdf_engine": pdf_engine(job),
+        "editorial_review": editorial_review_context(job),
     })
+
+
+def editorial_review_context(job):
+    if job.kind != 'jamt' or job.pending or job.status == 'failed':
+        return None
+    try:
+        report = json.loads((analysis_directory(job) / 'editorial-review.json').read_text(encoding='utf-8'))
+        if not isinstance(report, dict):return None
+    except (OSError, ValueError):
+        return None
+    ai=report.get('ai', {})
+    return {'missing':report.get('missing_fields', []), 'issues':report.get('issues', []),
+            'count':report.get('missing_count',0)+report.get('highlighted_findings',0),
+            'checked':len(ai.get('checked',[])), 'unchecked':len(ai.get('unchecked',[])),
+            'ai_status':{'disabled':'AI-проверка текста выключена','unavailable':'AI-проверка текста недоступна',
+                         'partial':'AI проверил часть текста','reviewed':'AI-проверка текста завершена'}.get(ai.get('status'),'AI-проверка не завершена')}
+
+
+def pdf_engine(job):
+    try:
+        report=json.loads((analysis_directory(job)/'export_report.json').read_text(encoding='utf-8'))
+        return 'LaTeX' if report.get('engine')=='xelatex' else 'Word'
+    except (OSError,ValueError,AttributeError):
+        return 'Word'
 
 
 def latex_review_context(job):

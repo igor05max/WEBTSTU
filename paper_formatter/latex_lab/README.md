@@ -1,15 +1,19 @@
 # JAMT reference typesetter
 
-The 2026.2 style is measured from five published PDFs and two final Word articles.
+The 2026.4 style combines 24 published PDFs (293 pages, 2024 issues 1–4),
+five earlier PDF references and two genuinely editable final Word articles.
+The 24 Word copies in the new corpus contain page images, not editable articles;
+they are visual references only. The original corpus is not committed to Git.
 `jamt-reference.cls` is the reusable XeLaTeX class; article text, current author
 metadata, figures, tables and equations are filled by the native DOCX bridge.
 No model weights are trained. Qwen provides constrained advice and visual review.
 
 ## Web workflow
 
-`JAMT_LATEX_EXPORT_ENABLED=1` adds an experimental PDF and a buildable TeX archive
-to JAMT jobs after the normal DOCX/PDF export. It defaults to off. The input to
-LaTeX is the original working DOCX, not a PDF and not a rewritten Word result.
+`JAMT_LATEX_EXPORT_ENABLED=1` builds a LaTeX PDF and a buildable TeX archive
+after native Word formatting. It defaults to off for installations without TeX.
+The input to LaTeX is the final, reviewed DOCX, including its yellow editorial
+marks. PDF is never used to recover manuscript text.
 The Word companion stays native; it is not a LaTeX-to-DOCX conversion.
 
 The normal editor recognizes existing JAMT structure, geometry and typography.
@@ -19,16 +23,28 @@ repairs only supported, dominant font/size outliers. An unchanged input is copie
 byte-for-byte. The gate uses document structure, not filenames or known hashes.
 This does not certify visual quality: rendered review still runs.
 
-The extra export cannot replace the native results. A failed content/compile
-gate removes its downloadable PDF/archive and records a reason in
-`latex-export-report.json`. Successful output has its source/PDF hashes, metrics,
-formula and numbering inventory, and optional page-by-page Qwen comparison.
-AI failure does not discard a mechanically valid PDF. Downloads use the existing
-owner checks. The UI shows actual checked pages and remaining observations.
+A LaTeX candidate that passes the content/compile gate becomes the primary PDF,
+unless the visual review flags severe overlap, clipping, illegibility or table
+layout problems. Its verified hash is checked again before selection. The PDF
+rendered from Word remains downloadable for comparison. A failed gate removes
+the candidate PDF/archive and records a reason in `latex-export-report.json`;
+the native Word/PDF remain available. Successful output has source/PDF hashes,
+formula and list inventories and optional page-by-page Qwen comparison. AI failure
+does not discard a mechanically valid PDF. Downloads are owner-only and no-store.
+The UI shows the actual PDF engine, checked pages and remaining observations.
+
+Before formatting, `v2/editorial.py` adds yellow prompts for absent RU/EN front
+matter, article DOI, UDC, year/volume/issue and received/accepted/published dates.
+Exact suspicious text spans are highlighted. Original characters, numbers and
+formula nodes are never corrected by this review. Qwen can return only exact,
+unique quotes from identified paragraphs, not replacement prose. Its 120-second
+budget and checked/unchecked paragraph IDs are reported; deterministic checks
+still work when the model is unavailable. This is not a guarantee of finding all
+language or scientific errors. No model weights are trained.
 
 Qwen comparison has a 600-second budget and 24-page limit in web jobs. Partial
 coverage is explicitly reported, including failed page requests. Worker deadlines
-include two bounded XeLaTeX passes and this additional review budget. Native Word
+include two bounded XeLaTeX passes, this review and editorial checking. Native Word
 repair remains the existing bounded edit/render/check cycle, using only validated
 actions and accepting changes only after a non-regressing recheck.
 
@@ -60,6 +76,8 @@ proposal is kept separately and requires visual comparison before promotion.
 3. Convert supported OMML math and a strict subset of Equation Native MTEF v3.
    The MTEF parser reads data from OLE without activating embedded objects. Unknown
    records, templates and symbols fail explicitly; Qwen never guesses formulas.
+   Single-page Acrobat PDF OLE figures are read as data and copied as vector
+   pages without active links, annotations or widgets. Embedded programs never run.
 4. Fill the class with full-width bilingual front matter, two-column body, wide
    objects, attached captions, references, author biographies and license. Keep
    source section intent for structurally conforming reference documents. Numeric
@@ -69,14 +87,15 @@ proposal is kept separately and requires visual comparison before promotion.
    receives another reference's DOI, publication dates or authors. Use Times New
    Roman when installed, otherwise Liberation Serif; math is TeX Gyre Termes.
 6. Compile twice with XeLaTeX. Check missing glyphs, overflow, page bounds,
-   extraction coverage and explicit numbering anchors. These gates do not prove
+   every source word/number and explicit numbering anchors. These gates do not prove
    mathematical equivalence or publication quality.
 7. Compare candidate pages with content-aligned reference pages as blind A/B pairs,
    alternating their order. Record exact coverage, raw model remarks and hashes.
-   The model's preferences do not automatically edit or promote a document.
+   Model preferences do not rewrite the manuscript. Severe candidate layout
+   findings prevent its selection as the primary PDF.
 
 The artifact contract and measurements are documented in
-[`docs/JAMT_REFERENCE_LAYOUT_20260920.md`](../../docs/JAMT_REFERENCE_LAYOUT_20260920.md).
+[`docs/JAMT_CORPUS_20260921.md`](../../docs/JAMT_CORPUS_20260921.md).
 
 ## Build and limits
 
@@ -86,8 +105,11 @@ and Liberation Serif/DejaVu Sans are required. The application runs the compiler
 as its unprivileged account, with restricted file IO and a 180-second timeout per
 pass. Uploaded TeX and model-authored commands are never executed.
 
-Supported lists are decimal, level zero, including style-inherited numbering and
-start overrides. Unsupported lists, MTEF versions/templates, nested tables,
+Supported lists include decimal, zero-padded decimal, Roman, alphabetic and
+common bullets, levels 0–8, style inheritance, restarts and start overrides.
+Long tables use repeated headers and page breaking outside `multicols` and
+minipages. Four-or-more-column data tables are full width by default. Parallel
+biography cells are prose, not ruled data tables. Unsupported lists, MTEF versions/templates, nested tables,
 footnotes/endnotes, tracked deletions, symbolic-font characters and unknown OMML
 structures explicitly stop this optional branch. Sparse cells are padded from
 declared grid offsets. Table merges preserve text, but not every Word border or
@@ -98,10 +120,11 @@ pagination, universal article support or a quality percentage from two examples.
 ## Tests
 
 ```sh
-python -m unittest paper_formatter_tests.test_latex_lab paper_formatter_tests.test_mtef \
-  apps.template_workspace.test_jamt_reference
-python manage.py test apps.template_workspace.test_jamt_style \
-  apps.template_workspace.test_jamt_latex_export apps.template_workspace.test_v2_timeouts
+python manage.py test apps.template_workspace paper_formatter_tests.test_latex_lab \
+  paper_formatter_tests.test_mtef --noinput
+python tools/analyze_jamt_corpus.py /private/JAMT_corpus_24 /private/evidence --render
+python tools/jamt_stress_fixtures.py /private/raw-drafts
+python tools/jamt_benchmark.py /private/raw-drafts /private/benchmark --compile
 ```
 
 Real article rendering and inspection are additionally required. The original

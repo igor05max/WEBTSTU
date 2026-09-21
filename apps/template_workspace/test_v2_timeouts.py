@@ -61,8 +61,8 @@ class VisualTimeoutTests(SimpleTestCase):
     @override_settings(TEMPLATE_V2_EDIT_CYCLE_ENABLED=False, TEMPLATE_V2_QWEN_ENABLED=True, TEMPLATE_V2_QWEN_TIMEOUT=300,
                        TEMPLATE_V2_VISUAL_REVIEW_ENABLED=True, TEMPLATE_V2_VISUAL_REVIEW_BUDGET=900)
     def test_outer_worker_deadlines_include_both_ai_phases_and_render_margin(self):
-        self.assertEqual(job_timeout_seconds(), 1800)
-        self.assertEqual(stale_job_seconds(), 1920)
+        self.assertEqual(job_timeout_seconds(), 1920)
+        self.assertEqual(stale_job_seconds(), 2040)
 
     @override_settings(TEMPLATE_V2_QWEN_ENABLED=False, TEMPLATE_V2_VISUAL_REVIEW_ENABLED=False)
     def test_offline_worker_keeps_original_deadlines(self):
@@ -91,11 +91,11 @@ class StaleJobTimeoutTests(TestCase):
         self.assertEqual(legacy.status, 'failed')
         self.assertEqual(current.status, 'running')
         self.assertEqual(jamt.status, 'running')
-        TemplateJob.objects.filter(pk=current.pk).update(updated_at=timezone.now()-timedelta(minutes=33))
+        TemplateJob.objects.filter(pk=current.pk).update(updated_at=timezone.now()-timedelta(seconds=stale_job_seconds()+1))
         expire_v2_jobs(owner)
         current.refresh_from_db()
         self.assertEqual(current.status, 'failed')
-        TemplateJob.objects.filter(pk=jamt.pk).update(updated_at=timezone.now()-timedelta(minutes=33))
+        TemplateJob.objects.filter(pk=jamt.pk).update(updated_at=timezone.now()-timedelta(seconds=stale_job_seconds()+1))
         expire_v2_jobs(owner)
         jamt.refresh_from_db()
         self.assertEqual(jamt.status, 'failed')

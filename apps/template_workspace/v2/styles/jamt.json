@@ -1,6 +1,6 @@
 {
   "id": "jamt",
-  "version": "2026.3",
+  "version": "2026.4",
   "name": "JAMT",
   "journal": "Journal of Advanced Materials and Technologies.",
   "references": [
@@ -48,12 +48,12 @@
     },
     "article_type": {
       "pt": 10,
-      "align": "right",
+      "align": "center",
       "bold": true
     },
     "rubric": {
       "pt": 10,
-      "align": "right",
+      "align": "center",
       "bold": true,
       "italic": true,
       "after": 11.5
@@ -203,8 +203,8 @@
       "pt": 10,
       "align": "right",
       "italic": true,
-      "before": 11.5,
-      "after": 11.5
+      "before": 0,
+      "after": 0
     },
     "copyright_metadata": {
       "pt": 9,
@@ -218,6 +218,15 @@
     "03_Balabanov_Dyachkova_Gutnik_Chapaksov_Burakova_118-128 (2).docx"
   ],
   "body_line_multiple": 1.0208333333333333,
+  "corpus_evidence": {
+    "articles": 24,
+    "pages": 293,
+    "publication_year": 2024,
+    "word_copies_are_page_images": true,
+    "body_baseline_typical_pt": [12.4, 12.7],
+    "table_policy": "Open horizontal rules; repeated headers for multipage tables; no vertical rules unless source semantics require them.",
+    "front_matter_policy": "Full width; English then Russian; natural page continuation; never shrink to force a one-page front."
+  },
   "quality_rules": [
     "Do not optimize for fewer pages or a filled final page.",
     "Preserve source line breaks, native equations, table merges and image crops.",
