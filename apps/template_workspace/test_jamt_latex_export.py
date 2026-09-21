@@ -64,6 +64,10 @@ class LatexExportTests(SimpleTestCase):
         self.assertEqual(report['visual_review']['status'], 'unavailable')
         with ZipFile(self.root/'result-latex.zip') as archive:
             self.assertIn('jamt-reference.cls', archive.namelist())
+            self.assertIn('jamt.cls', archive.namelist())
+            self.assertIn('jamt-profile.tex', archive.namelist())
+            contract = json.loads(archive.read('template-contract.json'))
+            self.assertEqual(report['template']['profile_sha256'], contract['profile_sha256'])
             manifest = json.loads(archive.read('manifest.json'))
             self.assertEqual(manifest['source_text'].strip(), self.text)
         self.assertTrue(report['gate']['passed'])

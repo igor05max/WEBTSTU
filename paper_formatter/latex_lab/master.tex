@@ -1,0 +1,64 @@
+% JAMT starter. Fill yellow fields; keep role commands and class files.
+% All table/formula values below are layout examples, not research results.
+\documentclass{jamt}
+\begin{document}
+\JAMTParagraph{article_type}{\JAMTMissing{Article type / Тип статьи}}
+\JAMTParagraph{rubric}{\JAMTMissing{Journal section / Рубрика}}
+\JAMTParagraph[after=4]{editorial_metadata}{\JAMTMissing{Year, volume, issue, pages / Год, том, выпуск, страницы}}
+\JAMTParagraph[after=4]{editorial_metadata}{DOI: \JAMTMissing{Insert the assigned DOI}}
+\JAMTParagraph[after=4]{editorial_metadata}{UDC: \JAMTMissing{Insert the UDC index}}
+
+\JAMTParagraph{title}{\JAMTMissing{Article title in English}}
+\JAMTParagraph{author}{\JAMTMissing{Authors in English}}
+\JAMTParagraph{affiliation}{\JAMTMissing{Institutions, city, country in English}}
+\JAMTParagraph{email}{\JAMTMissing{Corresponding author email}}
+\JAMTParagraph{abstract}{\textbf{Abstract.} \JAMTMissing{Insert the original abstract in English}}
+\JAMTParagraph{keywords}{\textbf{Keywords:} \JAMTMissing{Insert keywords in English}}
+\JAMTParagraph{citation}{\textbf{For citation:} \JAMTMissing{Authors, title, year, volume, issue, pages, DOI}}
+\JAMTFrontDivider
+
+\JAMTParagraph[language=russian]{title}{\JAMTMissing{Название статьи на русском языке}}
+\JAMTParagraph[language=russian]{author}{\JAMTMissing{Авторы на русском языке}}
+\JAMTParagraph[language=russian]{affiliation}{\JAMTMissing{Организации, город, страна на русском языке}}
+\JAMTParagraph{email}{\JAMTMissing{Email автора для переписки}}
+\JAMTParagraph[language=russian]{abstract}{\textbf{Аннотация.} \JAMTMissing{Добавьте авторскую аннотацию на русском языке}}
+\JAMTParagraph[language=russian]{keywords}{\textbf{Ключевые слова:} \JAMTMissing{Добавьте ключевые слова на русском языке}}
+\JAMTParagraph[language=russian]{citation}{\textbf{Для цитирования:} \JAMTMissing{Авторы, название, год, том, выпуск, страницы, DOI}}
+
+\begin{JAMTBody}
+\JAMTHeading{1. Introduction}
+\JAMTParagraph[language=russian]{body}{\JAMTMissing{Добавьте исходный текст введения}}
+\JAMTParagraph[language=russian]{body}{Абзацы этого макета показывают расположение элементов статьи. Замените их содержимым рукописи. Шрифт, отступы и интервалы задаются общим профилем. Сведения, которых нет в исходнике, требуется предоставить автору или редакции.}
+\JAMTHeading{2. Materials and methods}
+\JAMTParagraph[language=russian]{body}{\JAMTMissing{Добавьте материалы и методы исследования}}
+\JAMTParagraph[language=russian]{body}{Пример структурной формулы для проверки вёрстки, который следует заменить формулой из рукописи:}
+\begin{equation}
+  \bar{x}=\frac{1}{n}\sum_{i=1}^{n}x_i .
+\end{equation}
+\JAMTHeading{3. Results and discussion}
+\JAMTParagraph[language=russian]{body}{\JAMTMissing{Добавьте результаты и обсуждение}}
+\begin{JAMTObject}
+\JAMTParagraph{table_caption}{Table 1. Layout example}
+\JAMTParagraph[language=russian]{table_caption}{Таблица 1. Пример оформления}
+{\fontsize{\labtablesize}{\labtableleading}\selectfont
+\begin{tabular}{@{}p{.54\linewidth}p{.34\linewidth}@{}}
+\toprule
+Параметр & Значение \\
+\midrule
+\JAMTMissing{Параметр A} & \JAMTMissing{Данные} \\
+\JAMTMissing{Параметр B} & \JAMTMissing{Данные} \\
+\bottomrule
+\end{tabular}}
+\end{JAMTObject}
+\JAMTHeading{4. Conclusions}
+\JAMTParagraph[language=russian]{body}{\JAMTMissing{Добавьте выводы без изменения авторского смысла}}
+\JAMTHeading[references_heading]{References / Список литературы}
+\JAMTParagraph[language=russian]{reference_item}{1. \JAMTMissing{Добавьте полное описание источника из рукописи}}
+\end{JAMTBody}
+
+\JAMTHeading[author_information]{Information about the authors / Информация об авторах}
+\JAMTParagraph[language=russian]{author_bio}{\JAMTMissing{Сведения об авторах на русском и английском языках}}
+\JAMTParagraph{received_metadata}{Received: \JAMTMissing{Date supplied by the editorial office}}
+\JAMTParagraph{received_metadata}{Accepted: \JAMTMissing{Date supplied by the editorial office}}
+\JAMTParagraph{received_metadata}{Published: \JAMTMissing{Date supplied by the editorial office}}
+\end{document}

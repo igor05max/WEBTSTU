@@ -8,14 +8,13 @@ import shutil
 import subprocess
 
 from .bridge import escaped
-
-
-STYLE_PATH = Path(__file__).resolve().parents[2] / 'apps/template_workspace/v2/styles/jamt.json'
+from .master_template import load_style, write_template_files
 
 
 def default_plan(blocks, *, running_footer='', reference_layout=False, running_header='', page_start=1):
-    return {'body_leading': 12.7, 'front_gap': 11.5, 'caption_gap': 6.0,
-            'table_size': 10.0, 'running_footer': running_footer, 'reference_layout': reference_layout,
+    style = load_style()
+    return {**{key: style['latex'][key] for key in ('body_leading', 'front_gap', 'caption_gap', 'table_size')},
+            'running_footer': running_footer, 'reference_layout': reference_layout,
             'running_header': running_header, 'page_start': page_start, 'objects': {
                 b.id: {'width': 'wide' if b.width_pt > 244 or b.columns >= 4 or b.breakable else 'column',
                        'scale': 1.0, 'break_before': False}
@@ -28,8 +27,7 @@ def validate_plan(patch, baseline, blocks):
     accepted, rejected = [], []
     if not isinstance(patch, dict):
         return result, [], ['response_not_object']
-    ranges = {'body_leading': (12.1, 13.2), 'front_gap': (6.0, 11.5),
-              'caption_gap': (4.0, 7.0), 'table_size': (9.5, 10.0)}
+    ranges = load_style()['latex']['layout_ranges']
     for key, value in patch.items():
         if key in ranges:
             low, high = ranges[key]
@@ -59,29 +57,26 @@ def validate_plan(patch, baseline, blocks):
 
 def render(blocks, project, plan):
     project = Path(project)
-    fonts = project / 'fonts'; fonts.mkdir(exist_ok=True)
-    vendor = Path(__file__).resolve().parents[1] / 'vendor/fonts'
-    for name in ('texgyretermes-math.otf', 'GUST-FONT-LICENSE.txt'):
-        shutil.copy2(vendor / name, fonts / name)
-    style = json.loads(STYLE_PATH.read_text(encoding='utf-8'))
+    contract = write_template_files(project)
+    style = load_style()
+    plan['template'] = {'version': contract['version'], 'profile_sha256': contract['profile_sha256']}
     author = plan.get('running_footer', '')
     # Content from the current article only. Footer is journal furniture, excluded
     # from scientific text measurements; page numbering starts at one for the draft.
     author = re.sub(r'^\s*\d+\s*|\s*\d+\s*$', '', author).strip()
     if len(author) > 105:
         author = author[:102].rsplit(' ', 1)[0] + '…'
-    shutil.copy2(Path(__file__).with_name('jamt-reference.cls'), project/'jamt-reference.cls')
     header = plan.get('running_header') or style['journal']
     first_page = max(1, int(plan.get('page_start', 1)))
     preamble = (
-        r"\documentclass{jamt-reference}" + "\n"
+        r"\documentclass{jamt}" + "\n"
         + r"\renewcommand{\jamtjournal}{" + escaped(header) + "}\n"
         + r"\renewcommand{\jamtauthors}{" + escaped(author) + "}\n"
         + r"\renewcommand{\labtablesize}{" + str(plan['table_size']) + "}\n"
         + r"\renewcommand{\labtableleading}{" + str(plan['table_size'] * 1.15) + "}\n"
         + r"\begin{document}" + "\n"
         + r"\setcounter{page}{" + str(first_page) + "}\n"
-        + r"\fontsize{11}{" + str(plan['body_leading']) + r"}\selectfont" + "\n")
+        + r"\fontsize{\JAMTBodySize}{" + str(plan['body_leading']) + r"}\selectfont" + "\n")
     lines, columns, tail = [], False, False
 
     # Native Word floats may be anchored after a short editorial paragraph but
@@ -111,7 +106,7 @@ def render(blocks, project, plan):
         nonlocal columns
         if want_columns == columns:
             return
-        lines.append(r'\begin{multicols}{2}' if want_columns else r'\end{multicols}')
+        lines.append(r'\begin{multicols}{\JAMTColumns}' if want_columns else r'\end{multicols}')
         columns = want_columns
 
     previous_paragraph_heading = False
@@ -135,7 +130,6 @@ def render(blocks, project, plan):
             before,after = min(before,6),min(after,6)
         if caption and not faithful:
             before = after = plan['caption_gap']
-        align = {'center': r'\centering', 'right': r'\raggedleft', 'left': r'\RaggedRight', 'both': r'\justifying'}.get(spec.get('align'), r'\justifying')
         is_heading = role.startswith('heading_') or role.endswith('_heading') or role == 'author_information'
         if is_heading:
             lines.append(r'\needspace{4\baselineskip}')
@@ -143,8 +137,6 @@ def render(blocks, project, plan):
             lines.append(r'\needspace{2\baselineskip}')
         lines.append('% ' + block.id + ' ' + role)
         lines.append(r'\par')
-        if before:
-            lines.append(rf'\par\addvspace{{{before}pt}}')
         leading = plan['body_leading'] if pt == 11 and role in {'body', 'funding_text', 'acknowledgements_text', 'conflict_text'} else pt * 1.15
         indent = spec.get('first_indent', 0)
         text = block.tex
@@ -170,15 +162,11 @@ def render(blocks, project, plan):
         # Avoid a small initial label stranded on its own line.
         if len(block.text.strip()) < 35 and role in {'abstract', 'keywords'}:
             lines.append(r'\needspace{3\baselineskip}')
-        lines.append(r'{\selectlanguage{' + language + r'}\fontsize{' + str(pt) + '}{' + str(leading) + r'}\selectfont ' + align
-                     + rf'\setlength{{\parindent}}{{{indent}pt}}'
-                     + (r'\bfseries ' if spec.get('bold') else '')
-                     + (r'\itshape ' if spec.get('italic') else '')
-                     + hanging + (r'\noindent ' if not indent else '') + text + r'\par}')
-        if after:
-            lines.append(rf'\addvspace{{{after}pt}}')
+        template_role = role if role in style['roles'] else 'body'
+        options = f'language={language},before={before},after={after},leading={leading},indent={indent}'
+        lines.append(r'\JAMTParagraph[' + options + ']{' + template_role + '}{' + hanging + text + '}')
         if role == 'citation' and language == 'english':
-            lines.append(r'\par\noindent{\color{gray}\rule{\linewidth}{.25pt}}\par\nobreak')
+            lines.append(r'\JAMTFrontDivider')
         if is_heading:
             lines.append(r'\nobreak')
         previous_paragraph_heading = is_heading

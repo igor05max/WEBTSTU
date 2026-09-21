@@ -1,12 +1,29 @@
 # JAMT reference typesetter
 
-The 2026.4 style combines 24 published PDFs (293 pages, 2024 issues 1–4),
+The 2026.5 master template combines 24 published PDFs (293 pages, 2024 issues 1–4),
 five earlier PDF references and two genuinely editable final Word articles.
 The 24 Word copies in the new corpus contain page images, not editable articles;
 they are visual references only. The original corpus is not committed to Git.
-`jamt-reference.cls` is the reusable XeLaTeX class; article text, current author
+`jamt.cls` is the reusable XeLaTeX class; article text, current author
 metadata, figures, tables and equations are filled by the native DOCX bridge.
 No model weights are trained. Qwen provides constrained advice and visual review.
+
+## Master template
+
+`master_template.py` generates `jamt-profile.tex` from the same versioned JSON
+used by the native Word editor, including page geometry, columns and all
+paragraph roles. `jamt.cls` exposes semantic paragraph, heading, object and
+column commands. `master.tex` is the standalone starter; `TEMPLATE.md` explains
+each slot. `jamt-reference.cls` remains a compatibility alias.
+
+The JAMT workspace offers an authenticated starter download. Every successful
+article export bundles the identical class/profile, their hashes and its own
+content/assets. The template itself contains yellow prompts and explicitly
+demonstrative material, never borrowed author or publication metadata.
+
+Layout advice is checked against profile ranges: tables stay at 10 pt, body
+leading stays in the measured 12.4–12.7 pt range. The planner sees the current
+profile rather than a separate hard-coded list of typographic defaults.
 
 ## Web workflow
 

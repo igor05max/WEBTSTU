@@ -91,7 +91,7 @@ def prepare_jamt_style(directory, *, article_report=None, article_structure=None
     document.core_properties.author = ""
     normal = document.styles["Normal"]
     normal.font.name = style["font"]
-    normal.font.size = Pt(11)
+    normal.font.size = Pt(style['roles']['body']['pt'])
     # The stock DOCX theme otherwise wins over explicit font names when native
     # Header/Footer formatting is materialised into an unrelated manuscript.
     for fonts in document.styles.element.xpath('.//w:rFonts'):
@@ -128,7 +128,7 @@ def prepare_jamt_style(directory, *, article_report=None, article_structure=None
             "alignment": rule["align"],
             "spacing": {qn("w:before"): str(round(rule.get("before", 0) * 20)),
                         qn("w:after"): str(round(rule.get("after", 0) * 20)),
-                        qn("w:line"): "245" if role in {"body", "funding_text", "acknowledgements_text", "conflict_text"} else "240", qn("w:lineRule"): "auto"},
+                        qn("w:line"): str(round(240 * style['body_line_multiple'])) if role in {"body", "funding_text", "acknowledgements_text", "conflict_text"} else "240", qn("w:lineRule"): "auto"},
             "indentation": {qn("w:firstLine"): str(round(rule.get("first_indent", 0) * 20))},
         }
         if "right_tab" in rule:

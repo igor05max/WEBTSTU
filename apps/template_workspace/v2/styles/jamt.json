@@ -1,6 +1,6 @@
 {
   "id": "jamt",
-  "version": "2026.4",
+  "version": "2026.5",
   "name": "JAMT",
   "journal": "Journal of Advanced Materials and Technologies.",
   "references": [
@@ -218,6 +218,22 @@
     "03_Balabanov_Dyachkova_Gutnik_Chapaksov_Burakova_118-128 (2).docx"
   ],
   "body_line_multiple": 1.0208333333333333,
+  "latex": {
+    "body_leading": 12.7,
+    "front_gap": 11.5,
+    "caption_gap": 6.0,
+    "table_size": 10.0,
+    "head_height_pt": 16,
+    "head_sep_pt": 26,
+    "foot_skip_pt": 24,
+    "table_rule_pt": 1.5,
+    "layout_ranges": {
+      "body_leading": [12.4, 12.7],
+      "front_gap": [6.0, 11.5],
+      "caption_gap": [4.0, 7.0],
+      "table_size": [10.0, 10.0]
+    }
+  },
   "corpus_evidence": {
     "articles": 24,
     "pages": 293,

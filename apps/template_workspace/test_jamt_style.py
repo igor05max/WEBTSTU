@@ -25,7 +25,7 @@ from apps.template_workspace.v2.inspector.document import DocumentInspector
 from apps.template_workspace.v2.services import analysis_directory, run_v2_job
 from apps.template_workspace.v2.quality_cycle import run_quality_cycle
 from apps.template_workspace.v2.readability import QwenReadabilityProvider, run_readability_review
-from apps.template_workspace.v2.styles.jamt import prepare_jamt_style
+from apps.template_workspace.v2.styles.jamt import load_style, prepare_jamt_style
 
 
 def write_pdf(source, destination):
@@ -159,6 +159,20 @@ class PdfDeliveryTests(SimpleTestCase):
 
 @override_settings(TEMPLATE_V2_QWEN_ENABLED=False, TEMPLATE_V2_VISUAL_REVIEW_ENABLED=False)
 class JamtWorkspaceTests(TestCase):
+    def test_master_template_download_is_authenticated_complete_and_private(self):
+        from io import BytesIO
+        url = reverse('template_workspace:jamt_master_template')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        with ZipFile(BytesIO(b''.join(response.streaming_content))) as archive:
+            self.assertIn('jamt-profile.tex', archive.namelist())
+            self.assertIn('main.tex', archive.namelist())
+        page = self.client.get(reverse('template_workspace:jamt_workspace'))
+        self.assertContains(page, url)
+        self.client.logout()
+        self.assertEqual(self.client.get(url).status_code, 302)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -353,5 +367,5 @@ class JamtVisualReviewTests(SimpleTestCase):
         self.assertEqual(report['status'], 'reviewed')
         self.assertEqual(report['pages_checked'], [1])
         self.assertEqual(report['style']['id'], 'jamt')
-        self.assertEqual(report['style']['version'], '2026.4')
+        self.assertEqual(report['style']['version'], load_style()['version'])
         self.assertFalse(report['template_front_reference_available'])

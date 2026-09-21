@@ -18,17 +18,19 @@ logger = logging.getLogger(__name__)
 def export_jamt_latex(source, directory, baseline_pdf):
     from paper_formatter.latex_lab.bridge import NativeBridge
     from paper_formatter.latex_lab.typesetter import default_plan, render, compile_pdf
+    from paper_formatter.latex_lab.master_template import TEMPLATE_FILES, load_style
     from paper_formatter.latex_lab.quality import measure, gate
     directory, source = Path(directory), Path(source)
     project = directory/'latex'
     destination, bundle = directory/'result-latex.pdf', directory/'result-latex.zip'
-    report = {'status': 'unavailable', 'style_version': '2026.4', 'source_docx_sha256': sha256(source.read_bytes()).hexdigest(),
+    report = {'status': 'unavailable', 'style_version': load_style()['version'], 'source_docx_sha256': sha256(source.read_bytes()).hexdigest(),
               'content_source': 'reviewed_native_docx', 'native_output_changed': False}
     destination.unlink(missing_ok=True); bundle.unlink(missing_ok=True)
     try:
         blocks, manifest = NativeBridge(source, project).build()
         plan = default_plan(blocks, **{key: manifest[key] for key in ('running_footer', 'running_header', 'page_start', 'reference_layout')})
         render(blocks, project, plan)
+        report['template'] = plan['template']
         pdf, compilation = compile_pdf(project)
         metrics = measure(pdf, manifest, compilation)
         baseline = measure(baseline_pdf, manifest)
@@ -41,7 +43,7 @@ def export_jamt_latex(source, directory, baseline_pdf):
         with ZipFile(bundle, 'w', ZIP_DEFLATED) as archive:
             for path in sorted(project.rglob('*')):
                 relative = path.relative_to(project)
-                if path.is_file() and (relative.parts[0] in {'assets', 'fonts'} or path.name in {'main.tex', 'jamt-reference.cls', 'manifest.json', 'layout_plan.json'}):
+                if path.is_file() and (relative.parts[0] in {'assets', 'fonts'} or path.name in TEMPLATE_FILES | {'main.tex', 'manifest.json', 'layout_plan.json'}):
                     archive.write(path, relative.as_posix())
             archive.writestr('README.txt', 'Compile twice with XeLaTeX: xelatex -no-shell-escape main.tex\n'
                 'Requires TeX Live, Liberation Serif (or Times New Roman) and DejaVu Sans.\n'

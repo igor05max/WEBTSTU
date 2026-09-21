@@ -93,6 +93,15 @@ def owned_job(request, job_id, job_kind="v2"):
     return get_object_or_404(TemplateJob, pk=job_id, owner=request.user, kind=job_kind)
 
 
+@login_required
+@require_GET
+def jamt_master_template(request):
+    from paper_formatter.latex_lab.master_template import master_archive
+    response = FileResponse(master_archive(), as_attachment=True, filename='JAMT-master.zip', content_type='application/zip')
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
 def available_files(job):
     if job.pending or job.status == "failed":
         return []
