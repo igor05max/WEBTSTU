@@ -25,6 +25,10 @@ xelatex -no-shell-escape -halt-on-error main.tex
 и таблицу замените реальными данными рукописи.
 
 - `\JAMTParagraph[language=russian]{title}{Название}` — роль определяет оформление.
+- `\JAMTFrontStart` ставится один раз перед типом статьи и рубрикой первой страницы.
+- `\JAMTIdentifiers{УДК 620.3}{DOI: ...}` располагает УДК слева, DOI справа
+  на одной строке. Для отдельного DOI используйте роль `doi_metadata`.
+  Длинная пара переносится без уменьшения шрифта.
 - Роли первой части: `editorial_metadata`, `article_type`, `rubric`, `title`,
   `author`, `affiliation`, `email`, `abstract`, `keywords`, `citation`.
 - `\JAMTFrontDivider` разделяет английский и русский блоки.

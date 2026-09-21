@@ -412,7 +412,7 @@ class RoleClassifierV2:
             subtype, confidence = "rubric_label", 0.98
         elif i > 0 and re.search(r"\b(рубрика журнала|rubric|section)\s*:?$", paragraphs[i - 1].normalized_text.casefold()):
             role, subtype, confidence = "rubric", "rubric_value", 0.97
-        elif re.search(r"\bудк\b|\bdoi\s*:", lowered):
+        elif re.search(r"\b(?:удк|udc)\b|\bdoi\s*:|https?://(?:dx\.)?doi\.org/", lowered):
             subtype, confidence = "bibliographic_id", 0.99
         elif _is_jamt_rubric(lowered):
             role, subtype, confidence = "rubric", "rubric_value", 0.95
@@ -693,7 +693,7 @@ def _looks_like_sentence(text: str) -> bool:
 def _is_front_metadata_marker(lowered: str) -> bool:
     return _is_jamt_rubric(lowered) or bool(
         re.search(
-            r"\b(удк|doi|тип статьи|article type|рубрика журнала|rubric|short communications|original papers|review articles|nobelistics|нобелистика)\b",
+            r"\b(удк|udc|doi|тип статьи|article type|рубрика журнала|rubric|short communications|original papers|review articles|nobelistics|нобелистика)\b",
             lowered,
         )
     )

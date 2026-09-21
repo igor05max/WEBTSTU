@@ -20,6 +20,14 @@ def assess_existing_layout(report, structure):
     decisions = {b['id']: b for b in structure.blocks}
     counts = Counter(b['detected_role'] for b in structure.blocks)
     reasons = []
+    from .identifiers import identifier_kind
+    identifiers = [identifier_kind(p.text) for p in report.paragraphs
+                   if decisions.get(p.id, {}).get('zone') == 'front_matter'
+                   and decisions.get(p.id, {}).get('detected_role') == 'editorial_metadata']
+    if identifiers.count('udc') == identifiers.count('doi') == 1 and 'pair' not in identifiers:
+        # A former formatter could already match the fonts but put these fields
+        # on separate lines. It needs the normal, content-preserving row repair.
+        reasons.append('identifier_fields_separate')
     if counts['title'] < 2 or counts['abstract'] < 2 or counts['body'] < 12:
         reasons.append('insufficient_bilingual_journal_structure')
     if not counts['reference_item'] or not counts['author_information']:
@@ -92,8 +100,8 @@ def preserve_existing_layout(source, output, report, structure):
     """Return editor result if eligible, otherwise let the full formatter run.
 
     Keep the complete original package when no repair is needed. For outliers,
-    change only the dominant font or size on ordinary text runs; never change geometry,
-    paragraph boundaries, styles, fields, formulas, tables or media relationships.
+    repair dominant fonts, sizes and identifier alignment on ordinary paragraphs;
+    keep section geometry, paragraph boundaries, fields, formulas and media intact.
     """
     assessment = assess_existing_layout(report, structure)
     if not assessment['eligible']:
@@ -145,6 +153,10 @@ def preserve_existing_layout(source, output, report, structure):
                 for script in ('ascii', 'hAnsi', 'cs'):
                     fonts.set(qn('w:'+script), change['new_font'])
                 applied.append(change['id'])
+        from .identifiers import repair_existing_identifiers
+        identifier_repairs = repair_existing_identifiers(root, report, structure, load_style())
+        applied.extend(identifier_repairs)
+        assessment['identifier_repairs'] = identifier_repairs
         replacements = {'word/document.xml': _serialize_xml(root)} if applied else {}
         integrity = native_integrity(archive, root, replacements)
         if not integrity['passed']:
@@ -155,7 +167,7 @@ def preserve_existing_layout(source, output, report, structure):
         shutil.copy2(source, output)
     return SafeWordEditorResult(str(output), changes=[
         'Сохранена исходная журнальная вёрстка: секции, объекты, таблицы, формулы и колонтитулы.',
-        f'Исправлен шрифт или его размер в абзацах: {len(set(applied))}.' if applied else
+        f'Исправлена типографика или положение реквизитов в абзацах: {len(set(applied))}.' if applied else
         'Отклонений гарнитуры и кегля не обнаружено; DOCX сохранён без изменений. Внешний вид проверяется отдельно.'
     ], warnings=[], metrics={
         'reference_fidelity': assessment, 'formatted_paragraphs': len(set(applied)),

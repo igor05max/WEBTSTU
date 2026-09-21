@@ -9,6 +9,7 @@ import subprocess
 
 from .bridge import escaped
 from .master_template import load_style, write_template_files
+from apps.template_workspace.v2.styles.identifiers import identifier_kind
 
 
 def default_plan(blocks, *, running_footer='', reference_layout=False, running_header='', page_start=1):
@@ -83,6 +84,8 @@ def render(blocks, project, plan):
     # appear above it on the page. Float only the intact wide figure groups;
     # prose order and all scientific content remain unchanged.
     blocks = list(blocks)
+    if len(blocks) >= 2 and blocks[0].role == 'article_type' and blocks[1].role == 'rubric':
+        lines.append(r'\JAMTFrontStart')
     moves = []
     if plan.get('reference_layout'):
         i = 0
@@ -113,12 +116,15 @@ def render(blocks, project, plan):
     def paragraph(block, caption=False):
         nonlocal previous_paragraph_heading
         role = 'figure_caption' if caption else block.role
+        identifier = identifier_kind(block.text) if role == 'editorial_metadata' and block.zone == 'front_matter' else ''
+        if identifier == 'doi':
+            role = 'doi_metadata'
         spec = style['roles'].get(role, style['roles']['body'])
         pt = spec.get('pt', 11)
         faithful = plan.get('reference_layout', False)
         before = block.space_before if faithful else spec.get('before', 0)
         after = block.space_after if faithful else spec.get('after', 0)
-        if role == 'editorial_metadata' and ('[MISSING:' in block.text or '[НЕ УКАЗАНО:' in block.text):
+        if role in {'editorial_metadata', 'doi_metadata'} and ('[MISSING:' in block.text or '[НЕ УКАЗАНО:' in block.text):
             after = 4
         if role == 'received_metadata':
             position = next((i for i, b in enumerate(blocks) if b.id == block.id), 0)
@@ -157,13 +163,23 @@ def render(blocks, project, plan):
                 lines.append(r'\jamtlicense{' + logo[0] + '}{' + text_without_logo + '}')
                 return
         if role == 'editorial_metadata':
-            text = text.replace(r'\quad ', r'\hfill ')
+            if identifier == 'pair' and r'\quad ' in text:
+                left, right = text.split(r'\quad ', 1)
+                # A source hyperlink or emphasis group may cross the tab. Do
+                # not split its TeX braces; ordinary glue retains that group.
+                depth = sum(1 if m[0] == '{' else -1 for m in re.finditer(r'(?<!\\)[{}]', left))
+                text = (r'\JAMTIdentifierLine{' + left + '}{' + right.replace(r'\quad ', ' ') + '}'
+                        if depth == 0 else text.replace(r'\quad ', r'\hfill '))
+            else:
+                text = text.replace(r'\quad ', r'\hfill ')
         language = 'russian' if len(re.findall('[А-Яа-яЁё]', block.text)) > len(re.findall('[A-Za-z]', block.text)) else 'english'
         # Avoid a small initial label stranded on its own line.
         if len(block.text.strip()) < 35 and role in {'abstract', 'keywords'}:
             lines.append(r'\needspace{3\baselineskip}')
         template_role = role if role in style['roles'] else 'body'
         options = f'language={language},before={before},after={after},leading={leading},indent={indent}'
+        if is_heading:
+            options += ',keepnext=true'
         lines.append(r'\JAMTParagraph[' + options + ']{' + template_role + '}{' + hanging + text + '}')
         if role == 'citation' and language == 'english':
             lines.append(r'\JAMTFrontDivider')

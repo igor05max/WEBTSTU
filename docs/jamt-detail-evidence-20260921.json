@@ -1,0 +1,879 @@
+{
+  "summary": {
+    "articles": 20,
+    "pages": 248,
+    "doi_udc_same_baseline": 20,
+    "doi_right_edge_pt": {
+      "min": 544.593,
+      "max": 544.621
+    },
+    "udc_left_edge_pt": {
+      "min": 51.0,
+      "max": 51.06
+    },
+    "doi_sizes": {
+      "9.96": 9,
+      "10.02": 11
+    },
+    "issue_selection": {
+      "01": 5,
+      "02": 5,
+      "03": 5,
+      "04": 5
+    }
+  },
+  "articles": [
+    {
+      "document": "JAMT_2024_278016.pdf",
+      "sha256": "9c626e1cf43efd1b2eafc6a7e7c867960ffefe90f6c28e81bc084ee26f935eac",
+      "pages": 4,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.01.pp.008-011",
+        "bbox": [
+          380.11,
+          108.266,
+          544.6,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.01.pp.008-011",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 06.068+657:616.43",
+        "bbox": [
+          51.0,
+          108.266,
+          152.489,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "УДК 06.068+657:616.43",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278018.pdf",
+      "sha256": "ce2451a5ea6cdb02f528e9213c9ec3f9996acea69cc080bb803f13ce3977b700",
+      "pages": 11,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.01.pp.012-022",
+        "bbox": [
+          380.11,
+          108.266,
+          544.6,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.01.pp.012-022",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 546.26-162; 66.094.3; 661.66",
+        "bbox": [
+          51.0,
+          108.266,
+          193.12,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "УДК 546.26-162;",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          },
+          {
+            "text": "66.094.3; 661.66",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          },
+          {
+            "text": "",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278019.pdf",
+      "sha256": "b0b2c770c9125b0ec5e2f9dc379d36c371748043a803ec496a8d9bd265e82be5",
+      "pages": 14,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.01.pp.023-036",
+        "bbox": [
+          380.11,
+          105.266,
+          544.6,
+          116.291
+        ],
+        "baseline": 114.14,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.01.pp.023-036",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 114.14
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 537.533.2; 535.375.54",
+        "bbox": [
+          51.0,
+          105.266,
+          164.331,
+          116.291
+        ],
+        "baseline": 114.14,
+        "spans": [
+          {
+            "text": "УДК 537.533.2; 535.375.54",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 114.14
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278021.pdf",
+      "sha256": "6d3d18129f23d232dd001e5090c4a9645d3853365d139f0c49eee66b6200c1f3",
+      "pages": 16,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.01.pp.044-059",
+        "bbox": [
+          380.11,
+          108.266,
+          544.6,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.01.pp.044-059",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 621.6.04.001.5",
+        "bbox": [
+          51.0,
+          108.266,
+          134.023,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "УДК 621.6.04.001.5",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278023.pdf",
+      "sha256": "b6583afeebf6f5fac2889163ec618c92e7de7dbfeb2c0f9900176b340168015e",
+      "pages": 15,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.01.pp.060-074",
+        "bbox": [
+          380.11,
+          108.266,
+          544.6,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.01.pp.060-074",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 004; 531-2; 535; 620-22",
+        "bbox": [
+          51.0,
+          108.266,
+          171.68,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "УДК 004; 531-2; 535; 620-22",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_279620.pdf",
+      "sha256": "e03ed3ecf930bd39152a7b7354f8888895eaca4c58c12af868d1d4895606969b",
+      "pages": 7,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.02.pp.084-090",
+        "bbox": [
+          380.133,
+          108.312,
+          544.603,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.02.pp.084-090",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 546.26-162",
+        "bbox": [
+          51.06,
+          108.312,
+          120.06,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 546.26-162",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_279621.pdf",
+      "sha256": "336480d9f7754eb46313b77a5d02f04962d6516839738346178cfa6f826f9edf",
+      "pages": 9,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.02.pp.091-099",
+        "bbox": [
+          380.15,
+          108.312,
+          544.62,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.02.pp.091-099",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 691.3:539.2",
+        "bbox": [
+          51.06,
+          108.312,
+          121.937,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 691.3:539.2",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_279624.pdf",
+      "sha256": "cfc03473a1b857855ebd9359dba1bb5de9c014e3945d8fa1542a4c8900589307",
+      "pages": 10,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.02.pp.100-109",
+        "bbox": [
+          380.144,
+          105.972,
+          544.593,
+          117.064
+        ],
+        "baseline": 114.9,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.02.pp.100-109",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 114.9
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 678.019.391",
+        "bbox": [
+          51.06,
+          105.972,
+          124.212,
+          117.064
+        ],
+        "baseline": 114.9,
+        "spans": [
+          {
+            "text": "УДК 678.019.391",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 114.9
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_279635.pdf",
+      "sha256": "44118d6c94766f2e57acbec253434ce7067694f2bd99a73a5e673e44ce4761d3",
+      "pages": 10,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.02.pp.122-131",
+        "bbox": [
+          380.163,
+          108.312,
+          544.612,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.02.pp.122-131",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 66.021:66.081.32",
+        "bbox": [
+          51.06,
+          108.312,
+          144.453,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 66.021:66.081.32",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_279643.pdf",
+      "sha256": "e3af7b6299799d38999365223f16a75fccfe2c98c819025b39de2e300d1a20f0",
+      "pages": 20,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.02.pp.132-151",
+        "bbox": [
+          380.11,
+          108.266,
+          544.6,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.02.pp.132-151",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 541.64:539.2",
+        "bbox": [
+          51.0,
+          108.266,
+          126.842,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "УДК 541.64:539.2",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278738.pdf",
+      "sha256": "42830e3f497d37df262efe520ea87029ec33c3e5e468227c795ac72d70848574",
+      "pages": 7,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.03.pp.160-166",
+        "bbox": [
+          380.11,
+          108.266,
+          544.6,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.03.pp.160-166",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 546.824:665.7.035.8",
+        "bbox": [
+          51.0,
+          108.266,
+          156.85,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "УДК 546.824:665.7.035.8",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278739.pdf",
+      "sha256": "19d6d96bda833dac465e40e2d473839e9c3a0162751995bfb99219224caa1eee",
+      "pages": 10,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.03.pp.167-176",
+        "bbox": [
+          380.131,
+          108.312,
+          544.621,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.03.pp.167-176",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 544.6",
+        "bbox": [
+          51.06,
+          108.312,
+          96.657,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 544.6",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278740.pdf",
+      "sha256": "8492edf8200f29af6585d0a78b91e0f8399ef5cd2070b87c1795c6cf2f8aa06b",
+      "pages": 11,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.03.pp.177-187",
+        "bbox": [
+          380.095,
+          108.312,
+          544.604,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.03.pp.177-187",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 66.081.3",
+        "bbox": [
+          51.06,
+          108.312,
+          109.16,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 66.081.3",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278741.pdf",
+      "sha256": "34e4037acbaaeeb49b988c508f55e01f951c3e9372753a385fea46071a73cdb8",
+      "pages": 19,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.03.pp.188-206",
+        "bbox": [
+          380.144,
+          108.312,
+          544.593,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.03.pp.188-206",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 544.022.537",
+        "bbox": [
+          51.06,
+          108.312,
+          124.212,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 544.022.537",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278747.pdf",
+      "sha256": "7ada5d7fb163e3e99c03a7c47d3899ba57f836bca929d2c9e1bc6f141e54d60a",
+      "pages": 29,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.03.pp.207-235",
+        "bbox": [
+          380.11,
+          104.786,
+          544.6,
+          115.811
+        ],
+        "baseline": 113.66,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.03.pp.207-235",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 113.66
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 620.3",
+        "bbox": [
+          51.0,
+          104.786,
+          96.684,
+          115.811
+        ],
+        "baseline": 113.66,
+        "spans": [
+          {
+            "text": "УДК 620.3",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 113.66
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278509.pdf",
+      "sha256": "6f94beb5ec8c79bba89fbee24ce840daab257a6ad8e6025b142f86102e24f7bd",
+      "pages": 13,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.04.pp.244-256",
+        "bbox": [
+          380.13,
+          108.312,
+          544.6,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.04.pp.244-256",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 662.215",
+        "bbox": [
+          51.06,
+          108.312,
+          106.677,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 662.215",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278523.pdf",
+      "sha256": "3de72b098a260921934aa6dd443205af0bd75576b4ecdba54ceab1188f8813a0",
+      "pages": 9,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.04.pp.267-275",
+        "bbox": [
+          380.151,
+          108.312,
+          544.6,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.04.pp.267-275",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 544.3-971.2",
+        "bbox": [
+          51.06,
+          108.312,
+          122.539,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 544.3-971.2",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278537.pdf",
+      "sha256": "49112cd963a7783a1ec945b21253448c95a5cb48c3fd95379ebb4426105b3c66",
+      "pages": 10,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.04.pp.276-285",
+        "bbox": [
+          380.131,
+          108.312,
+          544.621,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.04.pp.276-285",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 538.9",
+        "bbox": [
+          51.06,
+          108.312,
+          96.657,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 538.9",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278542.pdf",
+      "sha256": "1c131aa736a68725ef66818cc8d55945f57125d15d5440751ce6887df3eb57ad",
+      "pages": 10,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.04.pp.286-295",
+        "bbox": [
+          380.148,
+          108.312,
+          544.597,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.04.pp.286-295",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 544.723:544.34",
+        "bbox": [
+          51.06,
+          108.312,
+          136.936,
+          119.404
+        ],
+        "baseline": 117.24,
+        "spans": [
+          {
+            "text": "УДК 544.723:544.34",
+            "font": "TimesNewRoman",
+            "size": 10.02,
+            "baseline": 117.24
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    },
+    {
+      "document": "JAMT_2024_278604.pdf",
+      "sha256": "86881a07b6cb769e931fc57e6f6c82bcf60d0d7b6d3d9ccef82562ab65fd141c",
+      "pages": 14,
+      "doi": {
+        "text": "DOI: 10.17277/jamt.2024.04.pp.312-325",
+        "bbox": [
+          380.11,
+          108.266,
+          544.6,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "DOI: 10.17277/jamt.2024.04.pp.312-325",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "udc": {
+        "text": "УДК 537.533",
+        "bbox": [
+          51.0,
+          108.266,
+          106.593,
+          119.291
+        ],
+        "baseline": 117.14,
+        "spans": [
+          {
+            "text": "УДК 537.533",
+            "font": "Times New Roman",
+            "size": 9.96,
+            "baseline": 117.14
+          }
+        ]
+      },
+      "doi_udc_same_baseline": true
+    }
+  ]
+}

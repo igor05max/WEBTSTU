@@ -43,6 +43,7 @@ def write_template_files(project):
                r'\def\JAMTColumnGap{' + number(style['column_gap_twips'] / 20) + 'bp}',
                r'\def\JAMTBodySize{' + number(style['roles']['body']['pt']) + '}',
                r'\def\JAMTBodyLeading{' + number(latex['body_leading']) + '}',
+               r'\def\JAMTFrontOffset{' + number(latex['front_offset_pt']) + 'pt}',
                r'\def\JAMTBodyIndent{' + number(style['roles']['body'].get('first_indent', 0)) + 'pt}',
                r'\def\JAMTTableRule{' + number(latex['table_rule_pt']) + 'pt}',
                r'\def\JAMTTableSize{' + number(latex['table_size']) + '}']

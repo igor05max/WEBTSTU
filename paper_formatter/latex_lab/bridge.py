@@ -534,7 +534,7 @@ class NativeBridge:
         if math_columns and len(grid) == 3 and not self.reference_layout:
             grid = [200 if i in math_columns else (70 if i == 2 else 140) for i in range(3)]
         total = sum(grid)
-        cell_align = r'\RaggedRight' if prose_layout else r'\centering'
+        cell_align = r'\justifying' if prose_layout else r'\centering'
         spec = '@{}' + ''.join('>{' + cell_align + r'\arraybackslash}p{' + f'{n/total:.6f}' + r'\labtablewidth}' for n in grid) + '@{}'
         lines = [r'\begingroup\setlength{\tabcolsep}{3pt}',
                  rf'\setlength{{\labtablewidth}}{{\dimexpr\linewidth-{6*(len(grid)-1)}pt\relax}}',
@@ -559,7 +559,22 @@ class NativeBridge:
                 span = int(span_node.get(qn('w:val'), 1)) if span_node is not None else 1
                 if span < 1 or col + span > len(grid):
                     raise UnsupportedContent('Invalid table merge grid.')
-                content = r'\par '.join(self.inline(p) for p in cell.findall('w:p', NS))
+                paragraphs = []
+                for p in cell.findall('w:p', NS):
+                    paragraph_tex = self.inline(p)
+                    jc = p.find('w:pPr/w:jc', NS)
+                    align = jc.get(qn('w:val')) if jc is not None else None
+                    # Native table rules distinguish prose columns from numeric
+                    # columns. Keep that decision in PDF, including merged cells.
+                    command = {'left': r'\RaggedRight', 'both': r'\justifying',
+                               'right': r'\raggedleft', 'center': r'\centering'}.get(align)
+                    if command and not prose_layout:
+                        # The p-column already groups its cell. Ending the last
+                        # paragraph inside an extra group creates an empty line
+                        # when array inserts its final strut, inflating every row.
+                        paragraph_tex = command + r'\arraybackslash ' + paragraph_tex
+                    paragraphs.append(paragraph_tex)
+                content = r'\par '.join(paragraphs)
                 if cell.xpath('.//m:oMath|.//w:object', namespaces=NS):
                     content = content.replace(r'\(', r'\(\displaystyle ')
                 content = content.strip() or r'\strut'

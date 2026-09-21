@@ -93,6 +93,25 @@ class ReferenceFidelityTests(TestCase):
         self.assertFalse(assessment['eligible'])
         self.assertIn('page_margins', assessment['reasons'])
 
+    def test_separate_identifiers_cannot_bypass_row_repair_in_matching_layout(self):
+        source, structure = self.source()
+        doc = Document(source)
+        first = doc.paragraphs[0]
+        first.insert_paragraph_before('UDC 620.3')
+        first.insert_paragraph_before('DOI: 10.9999/layout-test')
+        doc.save(source)
+        for block in structure.blocks:
+            block['id'] = f"block_{int(block['id'].split('_')[-1]) + 2:04d}"
+        structure.blocks[:0] = [
+            {'id': f'block_{i:04d}', 'detected_role': 'editorial_metadata', 'zone': 'front_matter'}
+            for i in (1, 2)
+        ]
+        report = DocumentInspector(source).inspect()
+        assessment = assess_existing_layout(report, structure)
+        self.assertEqual(assessment['reasons'], ['identifier_fields_separate'])
+        self.assertFalse(assessment['eligible'])
+        self.assertIsNone(preserve_existing_layout(source, self.root/'result.docx', report, structure))
+
     def test_isolated_font_family_change_is_repaired(self):
         source, structure = self.source()
         doc = Document(source)

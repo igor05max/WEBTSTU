@@ -164,7 +164,7 @@ class LatexBridgeTests(unittest.TestCase):
         table.cell(0,2).text='Первый автор, подразделение и организация. '*5
         blocks,manifest=self.build(doc)
         self.assertNotIn(r'\toprule',blocks[0].tex)
-        self.assertIn(r'\RaggedRight',blocks[0].tex)
+        self.assertIn(r'\justifying',blocks[0].tex)
         self.assertTrue(manifest['text_transfer']['exact'])
 
     def test_tracked_deletion_is_not_silently_accepted(self):

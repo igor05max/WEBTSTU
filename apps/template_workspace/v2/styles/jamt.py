@@ -35,7 +35,8 @@ def visual_review_rules():
                               if key in {"pt", "align", "bold", "italic", "first_indent"}}
                        for role in ("title", "author", "affiliation", "abstract", "body", "heading_1",
                                     "heading_2", "figure_caption", "table_caption", "table_body", "reference_item",
-                                    "funding_text", "author_information")},
+                                    "funding_text", "author_information", "author_bio", "editorial_metadata",
+                                    "doi_metadata", "article_type", "rubric", "received_metadata")},
         "journal_header": "Published reference: black bold italic, alternating outer alignment and double rules. Preserve existing source issue metadata.",
         "quality_rules": style.get('quality_rules', []),
     }
@@ -54,6 +55,11 @@ def _furniture(paragraph, style, *, footer=False, author="", even=False):
     paragraph.paragraph_format.space_after = Pt(0)
     paragraph.paragraph_format.line_spacing = 1
     properties = paragraph._p.get_or_add_pPr()
+    if not footer:
+        width = style['page_twips']['w'] - style['margins_twips']['left'] - style['margins_twips']['right']
+        _rule(properties, 'framePr', w=width, h=340, hAnchor='page', vAnchor='page',
+              x=style['margins_twips']['left'], y=style['furniture']['header_frame_y_twips'],
+              wrap='notBeside', hRule='atLeast')
     _rule(properties, "jc", val="left" if footer or even else "right")
     borders = _rule(properties, "pBdr")
     _rule(borders, "top" if footer else "bottom", val="thickThinSmallGap" if footer else "thinThickSmallGap", sz=24, space=1, color="000000")

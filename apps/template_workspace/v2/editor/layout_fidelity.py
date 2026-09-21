@@ -181,7 +181,7 @@ def align_standalone_picture(p, layout, *, full_width=False):
 
 def scientific_table_rules(table, info, *, structure=None, audit=None, journal=False):
     """Horizontal rules follow native headings/groups, not physical row count."""
-    if info is None or info.classification == 'FIGURE_CONTAINER':
+    if info is None or info.classification == 'FIGURE_CONTAINER' or parallel_text_layout(table):
         return 0
     structure = structure or analyze_table_structure(table)
     if structure.nested:

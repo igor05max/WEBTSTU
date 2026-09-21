@@ -1,6 +1,6 @@
 {
   "id": "jamt",
-  "version": "2026.5",
+  "version": "2026.6",
   "name": "JAMT",
   "journal": "Journal of Advanced Materials and Technologies.",
   "references": [
@@ -197,7 +197,7 @@
     },
     "author_bio": {
       "pt": 10,
-      "align": "left"
+      "align": "both"
     },
     "received_metadata": {
       "pt": 10,
@@ -211,6 +211,11 @@
       "align": "both",
       "before": 6,
       "after": 6
+    },
+    "doi_metadata": {
+      "pt": 10,
+      "align": "right",
+      "after": 11.5
     }
   },
   "word_references": [
@@ -224,22 +229,38 @@
     "caption_gap": 6.0,
     "table_size": 10.0,
     "head_height_pt": 16,
-    "head_sep_pt": 26,
+    "head_sep_pt": 16.5,
     "foot_skip_pt": 24,
     "table_rule_pt": 1.5,
     "layout_ranges": {
-      "body_leading": [12.4, 12.7],
-      "front_gap": [6.0, 11.5],
-      "caption_gap": [4.0, 7.0],
-      "table_size": [10.0, 10.0]
-    }
+      "body_leading": [
+        12.4,
+        12.7
+      ],
+      "front_gap": [
+        6.0,
+        11.5
+      ],
+      "caption_gap": [
+        4.0,
+        7.0
+      ],
+      "table_size": [
+        10.0,
+        10.0
+      ]
+    },
+    "front_offset_pt": -25.5
   },
   "corpus_evidence": {
     "articles": 24,
     "pages": 293,
     "publication_year": 2024,
     "word_copies_are_page_images": true,
-    "body_baseline_typical_pt": [12.4, 12.7],
+    "body_baseline_typical_pt": [
+      12.4,
+      12.7
+    ],
     "table_policy": "Open horizontal rules; repeated headers for multipage tables; no vertical rules unless source semantics require them.",
     "front_matter_policy": "Full width; English then Russian; natural page continuation; never shrink to force a one-page front."
   },
@@ -248,6 +269,36 @@
     "Preserve source line breaks, native equations, table merges and image crops.",
     "Figure caption: 10 pt; table caption: 11 pt.",
     "Author information heading: 12 pt; body and funding prose: 11 pt.",
-    "Keep already conforming journal layout; inspect render before moving objects."
-  ]
+    "Keep already conforming journal layout; inspect render before moving objects.",
+    "First page: article type, rubric, UDC left and DOI right on the same baseline, then title. Both identifiers are 10 pt regular.",
+    "A stand-alone article DOI is right-aligned. A DOI inside a citation or reference is ordinary inline text.",
+    "Identifier text, hyperlink targets, highlighted errors and missing-field prompts must survive layout unchanged. Long identifiers may wrap; never shrink the font or overlap.",
+    "Author biographies: 10 pt justified parallel English/Russian columns, preserve name emphasis and author pairing.",
+    "Editorial dates: 10 pt italic, right aligned after author information, before copyright; preserve the supplied date text.",
+    "Caption stays with its object: table caption above, figure caption below. Label bold; caption text regular. Preserve source punctuation and numbering.",
+    "Tables use horizontal top, header and bottom rules; merged header bands and source cell semantics are retained. No decorative cell fills or vertical grid.",
+    "Running header uses source issue/year/volume only; absent DOI, year, volume, issue and dates are yellow prompts, never reference-article facts.",
+    "First-page rubric is an auto-height frame above ordinary body flow: article type glyph top about 74.4 pt, rubric 85.9 pt. Running header glyph top about 54.6 pt; do not apply these first-page offsets to subsequent body pages."
+  ],
+  "detail_evidence": {
+    "articles": 20,
+    "pages_measured": 248,
+    "issues": 4,
+    "udc_doi_same_baseline": 20,
+    "udc_left_pt": [
+      51.0,
+      51.06
+    ],
+    "doi_right_pt": [
+      544.59,
+      544.63
+    ],
+    "identifier_font_pt": 10,
+    "audit_script": "tools/audit_jamt_details.py",
+    "rules": "docs/JAMT_DETAILS_20260921.md"
+  },
+  "furniture": {
+    "header_frame_y_twips": 1083,
+    "front_frame_y_twips": 1478
+  }
 }

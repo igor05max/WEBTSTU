@@ -322,6 +322,8 @@ class SafeWordEditor:
             front_stats = _normalise_front_matter(body, meta_by_node, template_profile)
             metrics.update(front_stats)
             if template_profile.style_id == 'jamt':
+                from ..styles.identifiers import arrange_identifiers
+                metrics['identifier_rows_arranged'] = arrange_identifiers(body, meta_by_node)
                 # Drafts often put editorial dates before References. Move the
                 # original paragraphs together to the journal's closing block.
                 dates = [n for n in body if meta_by_node.get(n) and meta_by_node[n].role == 'received_metadata']
@@ -387,6 +389,10 @@ class SafeWordEditor:
                 if not normalize_text(element_text(child)):
                     continue
                 profile = template_profile.roles.get(role or "")
+                if template_profile.style_id == 'jamt' and role == 'editorial_metadata' and meta.zone == 'front_matter':
+                    from ..styles.identifiers import identifier_kind
+                    if identifier_kind(element_text(child)) == 'doi':
+                        profile = template_profile.roles['doi_metadata']
                 if (template_profile.style_id and role == 'author_information'
                         and not re.match(r'^(?:Information about (?:the )?authors|Информация об авторах)', normalize_text(element_text(child)), re.I)):
                     profile = template_profile.roles.get('author_bio') or profile
@@ -586,11 +592,11 @@ class SafeWordEditor:
                             # Use body typography and retain the author's name emphasis.
                             prose = template_profile.roles.get('author_bio') or template_profile.roles.get('body')
                             if prose:
-                                cell_format = {**prose.typical_paragraph_formatting, 'alignment':'left',
+                                cell_format = {**prose.typical_paragraph_formatting,
                                                'indentation':{qn('w:left'):'0', qn('w:right'):'0', qn('w:firstLine'):'0'}}
                                 for cell_p in child.xpath('./w:tr/w:tc/w:p', namespaces=NS):
                                     _apply_role_format(cell_p, 'body', cell_format, prose.typical_run_formatting)
-                        if not table_evidence and info and info.classification != 'FIGURE_CONTAINER' and not table_structure.nested:
+                        if not table_evidence and info and info.classification != 'FIGURE_CONTAINER' and not table_structure.nested and not _parallel_text_layout(child):
                             body_profile = template_profile.roles.get('table_body') or template_profile.roles.get('body')
                             if body_profile:
                                 for cell_p in child.xpath('./w:tr/w:tc/w:p', namespaces=NS):
@@ -636,6 +642,9 @@ class SafeWordEditor:
             metrics['picture_caption_atomic_rows'] = wrap_picture_captions(body, meta_by_node, layout, full_width_nodes)
             metrics['hidden_equation_controls_guarded'] = hide_equation_control_fields(body)
             metrics['vml_canvases_normalized'] = normalize_vml_canvases(body)
+            if template_profile.style_id == 'jamt':
+                from ..styles.front_furniture import position_front_labels
+                metrics['front_labels_positioned'] = position_front_labels(body, meta_by_node)
             recoveries = content_guard.recover()
             metrics['local_content_recoveries'] = recoveries
             metrics['local_content_recovery_count'] = len(recoveries)
@@ -644,6 +653,9 @@ class SafeWordEditor:
                 f"отменено небезопасное изменение ({', '.join(event['losses'])}); "
                 "исходное содержимое фрагмента восстановлено. Остальное оформление сохранено."
                 for event in recoveries)
+            if template_profile.style_id == 'jamt':
+                from ..styles.author_columns import arrange_author_columns
+                metrics['bilingual_author_groups_arranged'] = arrange_author_columns(body, meta_by_node)
             replacements: dict[str, bytes] = {"word/document.xml": _serialize_xml(document_root)}
             if copy_template_headers:
                 author_short = _article_author_shortline(article_structure, article_report)

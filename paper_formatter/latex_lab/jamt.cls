@@ -1,5 +1,5 @@
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesClass{jamt}[2026/09/21 JAMT master template 2026.5]
+\ProvidesClass{jamt}[2026/09/21 JAMT master template 2026.6]
 \LoadClass[11pt,a4paper,twoside]{article}
 \RequirePackage{keyval}
 % The generated profile is also the native Word formatting contract.
@@ -41,6 +41,9 @@
 \setlength{\multicolsep}{6pt}
 \raggedcolumns
 \setcounter{collectmore}{-1}
+% multicol otherwise accepts a final balanced column up to 12 pt too tall,
+% which can put the last line over the footer rule. Reflow such a column.
+\setlength{\maxbalancingoverflow}{0pt}
 % multicol can log an overfull trial before rejecting it and shipping a
 % correctly split page. Trace the disposition, without changing pagination.
 % Only warnings enclosed in a confirmed discarded trial may be excluded.
@@ -81,17 +84,36 @@
 \define@key{JAMTparagraph}{after}{\def\JAMT@after{#1}}
 \define@key{JAMTparagraph}{leading}{\def\JAMT@leading{#1}}
 \define@key{JAMTparagraph}{indent}{\def\JAMT@indent{#1}}
+\newif\ifJAMT@keepnext
+\define@key{JAMTparagraph}{keepnext}{\csname JAMT@keepnext#1\endcsname}
 \newcommand{\JAMTParagraph}[3][]{%
   \par\begingroup
   \@ifundefined{JAMT@role@#2}{\ClassError{jamt}{Unknown paragraph role #2}{See TEMPLATE.md.}}{\csname JAMT@role@#2\endcsname}%
-  \def\JAMT@language{english}\setkeys{JAMTparagraph}{#1}%
+  \def\JAMT@language{english}\JAMT@keepnextfalse\setkeys{JAMTparagraph}{#1}%
   \ifdim\JAMT@before pt>0pt\addvspace{\JAMT@before pt}\fi
   {\selectlanguage{\JAMT@language}\fontsize{\JAMT@size}{\JAMT@leading}\selectfont
    \JAMT@align\setlength{\parindent}{\JAMT@indent pt}\JAMT@emphasis
    \ifdim\JAMT@indent pt=0pt\noindent\fi #3\par}%
+  % Protect both sides of the heading's spacing. A penalty added only after
+  % the glue still permits a column break immediately before that glue.
+  \ifJAMT@keepnext\nobreak\fi
   \ifdim\JAMT@after pt>0pt\addvspace{\JAMT@after pt}\fi
+  \ifJAMT@keepnext\nobreak\fi
   \endgroup}
-\newcommand{\JAMTHeading}[2][heading_1]{\needspace{4\baselineskip}\JAMTParagraph{#1}{#2}\nobreak}
+\newcommand{\JAMTHeading}[2][heading_1]{\needspace{4\baselineskip}\JAMTParagraph[keepnext=true]{#1}{#2}}
+\newcommand{\JAMTFrontStart}{\vspace*{\JAMTFrontOffset}}
+% Short identifiers share a baseline. A long field wraps at full width,
+% retaining DOI's right alignment instead of colliding with the UDC.
+\newsavebox{\JAMT@identifierleft}
+\newsavebox{\JAMT@identifierright}
+\newcommand{\JAMTIdentifierLine}[2]{%
+  \sbox{\JAMT@identifierleft}{#1}\sbox{\JAMT@identifierright}{#2}%
+  \ifdim\dimexpr\wd\JAMT@identifierleft+\wd\JAMT@identifierright+1em\relax>\linewidth
+    {\RaggedRight\noindent #1\par}{\raggedleft\noindent #2\par}%
+  \else
+    \noindent\makebox[\linewidth][s]{\usebox{\JAMT@identifierleft}\hfill\usebox{\JAMT@identifierright}}\par
+  \fi}
+\newcommand{\JAMTIdentifiers}[2]{\JAMTParagraph{editorial_metadata}{\JAMTIdentifierLine{#1}{#2}}}
 \newcommand{\JAMTFrontDivider}{\par\noindent{\color{gray}\rule{\linewidth}{.25pt}}\par\nobreak}
 \newenvironment{JAMTBody}{\begin{multicols}{\JAMTColumns}}{\end{multicols}}
 \newenvironment{JAMTObject}{\par\addvspace{6pt}\noindent\begin{minipage}{\linewidth}\centering}{\end{minipage}\par\addvspace{6pt}}
