@@ -2783,7 +2783,7 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("formatting_template_file", form.errors)
 
-    def test_article_accepts_plain_template_description(self):
+    def test_article_requires_file_when_only_description_is_posted(self):
         description = (
             "Формат A4, поля 2 см. Times New Roman 14 пт, интервал 1,5. "
             "Обязательны аннотация и ключевые слова."
@@ -2798,11 +2798,18 @@ class SubmissionFormattingTemplateTests(TestCase):
             current_user=self.user,
         )
 
-        self.assertTrue(form.is_valid(), form.errors)
-        self.assertEqual(
-            form.cleaned_data["formatting_template_description"],
-            description,
-        )
+        self.assertFalse(form.is_valid())
+        self.assertNotIn("formatting_template_description", form.fields)
+        self.assertIn("formatting_template_file", form.errors)
+
+    def test_create_page_uses_file_for_template_requirements(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("submissions:create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Правила оформления извлекаются из его файла")
+        self.assertContains(response, "Перетащите файл шаблона сюда")
+        self.assertNotContains(response, "id_formatting_template_description")
 
     @patch("apps.submissions.views.queue_submission_template_processing")
     def test_existing_submission_can_receive_description_template(

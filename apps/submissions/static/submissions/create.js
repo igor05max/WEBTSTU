@@ -9,7 +9,8 @@
         var topicHidden = document.getElementById("id_publication_topic");
         var templateHidden = document.getElementById("id_formatting_template");
         var templateFile = document.getElementById("id_formatting_template_file");
-        var templateDescription = document.getElementById("id_formatting_template_description");
+        var templateBadge = document.querySelector("[data-template-badge]");
+        var templateUploadLabel = document.querySelector("[data-template-upload-label]");
         var journalField = document.querySelector("[data-destination-field='journal']");
         var topicField = document.querySelector("[data-destination-field='topic']");
         var journalTrends = document.querySelector("[data-journal-trends]");
@@ -21,6 +22,7 @@
         var templateMeta = document.querySelector("[data-template-meta]");
         var templateDownload = document.querySelector("[data-template-download]");
         var templateLatexDownload = document.querySelector("[data-template-latex-download]");
+        var templateActions = document.querySelector(".formatting-template-actions");
         var rulesPanel = document.querySelector("[data-template-rules]");
         var rulesList = document.querySelector("[data-template-rules-list]");
         if (!articleType || !journalInput || !journalHidden || !topicInput || !topicHidden || !templateHidden) {
@@ -106,10 +108,12 @@
         }
 
         function renderTemplate(template) {
+            var uploadedFile = templateFile && templateFile.files && templateFile.files[0];
             if (!template) {
                 templateHidden.value = "";
                 templateEmpty.hidden = false;
                 templateSelected.hidden = true;
+                templateUploadLabel.textContent = "Загрузить шаблон";
                 if (templateLatexDownload) {
                     templateLatexDownload.hidden = true;
                     templateLatexDownload.removeAttribute("href");
@@ -117,16 +121,20 @@
                 rulesPanel.hidden = true;
                 rulesList.replaceChildren();
                 if (selectedDestinationKind() === "journal") {
-                    templateEmptyText.textContent = "Для статьи без сохранённого шаблона нужно загрузить новый файл.";
+                    templateEmptyText.textContent = "Для этого журнала загрузите файл с требованиями к оформлению.";
                 } else {
-                    templateEmptyText.textContent = "Шаблона ещё нет. Можно продолжить без него или загрузить первый.";
+                    templateEmptyText.textContent = "Можно загрузить файл шаблона или продолжить без проверки оформления.";
                 }
+                if (uploadedFile) renderUploadedTemplate(uploadedFile);
                 return;
             }
 
             templateHidden.value = template.id || "";
             templateEmpty.hidden = true;
             templateSelected.hidden = false;
+            templateBadge.textContent = "Выбран автоматически";
+            templateUploadLabel.textContent = "Заменить шаблон";
+            templateActions.hidden = false;
             templateName.textContent = template.file_name || "Шаблон оформления";
             templateMeta.textContent = "Версия " + (template.version || "—") + " · " +
                 (template.status_label || template.status || "") +
@@ -149,6 +157,19 @@
                 rulesList.appendChild(item);
             });
             rulesPanel.hidden = !rows.length;
+            if (uploadedFile) renderUploadedTemplate(uploadedFile);
+        }
+
+        function renderUploadedTemplate(file) {
+            templateEmpty.hidden = true;
+            templateSelected.hidden = false;
+            templateBadge.textContent = "Новый файл";
+            templateName.textContent = file.name;
+            templateMeta.textContent = templateHidden.value
+                ? "Заменит выбранный шаблон. Правила извлекутся после загрузки."
+                : "Правила извлекутся после загрузки файла.";
+            templateActions.hidden = true;
+            rulesPanel.hidden = true;
         }
 
         function highlightTrendingJournal() {
@@ -437,42 +458,12 @@
                 if (!file) {
                     if (templateHidden.value) {
                         fetchTemplateById();
+                    } else {
+                        renderTemplate(null);
                     }
                     return;
                 }
-                templateEmpty.hidden = true;
-                templateSelected.hidden = false;
-                templateName.textContent = file.name;
-                templateMeta.textContent = templateHidden.value
-                    ? "Новый шаблон заменит предложенный и станет последней версией."
-                    : "Новый шаблон будет сохранён для следующих пользователей.";
-                templateDownload.removeAttribute("href");
-                if (templateLatexDownload) {
-                    templateLatexDownload.hidden = true;
-                    templateLatexDownload.removeAttribute("href");
-                }
-                rulesPanel.hidden = true;
-            });
-        }
-        if (templateDescription) {
-            templateDescription.addEventListener("input", function () {
-                var description = templateDescription.value.trim();
-                if (!description) {
-                    if (templateHidden.value && (!templateFile || !templateFile.files.length)) {
-                        fetchTemplateById();
-                    }
-                    return;
-                }
-                templateEmpty.hidden = true;
-                templateSelected.hidden = false;
-                templateName.textContent = "Описание требований";
-                templateMeta.textContent = "Локальная модель выделит проверяемые правила и сформирует LaTeX.";
-                templateDownload.removeAttribute("href");
-                if (templateLatexDownload) {
-                    templateLatexDownload.hidden = true;
-                    templateLatexDownload.removeAttribute("href");
-                }
-                rulesPanel.hidden = true;
+                renderUploadedTemplate(file);
             });
         }
 
@@ -485,69 +476,66 @@
     }
 
     function initializeFileZone() {
-        var zone = document.querySelector("[data-file-zone]");
-        if (!zone) {
-            return;
-        }
-
-        var input = zone.querySelector("input[type='file']");
-        var title = zone.querySelector("[data-file-title]");
-        var meta = zone.querySelector("[data-file-meta]");
-        if (!input || !title || !meta) {
-            return;
-        }
-
-        function formatSize(bytes) {
-            if (!bytes) {
-                return "Размер файла не определён";
-            }
-            if (bytes < 1024 * 1024) {
-                return Math.max(1, Math.round(bytes / 1024)) + " КБ";
-            }
-            return (bytes / (1024 * 1024)).toFixed(1).replace(".0", "") + " МБ";
-        }
-
-        function displayFile() {
-            var file = input.files && input.files[0];
-            if (!file) {
-                title.textContent = "Перетащите файл сюда";
-                meta.textContent = "или выберите его на компьютере";
+        document.querySelectorAll("[data-file-zone]").forEach(function (zone) {
+            var input = zone.querySelector("input[type='file']");
+            var title = zone.querySelector("[data-file-title]");
+            var meta = zone.querySelector("[data-file-meta]");
+            if (!input || !title || !meta) {
                 return;
             }
-            title.textContent = file.name;
-            meta.textContent = formatSize(file.size);
-        }
 
-        input.addEventListener("change", displayFile);
-
-        ["dragenter", "dragover"].forEach(function (eventName) {
-            zone.addEventListener(eventName, function (event) {
-                event.preventDefault();
-                zone.classList.add("is-dragging");
-            });
-        });
-
-        ["dragleave", "drop"].forEach(function (eventName) {
-            zone.addEventListener(eventName, function (event) {
-                event.preventDefault();
-                zone.classList.remove("is-dragging");
-            });
-        });
-
-        zone.addEventListener("drop", function (event) {
-            if (!event.dataTransfer || !event.dataTransfer.files.length) {
-                return;
+            function formatSize(bytes) {
+                if (!bytes) {
+                    return "Размер файла не определён";
+                }
+                if (bytes < 1024 * 1024) {
+                    return Math.max(1, Math.round(bytes / 1024)) + " КБ";
+                }
+                return (bytes / (1024 * 1024)).toFixed(1).replace(".0", "") + " МБ";
             }
-            try {
-                input.files = event.dataTransfer.files;
-                displayFile();
-                input.dispatchEvent(new Event("change", {bubbles: true}));
-            } catch (error) {
-                input.click();
-            }
-        });
 
-        displayFile();
+            function displayFile() {
+                var file = input.files && input.files[0];
+                if (!file) {
+                    title.textContent = zone.dataset.fileDefaultTitle || "Перетащите файл сюда";
+                    meta.textContent = zone.dataset.fileDefaultMeta || "или выберите его на компьютере";
+                    return;
+                }
+                title.textContent = file.name;
+                meta.textContent = formatSize(file.size);
+            }
+
+            input.addEventListener("change", displayFile);
+
+            ["dragenter", "dragover"].forEach(function (eventName) {
+                zone.addEventListener(eventName, function (event) {
+                    event.preventDefault();
+                    zone.classList.add("is-dragging");
+                });
+            });
+
+            ["dragleave", "drop"].forEach(function (eventName) {
+                zone.addEventListener(eventName, function (event) {
+                    event.preventDefault();
+                    zone.classList.remove("is-dragging");
+                });
+            });
+
+            zone.addEventListener("drop", function (event) {
+                if (!event.dataTransfer || !event.dataTransfer.files.length) {
+                    return;
+                }
+                try {
+                    input.files = event.dataTransfer.files;
+                    displayFile();
+                    input.dispatchEvent(new Event("change", {bubbles: true}));
+                } catch (error) {
+                    input.click();
+                }
+            });
+
+            displayFile();
+        });
     }
 
     function initializeWizard() {
@@ -563,7 +551,6 @@
         var topicInput = document.getElementById("id_publication_topic_query");
         var templateInput = document.getElementById("id_formatting_template");
         var templateFile = document.getElementById("id_formatting_template_file");
-        var templateDescription = document.getElementById("id_formatting_template_description");
         var currentStep = 1;
         var maxVisitedStep = 1;
 
@@ -645,13 +632,12 @@
                 number === 4 &&
                 destinationKind() === "journal" &&
                 (!templateInput || !templateInput.value) &&
-                (!templateFile || !templateFile.files || !templateFile.files.length) &&
-                (!templateDescription || !templateDescription.value.trim())
+                (!templateFile || !templateFile.files || !templateFile.files.length)
             ) {
                 showStepError(
                     step,
-                    "Для журнала без сохранённого шаблона загрузите файл или опишите требования.",
-                    templateFile || templateDescription
+                    "Для журнала без сохранённого шаблона загрузите файл шаблона.",
+                    templateFile
                 );
                 return false;
             }

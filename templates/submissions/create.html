@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'accounts/dashboard.css' %}?v=20260727a">
-    <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20261002a">
+    <link rel="stylesheet" href="{% static 'submissions/create.css' %}?v=20261002b">
     <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
     {% include "includes/global_loading_head.html" %}
 </head>
@@ -178,18 +178,27 @@
                     <span class="submission-section-number">04</span>
                     <div>
                         <h2 id="formatting-template-title">Проверьте шаблон</h2>
-                        <p>Если шаблон уже есть, система выберет последнюю версию. Его можно посмотреть, заменить или продолжить без проверки, когда это разрешено.</p>
+                        <p>Система подставит последнюю версию шаблона. Правила оформления извлекаются из его файла.</p>
                     </div>
                 </div>
 
                 <div class="formatting-template-state" data-template-state>
                     <div class="formatting-template-empty" data-template-empty>
-                        <strong>Сохранённого шаблона нет</strong>
-                        <p data-template-empty-text>Можно загрузить файл шаблона.</p>
+                        <span class="formatting-template-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V4a1 1 0 0 1 2-1Z"/><path d="M14 3v6h5M9 14h6M9 17h4"/></svg>
+                        </span>
+                        <div>
+                            <span class="formatting-template-eyebrow">Шаблон для проверки</span>
+                            <strong>Сохранённого шаблона нет</strong>
+                            <p data-template-empty-text>Загрузите файл шаблона.</p>
+                        </div>
                     </div>
                     <div class="formatting-template-selected" data-template-selected hidden>
-                        <div>
-                            <span class="submission-mini-tag primary">Выбран</span>
+                        <span class="formatting-template-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V4a1 1 0 0 1 2-1Z"/><path d="M14 3v6h5M9 14h6M9 17h4"/></svg>
+                        </span>
+                        <div class="formatting-template-info">
+                            <span class="formatting-template-eyebrow" data-template-badge>Выбран автоматически</span>
                             <strong data-template-name>Шаблон оформления</strong>
                             <p data-template-meta></p>
                         </div>
@@ -204,20 +213,23 @@
                     </details>
                 </div>
 
-                <div class="submission-field{% if form.formatting_template_file.errors %} has-error{% endif %}">
-                    <label for="{{ form.formatting_template_file.id_for_label }}">{{ form.formatting_template_file.label }}</label>
-                    {{ form.formatting_template_file }}
-                    {% if form.formatting_template_file.errors %}<div class="submission-field-errors">{{ form.formatting_template_file.errors }}</div>{% else %}<small>Загрузите новый файл, только если предложенного шаблона нет или его нужно заменить.</small>{% endif %}
-                </div>
-
-                <div class="submission-template-choice">
-                    <span>или</span>
-                </div>
-
-                <div class="submission-field{% if form.formatting_template_description.errors %} has-error{% endif %}">
-                    <label for="{{ form.formatting_template_description.id_for_label }}">{{ form.formatting_template_description.label }}</label>
-                    {{ form.formatting_template_description }}
-                    {% if form.formatting_template_description.errors %}<div class="submission-field-errors">{{ form.formatting_template_description.errors }}</div>{% else %}<small>{{ form.formatting_template_description.help_text }}</small>{% endif %}
+                <div class="submission-field formatting-template-upload{% if form.formatting_template_file.errors %} has-error{% endif %}">
+                    <label for="{{ form.formatting_template_file.id_for_label }}" data-template-upload-label>Загрузить или заменить шаблон</label>
+                    <div class="submission-file-zone formatting-template-file-zone" data-file-zone
+                         data-file-default-title="Перетащите файл шаблона сюда"
+                         data-file-default-meta="или выберите его на компьютере">
+                        <span class="submission-file-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H4V4a2 2 0 0 1 2-2Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
+                        </span>
+                        <div class="submission-file-copy">
+                            <strong data-file-title>Перетащите файл шаблона сюда</strong>
+                            <span data-file-meta>или выберите его на компьютере</span>
+                            <small>Правила будут извлечены из загруженного файла.</small>
+                        </div>
+                        <label class="submission-file-button" for="{{ form.formatting_template_file.id_for_label }}">Выбрать файл</label>
+                        {{ form.formatting_template_file }}
+                    </div>
+                    {% if form.formatting_template_file.errors %}<div class="submission-field-errors">{{ form.formatting_template_file.errors }}</div>{% else %}<small>{{ form.formatting_template_file.help_text }}</small>{% endif %}
                 </div>
 
                 <label class="formatting-check-toggle" for="{{ form.formatting_check_requested.id_for_label }}">
@@ -318,7 +330,7 @@
 </div>
 
 <script src="{% static 'accounts/dashboard.js' %}?v=20260717a" defer></script>
-<script src="{% static 'submissions/create.js' %}?v=20261002a" defer></script>
+<script src="{% static 'submissions/create.js' %}?v=20261002b" defer></script>
 {% include "includes/global_loading_body.html" %}
 </body>
 </html>

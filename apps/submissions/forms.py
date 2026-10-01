@@ -119,21 +119,6 @@ class SubmissionCreateForm(forms.ModelForm):
         required=False,
         help_text="Можно загрузить DOCX, DOC, PDF, LaTeX (.tex), текстовый файл или изображение.",
     )
-    formatting_template_description = forms.CharField(
-        label="Или вставьте описание требований",
-        required=False,
-        max_length=120_000,
-        widget=forms.Textarea(
-            attrs={
-                "rows": 7,
-                "placeholder": (
-                    "Например: A4, поля 2 см, Times New Roman 14 пт, "
-                    "межстрочный интервал 1,5; обязательны аннотация и ключевые слова."
-                ),
-            }
-        ),
-        help_text="Свободное описание разберёт локальная модель; затем правила можно проверить вручную.",
-    )
     formatting_check_requested = forms.BooleanField(
         label="Проверить оформление по шаблону",
         required=False,
@@ -278,16 +263,7 @@ class SubmissionCreateForm(forms.ModelForm):
         topic_query = (cleaned_data.get("publication_topic_query") or "").strip()
         selected_template = cleaned_data.get("formatting_template")
         uploaded_template = cleaned_data.get("formatting_template_file")
-        template_description = (
-            cleaned_data.get("formatting_template_description") or ""
-        ).strip()
-        cleaned_data["formatting_template_description"] = template_description
-        if uploaded_template is not None and template_description:
-            self.add_error(
-                "formatting_template_description",
-                "Выберите один способ: загрузите файл или вставьте описание.",
-            )
-        if uploaded_template is not None or template_description:
+        if uploaded_template is not None:
             # An explicitly supplied template replaces the version suggested
             # by the journal/topic search widget.  Keeping both values made
             # the saved choice depend on later view code and obscured which
@@ -312,20 +288,16 @@ class SubmissionCreateForm(forms.ModelForm):
                 article_type=article_type,
                 journal=journal,
             )
-            if uploaded_template is not None or template_description:
+            if uploaded_template is not None:
                 selected_template = None
                 cleaned_data["formatting_template"] = None
             elif selected_template is None:
                 selected_template = latest_template
                 cleaned_data["formatting_template"] = selected_template
-            if (
-                uploaded_template is None
-                and not template_description
-                and selected_template is None
-            ):
+            if uploaded_template is None and selected_template is None:
                 self.add_error(
                     "formatting_template_file",
-                    "Для этого журнала ещё нет шаблона. Загрузите файл или вставьте описание требований.",
+                    "Для этого журнала ещё нет шаблона. Загрузите файл шаблона.",
                 )
                 return cleaned_data
             if selected_template is not None and (
@@ -348,7 +320,7 @@ class SubmissionCreateForm(forms.ModelForm):
                 article_type=article_type,
                 publication_topic=publication_topic,
             )
-            if uploaded_template is not None or template_description:
+            if uploaded_template is not None:
                 selected_template = None
                 cleaned_data["formatting_template"] = None
             elif selected_template is None:
