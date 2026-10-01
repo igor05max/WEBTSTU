@@ -5,44 +5,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Вход в систему предпубликационного согласования научных статей университета.">
+    <meta name="theme-color" content="#f3f5f8">
     <title>Вход — Научный ЭДО</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'accounts/login.css' %}?v=20260717a">
-    <link rel="stylesheet" href="{% static 'accounts/workspace-typography.css' %}?v=20260717a">
+    <link rel="stylesheet" href="{% static 'accounts/login.css' %}?v=20261002a">
     {% include "includes/global_loading_head.html" %}
 </head>
 <body>
 <div class="auth-shell">
-    <section class="auth-visual" aria-labelledby="auth-visual-title">
-        <div class="auth-visual-glow auth-visual-glow-one"></div>
-        <div class="auth-visual-glow auth-visual-glow-two"></div>
-
-        <div class="auth-visual-copy">
-            <div class="auth-eyebrow">
-                <span></span>
-                Единый цифровой контур
-            </div>
-            <h1 id="auth-visual-title">От рукописи<br>до публикации</h1>
-            <p>Все этапы согласования научной статьи — в одном понятном рабочем пространстве.</p>
-
-        </div>
-
-        <div class="auth-visual-art" aria-hidden="true">
-            <picture>
-                <source srcset="{% static 'accounts/login-research-illustration.webp' %}" type="image/webp">
-                <img src="{% static 'accounts/login-research-illustration.png' %}" alt="">
-            </picture>
-        </div>
-        <div class="auth-visual-index" aria-hidden="true">01</div>
-    </section>
-
-    <main class="auth-panel">
+    <main class="auth-panel" aria-labelledby="auth-title">
         <div class="auth-form-wrap">
             <header class="auth-form-heading">
-                <div class="auth-kicker">Личный кабинет</div>
-                <h2>С возвращением</h2>
+                <h1 id="auth-title">С возвращением</h1>
                 <p>Введите данные учётной записи, чтобы продолжить работу.</p>
             </header>
 
@@ -76,10 +49,6 @@
                 <div class="auth-field{% if form.username.errors %} has-error{% endif %}">
                     <label for="{{ form.username.id_for_label }}">Логин</label>
                     <div class="auth-input-wrap">
-                        <svg class="auth-input-icon" viewBox="0 0 24 24" aria-hidden="true">
-                            <circle cx="12" cy="8" r="4"/>
-                            <path d="M4.8 20c.8-4 3.2-6 7.2-6s6.4 2 7.2 6"/>
-                        </svg>
                         <input
                             type="text"
                             name="{{ form.username.html_name }}"
@@ -108,10 +77,6 @@
                         <label for="{{ form.password.id_for_label }}">Пароль</label>
                     </div>
                     <div class="auth-input-wrap">
-                        <svg class="auth-input-icon" viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="5" y="10" width="14" height="10" rx="3"/>
-                            <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10M12 14v2"/>
-                        </svg>
                         <input
                             type="password"
                             name="{{ form.password.html_name }}"
@@ -137,17 +102,14 @@
                 </div>
 
                 <button class="auth-submit" type="submit">
-                    <span>Войти в систему</span>
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M5 12h14M14 7l5 5-5 5"/>
-                    </svg>
+                    <span class="auth-submit-label">Войти в систему</span>
                 </button>
             </form>
         </div>
     </main>
 </div>
 
-<script src="{% static 'accounts/login.js' %}?v=20260717a" defer></script>
+<script src="{% static 'accounts/login.js' %}?v=20261002a" defer></script>
 {% include "includes/global_loading_body.html" %}
 </body>
 </html>
