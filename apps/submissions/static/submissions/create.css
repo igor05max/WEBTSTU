@@ -416,6 +416,79 @@
     z-index: 5;
 }
 
+.journal-trends {
+    margin-top: 20px;
+}
+
+.journal-trends[hidden] {
+    display: none;
+}
+
+.journal-trends-heading {
+    margin-bottom: 12px;
+    display: grid;
+    gap: 4px;
+}
+
+.journal-trends-heading strong {
+    color: #273957;
+    font-size: 0.76rem;
+}
+
+.journal-trends-heading small {
+    color: #8793a8;
+    font-size: 0.63rem;
+    line-height: 1.5;
+}
+
+.journal-trends-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+}
+
+.journal-trend-card {
+    min-width: 0;
+    padding: 11px 13px;
+    display: grid;
+    gap: 4px;
+    border: 1px solid #e1e8f4;
+    border-radius: 11px;
+    color: #243551;
+    background: #f8faff;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.journal-trend-card:hover,
+.journal-trend-card:focus-visible,
+.journal-trend-card.is-selected {
+    border-color: #7596ec;
+    background: #eff4ff;
+    box-shadow: 0 0 0 2px rgba(49, 99, 226, 0.08);
+}
+
+.journal-trend-card strong {
+    overflow: hidden;
+    font-size: 0.69rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.journal-trend-card span {
+    color: #6f7f99;
+    font-size: 0.61rem;
+}
+
+.journal-trend-card small {
+    color: #2b63c9;
+    font-size: 0.59rem;
+    font-weight: 700;
+}
+
 .journal-suggest {
     position: absolute;
     z-index: 20;
@@ -1065,6 +1138,10 @@
     }
 
     .submission-document-metadata-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .journal-trends-list {
         grid-template-columns: 1fr;
     }
 

@@ -7,6 +7,7 @@ from django.urls import reverse
 
 from apps.directory.formatting_templates import get_latest_formatting_template
 from apps.directory.journal_search import search_journals
+from apps.directory.journal_trends import trending_journals
 from apps.directory.models import ArticleType, FormattingTemplate
 from apps.directory.publication_topics import search_publication_topics
 from document_template_engine import DocumentTemplateEngineError, build_latex_template
@@ -77,6 +78,30 @@ def journal_search(request):
         }
         for journal in journals
     ]
+    return JsonResponse({"results": results})
+
+
+@login_required
+def journal_trends(request):
+    article_type = _get_article_type(request)
+    if article_type is None:
+        return JsonResponse({"results": []})
+    results = []
+    for item in trending_journals():
+        journal = item["journal"]
+        results.append(
+            {
+                "id": journal.pk,
+                "name": journal.name,
+                "issn": journal.issn,
+                "label": f"{journal.name} ({journal.issn})" if journal.issn else journal.name,
+                "week_count": item["week_count"],
+                "month_count": item["month_count"],
+                "template": _template_payload(
+                    get_latest_formatting_template(article_type=article_type, journal=journal)
+                ),
+            }
+        )
     return JsonResponse({"results": results})
 
 

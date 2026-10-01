@@ -6,6 +6,7 @@ app_name = "directory"
 
 urlpatterns = [
     path("journals/search/", views.journal_search, name="journal_search"),
+    path("journals/trending/", views.journal_trends, name="journal_trends"),
     path("publication-topics/search/", views.publication_topic_search, name="publication_topic_search"),
     path(
         "formatting-templates/<int:pk>/",

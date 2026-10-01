@@ -12,6 +12,8 @@
         var templateDescription = document.getElementById("id_formatting_template_description");
         var journalField = document.querySelector("[data-destination-field='journal']");
         var topicField = document.querySelector("[data-destination-field='topic']");
+        var journalTrends = document.querySelector("[data-journal-trends]");
+        var journalTrendsList = document.querySelector("[data-journal-trends-list]");
         var templateEmpty = document.querySelector("[data-template-empty]");
         var templateEmptyText = document.querySelector("[data-template-empty-text]");
         var templateSelected = document.querySelector("[data-template-selected]");
@@ -149,6 +151,100 @@
             rulesPanel.hidden = !rows.length;
         }
 
+        function highlightTrendingJournal() {
+            if (!journalTrendsList) {
+                return;
+            }
+            journalTrendsList.querySelectorAll("[data-trending-journal]").forEach(function (button) {
+                var selected = journalHidden.value === button.dataset.id &&
+                    journalInput.value === button.dataset.label;
+                button.classList.toggle("is-selected", selected);
+                button.setAttribute("aria-pressed", selected ? "true" : "false");
+            });
+        }
+
+        function selectDestination(input, hidden, item) {
+            hidden.value = item.id || "";
+            input.value = item.label || item.name || "";
+            renderTemplate(item.template || null);
+            highlightTrendingJournal();
+        }
+
+        var trendsRequestNumber = 0;
+        function refreshTrendingJournals() {
+            if (!journalTrends || !journalTrendsList) {
+                return;
+            }
+            trendsRequestNumber += 1;
+            var currentRequest = trendsRequestNumber;
+            journalTrends.hidden = true;
+            journalTrendsList.replaceChildren();
+            if (selectedDestinationKind() !== "journal" || !articleType.value) {
+                return;
+            }
+            var url = journalTrends.getAttribute("data-url");
+            fetch(url + "?article_type=" + encodeURIComponent(articleType.value), {
+                headers: {"X-Requested-With": "XMLHttpRequest", "X-Site-Loading": "silent"},
+                credentials: "same-origin"
+            })
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error("journal-trends-failed");
+                    }
+                    return response.json();
+                })
+                .then(function (payload) {
+                    if (currentRequest !== trendsRequestNumber) {
+                        return;
+                    }
+                    (payload.results || []).forEach(function (item) {
+                        var button = document.createElement("button");
+                        button.type = "button";
+                        button.className = "journal-trend-card";
+                        button.setAttribute("data-trending-journal", "");
+                        button.dataset.id = item.id || "";
+                        button.dataset.label = item.label || item.name || "";
+                        button._templatePayload = item.template || null;
+
+                        var name = document.createElement("strong");
+                        name.textContent = item.name || "";
+                        button.appendChild(name);
+                        var issn = document.createElement("span");
+                        issn.textContent = item.issn ? "ISSN " + item.issn : "ISSN не указан";
+                        button.appendChild(issn);
+                        var activity = document.createElement("small");
+                        activity.textContent = item.week_count
+                            ? "За 7 дней: " + item.week_count
+                            : item.month_count
+                                ? "За 30 дней: " + item.month_count
+                                : "Из каталога";
+                        button.appendChild(activity);
+                        journalTrendsList.appendChild(button);
+                    });
+                    journalTrends.hidden = !journalTrendsList.children.length;
+                    highlightTrendingJournal();
+                })
+                .catch(function () {
+                    if (currentRequest === trendsRequestNumber) {
+                        journalTrends.hidden = true;
+                    }
+                });
+        }
+
+        if (journalTrendsList) {
+            journalTrendsList.addEventListener("click", function (event) {
+                var button = event.target.closest("[data-trending-journal]");
+                if (!button) {
+                    return;
+                }
+                selectDestination(journalInput, journalHidden, {
+                    id: button.dataset.id,
+                    label: button.dataset.label,
+                    template: button._templatePayload
+                });
+            });
+        }
+
         function fetchTemplateById() {
             if (!templateHidden.value) {
                 return;
@@ -276,6 +372,9 @@
             }
 
             input.addEventListener("input", function () {
+                hidden.value = "";
+                renderTemplate(null);
+                highlightTrendingJournal();
                 window.clearTimeout(debounceTimer);
                 debounceTimer = window.setTimeout(runSearch, 220);
             });
@@ -288,9 +387,11 @@
                     return;
                 }
                 event.preventDefault();
-                hidden.value = option.dataset.id || "";
-                input.value = option.dataset.label || "";
-                renderTemplate(option._templatePayload || null);
+                selectDestination(input, hidden, {
+                    id: option.dataset.id,
+                    label: option.dataset.label,
+                    template: option._templatePayload
+                });
                 hideResults();
             });
         }
@@ -311,6 +412,7 @@
                 }
                 renderTemplate(null);
             }
+            refreshTrendingJournals();
         }
 
         initializeSearch(
@@ -461,6 +563,7 @@
         var topicInput = document.getElementById("id_publication_topic_query");
         var templateInput = document.getElementById("id_formatting_template");
         var templateFile = document.getElementById("id_formatting_template_file");
+        var templateDescription = document.getElementById("id_formatting_template_description");
         var currentStep = 1;
         var maxVisitedStep = 1;
 
@@ -542,12 +645,13 @@
                 number === 4 &&
                 destinationKind() === "journal" &&
                 (!templateInput || !templateInput.value) &&
-                (!templateFile || !templateFile.files || !templateFile.files.length)
+                (!templateFile || !templateFile.files || !templateFile.files.length) &&
+                (!templateDescription || !templateDescription.value.trim())
             ) {
                 showStepError(
                     step,
-                    "Для журнала без сохранённого шаблона загрузите файл шаблона.",
-                    templateFile
+                    "Для журнала без сохранённого шаблона загрузите файл или опишите требования.",
+                    templateFile || templateDescription
                 );
                 return false;
             }
