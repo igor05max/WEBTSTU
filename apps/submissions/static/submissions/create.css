@@ -250,10 +250,6 @@
     line-height: 1.55;
 }
 
-.submission-comment-field {
-    margin-top: 21px;
-}
-
 .submission-document-metadata-grid {
     margin-bottom: 22px;
     display: grid;
@@ -356,10 +352,6 @@
 
 @keyframes submission-metadata-spin {
     to { transform: rotate(360deg); }
-}
-
-.submission-comment-field textarea {
-    min-height: 96px;
 }
 
 .submission-field input::placeholder,

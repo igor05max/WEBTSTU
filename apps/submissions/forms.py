@@ -150,17 +150,6 @@ class SubmissionCreateForm(forms.ModelForm):
         ),
         widget=UserChoiceSelectMultiple(attrs={"size": 8}),
     )
-    version_comment = forms.CharField(
-        label="Комментарий к версии",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "rows": 4,
-                "placeholder": "Дополнительная информация для экспертов и куратора",
-            }
-        ),
-    )
-
     def __init__(self, *args, current_user=None, **kwargs):
         self.current_user = current_user
         self.prepared_latex_upload = None

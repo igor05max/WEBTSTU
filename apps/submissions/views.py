@@ -1004,7 +1004,6 @@ def submission_create(request):
                 formatting_rules_snapshot=rules_snapshot,
                 formatting_check_requested=form.cleaned_data["formatting_check_requested"],
                 file=prepared_material,
-                comment=form.cleaned_data["version_comment"],
                 authors=form.cleaned_data["authors"],
                 document_authors=form.cleaned_data["document_authors"] or metadata.get("document_authors", ""),
                 organizations=form.cleaned_data["organizations"] or metadata.get("organizations", ""),

@@ -2810,6 +2810,8 @@ class SubmissionFormattingTemplateTests(TestCase):
         self.assertContains(response, "Правила оформления извлекаются из его файла")
         self.assertContains(response, "Перетащите файл шаблона сюда")
         self.assertNotContains(response, "id_formatting_template_description")
+        self.assertNotContains(response, "id_version_comment")
+        self.assertNotIn("version_comment", response.context["form"].fields)
 
     @patch("apps.submissions.views.queue_submission_template_processing")
     def test_existing_submission_can_receive_description_template(
