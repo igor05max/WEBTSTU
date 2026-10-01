@@ -763,6 +763,8 @@
         }
 
         function toggleOption(option, selected) {
+            option.dataset.manualSelection = "true";
+            option.dataset.autoSelected = "false";
             option.selected = selected;
             select.dispatchEvent(new Event("change", {bubbles: true}));
             render();
@@ -910,6 +912,31 @@
             field.dispatchEvent(new Event("change", {bubbles: true}));
         }
 
+        function clearAutoExtracted() {
+            Object.keys(fieldMap).forEach(function (key) {
+                var field = fieldMap[key];
+                if (field && field.dataset.autoExtracted === "true") {
+                    field.value = "";
+                    field.dataset.autoExtracted = "false";
+                    field.dispatchEvent(new Event("change", {bubbles: true}));
+                }
+            });
+            var authorSelect = document.getElementById("id_authors");
+            if (authorSelect) {
+                var changed = false;
+                Array.prototype.forEach.call(authorSelect.options, function (option) {
+                    if (option.dataset.autoSelected === "true") {
+                        option.selected = false;
+                        option.dataset.autoSelected = "false";
+                        changed = true;
+                    }
+                });
+                if (changed) {
+                    authorSelect.dispatchEvent(new Event("change", {bubbles: true}));
+                }
+            }
+        }
+
         function applyMatchedUsers(matches) {
             var authorSelect = document.getElementById("id_authors");
             if (!authorSelect) {
@@ -927,30 +954,32 @@
                     matchedIds.push(String(match.user_id));
                 }
             });
-            if (!matchedIds.length) {
-                return 0;
-            }
-
+            var selectedCount = 0;
             matchedIds.forEach(function (userId) {
                 var option = Array.prototype.find.call(authorSelect.options, function (item) {
                     return String(item.value) === userId;
                 });
-                if (option) {
+                if (option && option.dataset.manualSelection !== "true") {
                     option.selected = true;
+                    option.dataset.autoSelected = "true";
+                    selectedCount += 1;
                 }
             });
-            authorSelect.dispatchEvent(new Event("change", {bubbles: true}));
-            return matchedIds.length;
+            if (selectedCount) {
+                authorSelect.dispatchEvent(new Event("change", {bubbles: true}));
+            }
+            return selectedCount;
         }
 
         function runExtraction() {
+            requestNumber += 1;
+            var currentRequest = requestNumber;
+            clearAutoExtracted();
             var file = fileInput.files && fileInput.files[0];
             if (!file || !endpoint) {
                 panel.hidden = true;
                 return;
             }
-            requestNumber += 1;
-            var currentRequest = requestNumber;
             revealEditableFields();
             setPanel(
                 "",
@@ -1009,7 +1038,20 @@
                     if (!parserWarning && !textBlockCount) {
                         text += " Парсер не получил текстовых абзацев.";
                     }
-                    setPanel(found.length ? "success" : "warning", found.length ? "Данные из файла добавлены — проверьте их" : "Нужна ручная проверка", text);
+                    var reviewLabels = {
+                        title: "название",
+                        authors: "авторов",
+                        abstract: "аннотацию",
+                        keywords: "ключевые слова"
+                    };
+                    var reviewFields = (payload.analysis && payload.analysis.needs_review || [])
+                        .map(function (item) { return reviewLabels[item.field]; })
+                        .filter(function (label) { return Boolean(label); });
+                    if (reviewFields.length) {
+                        text += " Проверьте: " + reviewFields.join(", ") + ".";
+                    }
+                    var needsAttention = !found.length || Boolean(parserWarning) || reviewFields.length > 0;
+                    setPanel(needsAttention ? "warning" : "success", needsAttention ? "Нужна проверка данных" : "Данные из файла добавлены", text);
                 })
                 .catch(function (error) {
                     if (currentRequest !== requestNumber) {

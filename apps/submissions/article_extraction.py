@@ -202,7 +202,21 @@ def is_probable_person_name(value: Any) -> bool:
             )
     has_initials = bool(re.search(r"(?:[А-ЯЁ]\s*\.\s*){1,3}", candidate))
     if has_initials:
-        return "Surn" in grammemes
+        if "Surn" in grammemes:
+            return True
+        # The dictionary does not tag every real surname (for example,
+        # "Дедов") as Surn. Two initials and a common surname ending are
+        # still strong evidence in an author line.
+        return bool(
+            re.search(r"(?:[А-ЯЁ]\s*\.\s*){2}", candidate)
+            and any(
+                re.fullmatch(
+                    r"[А-ЯЁ][а-яё]{2,}(?:ов|ев|ёв|ин|ын|ова|ева|ёва|ина|ына|ский|ская|цкий|цкая|енко|ук|юк|ич)",
+                    word,
+                )
+                for word in cyrillic_words
+            )
+        )
     return "Name" in grammemes and bool({"Surn", "Patr"} & grammemes)
 
 
@@ -579,7 +593,10 @@ def _extract_authors(
             or KEYWORDS_RE.match(text)
         ):
             continue
-        matches = [normalize_space(match.group(0)) for match in AUTHOR_RE.finditer(text)]
+        matches = [
+            re.sub(r"(?<=[А-ЯЁа-яё])[a-d]$", "", normalize_space(match.group(0)))
+            for match in AUTHOR_RE.finditer(text)
+        ]
         if not matches and len(text) <= 140:
             matches = [normalize_space(match.group(0)) for match in FULL_NAME_RE.finditer(text)]
         if (
@@ -927,6 +944,29 @@ def extract_article_structure(snapshot: dict[str, Any]) -> dict[str, Any]:
         if lowered not in seen_emails:
             seen_emails.add(lowered)
             emails.append(email)
+    email_block_ids = [
+        _record_id(record, order)
+        for order, record in enumerate(email_records, start=email_start)
+        if EMAIL_RE.search(record.get("text") or "")
+    ]
+    author_surnames = {_author_surname(author) for author in authors}
+    for order, record in enumerate(paragraphs[front_end:], start=front_end):
+        text = normalize_space(record.get("text"))
+        if not EMAIL_RE.search(text):
+            continue
+        # Author biographies can follow the body and references. Require a
+        # full name matching a front-matter author before taking its email.
+        biography = FULL_NAME_RE.match(text)
+        if not biography or not re.match(r"\s*[—–-]", text[biography.end() :]):
+            continue
+        if _author_surname(biography.group(0)) not in author_surnames:
+            continue
+        for email in EMAIL_RE.findall(text):
+            lowered = email.casefold()
+            if lowered not in seen_emails:
+                seen_emails.add(lowered)
+                emails.append(email)
+                email_block_ids.append(_record_id(record, order))
 
     alternative_titles = [
         {
@@ -1060,15 +1100,8 @@ def extract_article_structure(snapshot: dict[str, Any]) -> dict[str, Any]:
         "emails": _field(
             emails,
             confidence=0.98 if emails else 0.0,
-            block_ids=[
-                _record_id(record, order)
-                for order, record in enumerate(
-                    email_records,
-                    start=email_start,
-                )
-                if EMAIL_RE.search(record.get("text") or "")
-            ],
-            method="validated_pattern",
+            block_ids=email_block_ids,
+            method="front_matter_or_author_biography",
         ),
         "abstract": _field(
             abstract,

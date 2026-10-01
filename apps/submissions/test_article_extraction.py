@@ -199,6 +199,40 @@ def _docx_with_embedded_vector_equation():
 
 
 class ArticleExtractionTests(SimpleTestCase):
+    def test_affiliation_markers_and_author_biographies_fill_metadata(self):
+        from docx import Document
+        from docx.shared import Pt
+
+        document = Document()
+        title = document.add_paragraph("Исследование обработки научных материалов")
+        title.runs[0].bold = True
+        title.runs[0].font.size = Pt(18)
+        document.add_paragraph("© Е.А. Бойченкоa,b*, Д.Л. Дедовc")
+        document.add_paragraph("Аннотация. Рассматривается обработка научных материалов.")
+        document.add_paragraph("Ключевые слова: документы; метаданные; авторы")
+        document.add_paragraph("Введение", style="Heading 1")
+        document.add_paragraph("Основной текст исследования.")
+        document.add_paragraph("Литература", style="Heading 1")
+        document.add_paragraph("1. Иванов И.И. Работа. archive@example.org")
+        document.add_paragraph(
+            "Бойченко Елена Александровна — научный сотрудник. "
+            "boychenko@example.org"
+        )
+        document.add_paragraph(
+            "Дедов Денис Леонидович — научный сотрудник. dedov@example.org"
+        )
+        output = BytesIO()
+        document.save(output)
+
+        metadata = analyze_document_bytes(output.getvalue(), "article.docx")["metadata"]
+
+        self.assertEqual(metadata["authors"], ["Е.А. Бойченко", "Д.Л. Дедов"])
+        self.assertEqual(
+            metadata["emails"],
+            ["boychenko@example.org", "dedov@example.org"],
+        )
+        self.assertEqual(metadata["keywords"], "документы, метаданные, авторы")
+
     def test_person_name_validation_rejects_country_and_organization_names(self):
         self.assertTrue(is_probable_person_name("Поляков Дмитрий Вадимович"))
         self.assertTrue(is_probable_person_name("Петров П.П."))
