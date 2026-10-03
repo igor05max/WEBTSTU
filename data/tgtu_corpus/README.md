@@ -28,6 +28,10 @@ SHA-256 всех 161 старых PDF совпал с манифестом, и �
 первой странице каждого файла (`legacy_pdf_checks.jsonl`). Поле
 `legacy_link_verification: unverified` означает, что саму страницу eLIBRARY
 открыть и подтвердить из текущей сети пока не удалось.
+Файл `legacy_abstracts.jsonl` содержит 320 русских и английских аннотаций
+этих статей из прежнего поискового индекса. Они помогают найти статью при
+различии языков запроса и PDF; в интерфейсе явно отмечаются как аннотации
+карточки eLIBRARY.
 
 Сетевой аудит 2026-10-04: DOI 330 статей отвечают HTTP 404 и отсутствуют
 в выборке Crossref; у 52 записей подтверждён конкретный URL издателя или
@@ -55,6 +59,7 @@ python scripts/audit_tgtu_links.py
 ```powershell
 python scripts/verify_legacy_pdf_identity.py --pdf-root downloads_elibrary
 python scripts/apply_tgtu_link_audit.py
+python scripts/export_legacy_abstracts.py --legacy-index tmp/citation_index.sqlite3
 ```
 
 Годовые ZIP повторяют содержимое распакованных папок и не должны попадать в

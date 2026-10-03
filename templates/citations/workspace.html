@@ -214,7 +214,7 @@
 
                             {% if article.evidence %}
                                 <details class="citation-source-evidence">
-                                    <summary>Показать подтверждающий фрагмент источника</summary>
+                                    <summary>{% if article.chunk_kind == "catalog_abstract" %}Показать аннотацию карточки eLIBRARY{% else %}Показать подтверждающий фрагмент источника{% endif %}</summary>
                                     <blockquote>{{ article.evidence }}</blockquote>
                                 </details>
                             {% endif %}

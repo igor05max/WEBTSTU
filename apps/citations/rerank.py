@@ -237,6 +237,7 @@ def rerank_claims(claims, *, best_available_limit=0):
                     "title": result["title"],
                     "year": result["year"],
                     "evidence": result["evidence"],
+                    "evidence_kind": result.get("chunk_kind", "body"),
                 }
             )
     if not items:
@@ -245,6 +246,8 @@ def rerank_claims(claims, *, best_available_limit=0):
     prompt = """
 Ты проверяешь рекомендации научных источников. Оцени только приведённый фрагмент источника:
 действительно ли он подтверждает утверждение, а не просто совпадает по теме.
+Если evidence_kind = catalog_abstract, это аннотация карточки eLIBRARY,
+а не цитата из PDF; не приписывай статье детали, которых в аннотации нет.
 Учитывай, что одинаковый метод может быть полезен в другой предметной области.
 Независимо от языка утверждения и источника поле reason всегда пиши по-русски.
 Поле evidence оставляй точной цитатой на языке источника.

@@ -7,6 +7,7 @@ app_name = "citations"
 
 urlpatterns = [
     path("", views.workspace, name="workspace"),
+    path("sources/<str:article_id>/pdf/", views.source_pdf, name="source_pdf"),
     path("apply/", views.apply_citations, name="apply"),
     path("submission-result/prepare/", views.prepare_submission_result, name="prepare_submission_result"),
     path(

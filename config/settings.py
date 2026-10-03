@@ -267,6 +267,13 @@ TEMPLATE_V2_QWEN_TIMEOUT = int(
 CITATION_CORPUS_ROOT = Path(
     os.getenv("CITATION_CORPUS_ROOT", str(BASE_DIR / "downloads_elibrary"))
 )
+CITATION_CORPUS_MODE = os.getenv("CITATION_CORPUS_MODE", "legacy").strip()
+CITATION_TGTU_MANIFEST = Path(
+    os.getenv("CITATION_TGTU_MANIFEST", str(BASE_DIR / "data" / "tgtu_corpus" / "manifest.jsonl"))
+)
+CITATION_ARCHIVE_ROOT = Path(
+    os.getenv("CITATION_ARCHIVE_ROOT", str(BASE_DIR / "tmp" / "tgtu_drive_archives"))
+)
 CITATION_INDEX_PATH = Path(
     os.getenv("CITATION_INDEX_PATH", str(BASE_DIR / "tmp" / "citation_index.sqlite3"))
 )

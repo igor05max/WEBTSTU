@@ -5,11 +5,13 @@ from apps.citations.index import build_index
 
 
 class Command(BaseCommand):
-    help = "Строит гибридный индекс смысловых фрагментов корпуса eLibrary."
+    help = "Строит гибридный индекс eLIBRARY или расширенного корпуса ТГТУ."
 
     def add_arguments(self, parser):
         parser.add_argument("--corpus", default=str(settings.CITATION_CORPUS_ROOT))
         parser.add_argument("--output", default=str(settings.CITATION_INDEX_PATH))
+        parser.add_argument("--manifest", default=None, help="Манифест корпуса ТГТУ")
+        parser.add_argument("--archives", default=None, help="Каталог годовых ZIP корпуса ТГТУ")
 
     def handle(self, *args, **options):
         def progress(articles, chunks):
@@ -18,6 +20,8 @@ class Command(BaseCommand):
         result = build_index(
             corpus_root=options["corpus"],
             index_path=options["output"],
+            manifest_path=options["manifest"],
+            archive_root=options["archives"],
             progress=progress,
         )
         self.stdout.write(

@@ -1,11 +1,16 @@
 import json
+import sqlite3
+from contextlib import closing
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import urlencode
+from zipfile import BadZipFile, ZipFile
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
-from django.http import FileResponse, HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.cache import patch_cache_control
@@ -40,6 +45,65 @@ from apps.submissions.latex_projects import (
     replace_project_main_source,
 )
 from apps.submissions.template_processing import prepare_submission_template_by_id
+
+
+@require_GET
+def source_pdf(request, article_id):
+    """Serve the exact PDF indexed for a public TGTU journal article."""
+    index_path = Path(settings.CITATION_INDEX_PATH)
+    if not index_path.is_file():
+        raise Http404("Индекс источников недоступен.")
+    try:
+        with closing(sqlite3.connect(index_path)) as connection:
+            source = connection.execute(
+                "SELECT archive_name, member_name, sha256 FROM source_manifest WHERE article_id = ?",
+                (article_id,),
+            ).fetchone()
+    except sqlite3.Error:
+        raise Http404("Источник не найден.")
+    if source is None:
+        raise Http404("Источник не найден.")
+    archive_name, member_name, sha256 = source
+    if Path(archive_name).name != archive_name:
+        raise Http404("Некорректный архив источника.")
+    archive_path = Path(settings.CITATION_ARCHIVE_ROOT) / archive_name
+    if not archive_path.is_file():
+        raise Http404("Архив источника недоступен.")
+    try:
+        with ZipFile(archive_path) as archive:
+            file_size = archive.getinfo(member_name).file_size
+    except (BadZipFile, KeyError, OSError):
+        raise Http404("PDF источника недоступен.")
+    etag = f'"{sha256}"'
+    if request.headers.get("If-None-Match") == etag:
+        response = HttpResponse(status=304)
+        response["ETag"] = etag
+        return response
+
+    def content():
+        with ZipFile(archive_path) as archive, archive.open(member_name) as source_file:
+            while chunk := source_file.read(128 * 1024):
+                yield chunk
+
+    response = StreamingHttpResponse(content(), content_type="application/pdf")
+    response["Content-Length"] = str(file_size)
+    response["Content-Disposition"] = f'inline; filename="{article_id}.pdf"'
+    response["ETag"] = etag
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _attach_public_source_links(request, recommendations):
+    for article in recommendations:
+        path = str(article.get("url") or "")
+        if not path.startswith("/citations/sources/"):
+            continue
+        public_url = request.build_absolute_uri(path)
+        article["url"] = public_url
+        citation = str(article.get("citation") or "").strip()
+        if public_url not in citation:
+            article["citation"] = f"{citation} URL: {public_url}".strip()
+    return recommendations
 
 
 def _read_form_source(form):
@@ -198,7 +262,9 @@ def workspace(request):
                 claims = analysis["claims"]
                 analyzed_claim_count = len(claims)
                 for claim in claims:
-                    claim["recommendations"] = search_claim(claim)
+                    claim["recommendations"] = _attach_public_source_links(
+                        request, search_claim(claim)
+                    )
                 # Keep several nearest topical results available for manual
                 # selection even when the local model finds no direct support.
                 # Such candidates are explicitly marked in the interface.
