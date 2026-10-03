@@ -85,12 +85,13 @@
     const selectionInput = plan.querySelector("[data-selection-input]");
     const planCount = plan.querySelector("[data-plan-count]");
 
-    const setButtonState = (button, isAdded) => {
+    const setButtonState = (button, isAdded, number = null) => {
         button.classList.toggle("is-added", isAdded);
         button.setAttribute("aria-pressed", isAdded ? "true" : "false");
-        button.innerHTML = isAdded
-            ? "<span>−</span> Убрать"
-            : "<span>+</span> Выбрать источник";
+        button.textContent = isAdded
+            ? `Выбрано · [${number}] · убрать`
+            : `Выбрать для фрагмента ${button.dataset.claimNumber}`;
+        button.closest(".citation-source")?.classList.toggle("is-selected", isAdded);
     };
 
     const render = () => {
@@ -102,24 +103,39 @@
                     articleId: item.articleId,
                     title: item.title,
                     citation: item.citation,
+                    url: item.url,
                     items: [],
                 });
             }
             grouped.get(item.articleId).items.push(item);
         });
+        const articleNumbers = new Map();
         [...grouped.values()].forEach((group, index) => {
             const number = index + 1;
+            articleNumbers.set(group.articleId, number);
             const entry = document.createElement("li");
             entry.innerHTML = `
-                <div><span>[${number}]</span><strong></strong></div>
-                <small></small>
-                <p></p>
-                <button type="button" aria-label="Удалить источник">×</button>
+                <div class="citation-plan-entry-heading">
+                    <span>[${number}]</span><strong></strong>
+                    <button type="button" aria-label="Убрать статью из всех фрагментов">×</button>
+                </div>
+                <ul class="citation-plan-placements"></ul>
+                <a class="citation-plan-source-link" target="_blank" rel="noreferrer">Открыть статью ↗</a>
+                <details class="citation-plan-reference"><summary>Запись в списке литературы</summary><p></p></details>
             `;
             entry.querySelector("strong").textContent = group.title;
-            entry.querySelector("small").textContent = group.items.length > 1
-                ? `Будет поставлен у ${group.items.length} фрагментов`
-                : "Будет поставлен у одного фрагмента";
+            const placements = entry.querySelector(".citation-plan-placements");
+            group.items.forEach((item) => {
+                const placement = document.createElement("li");
+                placement.textContent = `Фрагмент ${item.claimNumber}: ${item.claim}`;
+                placements.append(placement);
+            });
+            const articleLink = entry.querySelector(".citation-plan-source-link");
+            if (group.url) {
+                articleLink.href = group.url;
+            } else {
+                articleLink.hidden = true;
+            }
             entry.querySelector("p").textContent = group.citation;
             entry.querySelector("button").addEventListener("click", () => {
                 group.items.forEach((item) => {
@@ -129,6 +145,20 @@
                 render();
             });
             list.append(entry);
+        });
+        selected.forEach((item) => {
+            setButtonState(item.button, true, articleNumbers.get(item.articleId));
+        });
+        document.querySelectorAll(".citation-claim").forEach((claim) => {
+            const numbers = [...new Set(
+                [...selected.values()]
+                    .filter((item) => item.claimId === claim.dataset.claimId)
+                    .map((item) => articleNumbers.get(item.articleId))
+            )].sort((a, b) => a - b);
+            claim.querySelector("[data-claim-markers]").textContent = numbers.length
+                ? numbers.map((number) => `[${number}]`).join(" ")
+                : "—";
+            claim.classList.toggle("has-citation", numbers.length > 0);
         });
         const hasItems = selected.size > 0;
         if (planCount) planCount.textContent = String(grouped.size);
@@ -155,12 +185,13 @@
                 key,
                 claimId: button.dataset.claimId,
                 articleId: button.dataset.articleId,
+                claimNumber: button.dataset.claimNumber,
                 title: source.querySelector("h4").textContent.trim(),
                 citation: source.querySelector(".citation-text").textContent.trim(),
+                url: source.querySelector(".citation-source-actions a")?.href || "",
                 claim: claim.querySelector("h3").textContent.trim(),
                 button,
             });
-            setButtonState(button, true);
         } else {
             selected.delete(key);
             setButtonState(button, false);
@@ -209,13 +240,13 @@
                 articleNumbers.set(item.articleId, nextNumber++);
                 references.push(`[${articleNumbers.get(item.articleId)}] ${item.citation}`);
             }
-            placements.push(`${item.claim} [${articleNumbers.get(item.articleId)}]`);
+            placements.push(`Фрагмент ${item.claimNumber}: ${item.claim} [${articleNumbers.get(item.articleId)}]`);
         });
         const text = `ССЫЛКИ В ТЕКСТЕ\n${placements.join("\n\n")}\n\nСПИСОК ЛИТЕРАТУРЫ\n${references.join("\n")}`;
         await navigator.clipboard.writeText(text);
         copyButton.textContent = "Скопировано";
         window.setTimeout(() => {
-            copyButton.textContent = "Скопировать оформленный список";
+            copyButton.textContent = "Скопировать ссылки и список литературы";
         }, 1800);
     });
 

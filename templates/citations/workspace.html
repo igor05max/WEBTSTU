@@ -5,18 +5,20 @@
 {% block sidebar %}{% workspace_sidebar "citations" %}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20260728a">
+<link rel="stylesheet" href="{% static 'citations/workspace.css' %}?v=20261004a">
 {% endblock %}
 
 {% block content %}
+{% if not result %}
 <header class="citation-hero">
     <div>
         <h1>{% if selected_submission %}Проверьте данные и источники{% else %}Умный поиск источников{% endif %}</h1>
-        <p>{% if selected_submission %}Система использует сведения, указанные в заявке, и данные из загруженного файла. Теперь локальная RAG-система предложит публикации, которыми можно подтвердить утверждения.{% else %}Система находит утверждения без ссылок, понимает, что именно нужно подтвердить, и ищет доказательные фрагменты в локальном корпусе научных публикаций.{% endif %}</p>
+        <p>Загрузите документ и выберите статьи для нужных фрагментов.</p>
     </div>
 </header>
+{% endif %}
 
-{% if selected_submission %}
+{% if selected_submission and not result %}
 <section class="citation-search-card citation-metadata-card">
     <div class="citation-card-heading">
         <div>
@@ -137,15 +139,12 @@
 <section class="citation-results{% if not result.claims %} is-empty{% endif %}" id="citation-results">
     <div class="citation-results-heading">
         <div>
-            <h2>{{ result.source_title }}</h2>
+            <h2>Источники для документа</h2>
+            <p class="citation-results-file" title="{{ result.source_title }}">{{ result.source_title }}</p>
             {% if result.claims %}
-                <p>
-                    Утверждений для проверки: {{ result.claims|length }}.
-                    Подходящих публикаций: {{ result.total_recommendations }}.
-                    Для каждого утверждения выберите только действительно подтверждающий источник.
-                </p>
+                <p class="citation-results-count">Фрагментов: {{ result.claims|length }} · Найдено статей: {{ result.total_recommendations }}</p>
             {% else %}
-                <p>Файл успешно загружен и обработан. Проверено фрагментов: {{ result.analyzed_claim_count }}.</p>
+                <p>Подходящих источников не найдено.</p>
             {% endif %}
         </div>
         <a class="citation-secondary-action" href="{% url 'citations:workspace' %}">Проверить другой материал</a>
@@ -154,19 +153,23 @@
     {% if result.claims %}
     {% if result.best_available %}
     <div class="citation-best-available-notice" role="status">
-        <strong>Показаны ближайшие публикации по тематике</strong>
-        <span>Локальная модель не считает отмеченные варианты прямым подтверждением утверждения. Они оставлены для ручного выбора и расположены от более близких к менее близким.</span>
+        Статьи с меткой «По теме» требуют проверки текста перед выбором.
     </div>
     {% endif %}
     <div class="citation-result-layout">
         <div class="citation-recommendation-list">
             {% for claim in result.claims %}
-                <article class="citation-claim" data-claim-id="{{ claim.id }}">
+                <article class="citation-claim" data-claim-id="{{ claim.id }}" data-claim-number="{{ forloop.counter }}">
                     <div class="citation-fragment-block">
-                        <span class="citation-block-label">Фрагмент из вашей статьи</span>
-                        <div class="citation-location">{{ claim.section|default:"Текст статьи" }} · абзац {{ claim.paragraph_index|add:"1" }}</div>
+                        <div class="citation-fragment-heading">
+                            <span class="citation-block-label">Фрагмент {{ forloop.counter }} из вашего документа</span>
+                            <span class="citation-location">{{ claim.section|default:"Текст статьи" }} · абзац {{ claim.paragraph_index|add:"1" }}</span>
+                        </div>
                         <h3>{{ claim.text }}</h3>
-                        <div class="citation-placement"><strong>[n]</strong><span>поставим сразу после этого фрагмента</span></div>
+                        <div class="citation-placement" data-claim-placement>
+                            <span>Ссылка после фрагмента:</span>
+                            <strong data-claim-markers>—</strong>
+                        </div>
                     </div>
 
                     <div class="citation-sources">
@@ -174,23 +177,11 @@
                         <section class="citation-source" data-claim-id="{{ claim.id }}" data-article-id="{{ article.article_id }}">
                             <div class="citation-source-heading">
                                 <div>
-                                    <span>Вариант {{ forloop.counter }}</span>
                                     <h4>{{ article.title }}</h4>
                                 </div>
-                                <strong class="citation-score">
-                                    <span>
-                                        {% if article.best_available %}
-                                            близость темы
-                                        {% elif article.verdict == "supports" %}
-                                            подтверждает
-                                        {% elif article.verdict == "partial" %}
-                                            частично
-                                        {% else %}
-                                            кандидат
-                                        {% endif %}
-                                    </span>
-                                    {{ article.score_percent }}%
-                                </strong>
+                                <span class="citation-verdict{% if article.best_available %} is-topical{% endif %}">
+                                    {% if article.best_available %}По теме{% elif article.verdict == "supports" %}Подтверждает{% elif article.verdict == "partial" %}Частично{% else %}Проверьте{% endif %}
+                                </span>
                             </div>
                             <div class="citation-source-topline">
                                 {% if article.authors %}<span>{{ article.authors }}</span>{% endif %}
@@ -198,36 +189,23 @@
                                 {% if article.doi %}<span>DOI {{ article.doi }}</span>{% elif article.edn %}<span>EDN {{ article.edn }}</span>{% endif %}
                             </div>
 
-                            {% if article.best_available %}
-                            <div class="citation-best-available-hint">
-                                <strong>Ближайший по теме вариант</strong>
-                                <span>Прямое подтверждение не установлено — перед добавлением проверьте фрагмент источника.</span>
-                            </div>
-                            {% endif %}
-
-                            {% if article.reason %}
-                            <div class="citation-common-topic">
-                                <span>{% if article.best_available %}Тематическое совпадение{% else %}Заключение локальной модели{% endif %}</span>
-                                <p>{{ article.reason }}</p>
-                            </div>
-                            {% endif %}
-
                             {% if article.evidence %}
-                                <details class="citation-source-evidence">
-                                    <summary>{% if article.chunk_kind == "catalog_abstract" %}Показать аннотацию карточки eLIBRARY{% else %}Показать подтверждающий фрагмент источника{% endif %}</summary>
-                                    <blockquote>{{ article.evidence }}</blockquote>
-                                </details>
+                                <div class="citation-source-evidence">
+                                    <span>{% if article.chunk_kind == "catalog_abstract" %}Аннотация карточки eLIBRARY{% else %}Фрагмент статьи{% endif %}</span>
+                                    <p>{{ article.evidence|truncatechars:280 }}</p>
+                                    {% if article.evidence|length > 280 %}
+                                    <details><summary>Читать полностью</summary><p>{{ article.evidence }}</p></details>
+                                    {% endif %}
+                                </div>
                             {% endif %}
 
                             <span class="citation-text" hidden>{{ article.citation }}</span>
                             <div class="citation-source-actions">
-                                <button class="citation-add-button" type="button" data-add-citation data-claim-id="{{ claim.id }}" data-article-id="{{ article.article_id }}">
-                                    <span>+</span> Выбрать источник
+                                <button class="citation-add-button" type="button" data-add-citation data-claim-id="{{ claim.id }}" data-claim-number="{{ forloop.parentloop.counter }}" data-article-id="{{ article.article_id }}">
+                                    Выбрать для фрагмента {{ forloop.parentloop.counter }}
                                 </button>
                                 {% if article.url %}
                                     <a href="{{ article.url }}" target="_blank" rel="noreferrer">Открыть статью ↗</a>
-                                {% elif article.doi %}
-                                    <a href="https://doi.org/{{ article.doi }}" target="_blank" rel="noreferrer">Открыть DOI ↗</a>
                                 {% endif %}
                             </div>
                         </section>
@@ -239,17 +217,15 @@
 
         <aside class="citation-plan" data-citation-plan>
             <div class="citation-plan-title">
-                <h2>Выбранные источники</h2>
+                <h2>Ссылки в документе</h2>
                 <span data-plan-count>0</span>
             </div>
-            <p>Одна статья может использоваться для нескольких фрагментов, но в списке литературы появится только один раз.</p>
             <div class="citation-plan-empty" data-plan-empty>
-                <strong>Источники не выбраны</strong>
-                <span>Нажмите «Выбрать источник» у подходящей публикации.</span>
+                Выберите статью рядом с фрагментом — здесь появится номер ссылки и место вставки.
             </div>
             <ol class="citation-plan-list" data-plan-list></ol>
             {{ result.selections|json_script:"citation-initial-selections" }}
-            <button class="citation-copy-button" type="button" data-copy-plan hidden>Скопировать оформленный список</button>
+            <button class="citation-copy-button" type="button" data-copy-plan hidden>Скопировать ссылки и список литературы</button>
             {% if result.can_apply_docx or result.can_apply_latex %}
             <form method="post" action="{% if result.submission_id %}{% url 'citations:prepare_submission_result' %}{% else %}{% url 'citations:apply' %}{% endif %}"
                   data-apply-form data-site-loading data-site-loading-title="Добавляем источники"
@@ -309,5 +285,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20260728c" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20261004a" defer></script>
 {% endblock %}
