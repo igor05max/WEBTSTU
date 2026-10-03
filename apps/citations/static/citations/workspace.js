@@ -90,7 +90,7 @@
         button.setAttribute("aria-pressed", isAdded ? "true" : "false");
         button.textContent = isAdded
             ? `Выбрано · [${number}] · убрать`
-            : `Выбрать для фрагмента ${button.dataset.claimNumber}`;
+            : "Выбрать для этого текста";
         button.closest(".citation-source")?.classList.toggle("is-selected", isAdded);
     };
 
@@ -117,7 +117,7 @@
             entry.innerHTML = `
                 <div class="citation-plan-entry-heading">
                     <span>[${number}]</span><strong></strong>
-                    <button type="button" aria-label="Убрать статью из всех фрагментов">×</button>
+                    <button type="button" aria-label="Убрать статью из документа">×</button>
                 </div>
                 <ul class="citation-plan-placements"></ul>
                 <a class="citation-plan-source-link" target="_blank" rel="noreferrer">Открыть статью ↗</a>
@@ -127,7 +127,7 @@
             const placements = entry.querySelector(".citation-plan-placements");
             group.items.forEach((item) => {
                 const placement = document.createElement("li");
-                placement.textContent = `Фрагмент ${item.claimNumber}: ${item.claim}`;
+                placement.textContent = `Ваш текст №${item.claimNumber}: ${item.claim}`;
                 placements.append(placement);
             });
             const articleLink = entry.querySelector(".citation-plan-source-link");
@@ -240,7 +240,7 @@
                 articleNumbers.set(item.articleId, nextNumber++);
                 references.push(`[${articleNumbers.get(item.articleId)}] ${item.citation}`);
             }
-            placements.push(`Фрагмент ${item.claimNumber}: ${item.claim} [${articleNumbers.get(item.articleId)}]`);
+            placements.push(`Ваш текст №${item.claimNumber}: ${item.claim} [${articleNumbers.get(item.articleId)}]`);
         });
         const text = `ССЫЛКИ В ТЕКСТЕ\n${placements.join("\n\n")}\n\nСПИСОК ЛИТЕРАТУРЫ\n${references.join("\n")}`;
         await navigator.clipboard.writeText(text);

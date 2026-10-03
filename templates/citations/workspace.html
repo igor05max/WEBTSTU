@@ -13,7 +13,7 @@
 <header class="citation-hero">
     <div>
         <h1>{% if selected_submission %}Проверьте данные и источники{% else %}Умный поиск источников{% endif %}</h1>
-        <p>Загрузите документ и выберите статьи для нужных фрагментов.</p>
+        <p>Загрузите документ, чтобы найти статьи для ссылок.</p>
     </div>
 </header>
 {% endif %}
@@ -142,7 +142,7 @@
             <h2>Источники для документа</h2>
             <p class="citation-results-file" title="{{ result.source_title }}">{{ result.source_title }}</p>
             {% if result.claims %}
-                <p class="citation-results-count">Фрагментов: {{ result.claims|length }} · Найдено статей: {{ result.total_recommendations }}</p>
+                <p class="citation-results-count">Мест для ссылок: {{ result.claims|length }} · Статей на выбор: {{ result.total_recommendations }}</p>
             {% else %}
                 <p>Подходящих источников не найдено.</p>
             {% endif %}
@@ -162,12 +162,12 @@
                 <article class="citation-claim" data-claim-id="{{ claim.id }}" data-claim-number="{{ forloop.counter }}">
                     <div class="citation-fragment-block">
                         <div class="citation-fragment-heading">
-                            <span class="citation-block-label">Фрагмент {{ forloop.counter }} из вашего документа</span>
+                            <span class="citation-block-label">Ваш текст №{{ forloop.counter }}</span>
                             <span class="citation-location">{{ claim.section|default:"Текст статьи" }} · абзац {{ claim.paragraph_index|add:"1" }}</span>
                         </div>
                         <h3>{{ claim.text }}</h3>
                         <div class="citation-placement" data-claim-placement>
-                            <span>Ссылка после фрагмента:</span>
+                            <span>Ссылка после этого текста:</span>
                             <strong data-claim-markers>—</strong>
                         </div>
                     </div>
@@ -191,7 +191,7 @@
 
                             {% if article.evidence %}
                                 <div class="citation-source-evidence">
-                                    <span>{% if article.chunk_kind == "catalog_abstract" %}Аннотация карточки eLIBRARY{% else %}Фрагмент статьи{% endif %}</span>
+                                    <span>{% if article.chunk_kind == "catalog_abstract" %}Аннотация eLIBRARY{% else %}Из найденной статьи{% endif %}</span>
                                     <p>{{ article.evidence|truncatechars:280 }}</p>
                                     {% if article.evidence|length > 280 %}
                                     <details><summary>Читать полностью</summary><p>{{ article.evidence }}</p></details>
@@ -202,7 +202,7 @@
                             <span class="citation-text" hidden>{{ article.citation }}</span>
                             <div class="citation-source-actions">
                                 <button class="citation-add-button" type="button" data-add-citation data-claim-id="{{ claim.id }}" data-claim-number="{{ forloop.parentloop.counter }}" data-article-id="{{ article.article_id }}">
-                                    Выбрать для фрагмента {{ forloop.parentloop.counter }}
+                                    Выбрать для этого текста
                                 </button>
                                 {% if article.url %}
                                     <a href="{{ article.url }}" target="_blank" rel="noreferrer">Открыть статью ↗</a>
@@ -221,7 +221,7 @@
                 <span data-plan-count>0</span>
             </div>
             <div class="citation-plan-empty" data-plan-empty>
-                Выберите статью рядом с фрагментом — здесь появится номер ссылки и место вставки.
+                Выберите статью под вашим текстом — здесь появится номер ссылки.
             </div>
             <ol class="citation-plan-list" data-plan-list></ol>
             {{ result.selections|json_script:"citation-initial-selections" }}
@@ -285,5 +285,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'citations/workspace.js' %}?v=20261004a" defer></script>
+<script src="{% static 'citations/workspace.js' %}?v=20261004b" defer></script>
 {% endblock %}
